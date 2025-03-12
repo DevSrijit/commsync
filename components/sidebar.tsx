@@ -23,6 +23,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "./ui/separator";
+import { cn } from "@/lib/utils";
 
 export type MessageCategory =
   | "inbox"
@@ -35,7 +36,7 @@ export type MessageCategory =
 
 export function Sidebar() {
   const { data: session } = useSession();
-  const { emails, setActiveFilter } = useEmailStore();
+  const { emails, setActiveFilter, activeFilter } = useEmailStore();
 
   const inboxCount = emails.filter(
     (email) => !email.labels.includes("TRASH") && !email.labels.includes("SENT")
@@ -85,7 +86,10 @@ export function Sidebar() {
         <nav className="grid gap-1 px-2">
           <Button
             variant="ghost"
-            className="justify-start w-full"
+            className={cn(
+              "justify-start w-full",
+              activeFilter === "inbox" && "bg-neutral-100 dark:bg-neutral-800"
+            )}
             onClick={() => setActiveFilter("inbox")}
           >
             <Inbox className="mr-2 h-4 w-4" />
@@ -96,7 +100,10 @@ export function Sidebar() {
           </Button>
           <Button
             variant="ghost"
-            className="justify-start w-full"
+            className={cn(
+              "justify-start w-full",
+              activeFilter === "draft" && "bg-neutral-100 dark:bg-neutral-800"
+            )}
             onClick={() => setActiveFilter("draft")}
           >
             <Mail className="mr-2 h-4 w-4" />
@@ -107,7 +114,10 @@ export function Sidebar() {
           </Button>
           <Button
             variant="ghost"
-            className="justify-start w-full"
+            className={cn(
+              "justify-start w-full",
+              activeFilter === "sent" && "bg-neutral-100 dark:bg-neutral-800"
+            )}
             onClick={() => setActiveFilter("sent")}
           >
             <Send className="mr-2 h-4 w-4" />
@@ -118,7 +128,10 @@ export function Sidebar() {
           </Button>
           <Button
             variant="ghost"
-            className="justify-start w-full"
+            className={cn(
+              "justify-start w-full",
+              activeFilter === "starred" && "bg-neutral-100 dark:bg-neutral-800"
+            )}
             onClick={() => setActiveFilter("starred")}
           >
             <Star className="mr-2 h-4 w-4" />
@@ -129,7 +142,10 @@ export function Sidebar() {
           </Button>
           <Button
             variant="ghost"
-            className="justify-start w-full"
+            className={cn(
+              "justify-start w-full",
+              activeFilter === "trash" && "bg-neutral-100 dark:bg-neutral-800"
+            )}
             onClick={() => setActiveFilter("trash")}
           >
             <Trash className="mr-2 h-4 w-4" />
@@ -140,7 +156,10 @@ export function Sidebar() {
           </Button>
           <Button
             variant="ghost"
-            className="justify-start w-full"
+            className={cn(
+              "justify-start w-full",
+              activeFilter === "archive" && "bg-neutral-100 dark:bg-neutral-800"
+            )}
             onClick={() => setActiveFilter("archive")}
           >
             <Archive className="mr-2 h-4 w-4" />
