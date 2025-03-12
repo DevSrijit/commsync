@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 
 import { Sidebar } from "@/components/sidebar";
-import { EmailList } from "@/components/email-list";
+import { EmailList } from "@/components/channel-list";
 import { ConversationView } from "@/components/conversation-view";
 import { useEmailStore } from "@/lib/email-store";
 import { fetchEmails } from "@/lib/gmail-api";
