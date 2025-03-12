@@ -14,6 +14,9 @@ import {
   Trash,
   User,
   X,
+  Plus,
+  Settings,
+  Server,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useEmailStore } from "@/lib/email-store";
@@ -22,6 +25,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -49,6 +53,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ImapAccountDialog } from "./imap-account-dialog";
+import { Badge } from "./ui/badge";
 
 export type MessageCategory =
   | "inbox"
@@ -61,8 +67,9 @@ export type MessageCategory =
 
 export function Sidebar() {
   const { data: session } = useSession();
-  const { emails, setActiveFilter, activeFilter } = useEmailStore();
+  const { emails, setActiveFilter, activeFilter, imapAccounts } = useEmailStore();
   const [isComposerOpen, setIsComposerOpen] = useState(false);
+  const [isImapDialogOpen, setIsImapDialogOpen] = useState(false);
 
   const inboxCount = emails.filter(
     (email) => !email.labels.includes("TRASH") && !email.labels.includes("SENT")
@@ -107,6 +114,11 @@ export function Sidebar() {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-56">
+            <DropdownMenuItem onClick={() => setIsImapDialogOpen(true)}>
+              <Server className="mr-2 h-4 w-4" />
+              Add IMAP Account
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => signOut()}>
               <LogOut className="mr-2 h-4 w-4" />
               Sign out
@@ -229,6 +241,12 @@ export function Sidebar() {
           console.log("Legacy send method called");
           await new Promise(resolve => setTimeout(resolve, 1000));
         }}
+      />
+
+      {/* IMAP Account Dialog */}
+      <ImapAccountDialog
+        open={isImapDialogOpen}
+        onOpenChange={setIsImapDialogOpen}
       />
     </div>
   );
