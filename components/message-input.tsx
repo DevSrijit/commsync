@@ -22,7 +22,7 @@ export function MessageInput({ onSend, isLoading, placeholder }: MessageInputPro
     extensions: [StarterKit],
     editorProps: {
       attributes: {
-        class: "prose prose-sm dark:prose-invert max-w-none focus:outline-none min-h-[100px] max-h-[400px] overflow-y-auto",
+        class: "prose prose-sm dark:prose-invert w-full focus:outline-none min-h-0 flex-grow overflow-y-auto",
       },
     },
     content: "",
@@ -58,16 +58,16 @@ export function MessageInput({ onSend, isLoading, placeholder }: MessageInputPro
 
   return (
     <div
-      className="border rounded-lg bg-background p-4 space-y-4"
+      className="border rounded-lg bg-background flex flex-col w-full h-full"
       onDrop={handleDrop}
       onDragOver={handleDragOver}
     >
-      <div className="flex items-center gap-2 border-b pb-2">
+      <div className="flex items-center gap-2 border-b p-2 flex-shrink-0 overflow-x-auto">
         <Button
           variant="ghost"
           size="sm"
           onClick={() => editor?.chain().focus().toggleBold().run()}
-          className={cn(editor?.isActive("bold") && "bg-muted")}
+          className={cn("flex-shrink-0", editor?.isActive("bold") && "bg-muted")}
         >
           <Bold className="h-4 w-4" />
         </Button>
@@ -75,7 +75,7 @@ export function MessageInput({ onSend, isLoading, placeholder }: MessageInputPro
           variant="ghost"
           size="sm"
           onClick={() => editor?.chain().focus().toggleItalic().run()}
-          className={cn(editor?.isActive("italic") && "bg-muted")}
+          className={cn("flex-shrink-0", editor?.isActive("italic") && "bg-muted")}
         >
           <Italic className="h-4 w-4" />
         </Button>
@@ -83,7 +83,7 @@ export function MessageInput({ onSend, isLoading, placeholder }: MessageInputPro
           variant="ghost"
           size="sm"
           onClick={() => editor?.chain().focus().toggleBulletList().run()}
-          className={cn(editor?.isActive("bulletList") && "bg-muted")}
+          className={cn("flex-shrink-0", editor?.isActive("bulletList") && "bg-muted")}
         >
           <List className="h-4 w-4" />
         </Button>
@@ -91,20 +91,22 @@ export function MessageInput({ onSend, isLoading, placeholder }: MessageInputPro
           variant="ghost"
           size="sm"
           onClick={() => editor?.chain().focus().toggleOrderedList().run()}
-          className={cn(editor?.isActive("orderedList") && "bg-muted")}
+          className={cn("flex-shrink-0", editor?.isActive("orderedList") && "bg-muted")}
         >
           <ListOrdered className="h-4 w-4" />
         </Button>
       </div>
 
-      <EditorContent editor={editor} />
+      <div className="flex-1 min-h-0 p-4 overflow-y-auto">
+        <EditorContent editor={editor} className="h-full" />
+      </div>
 
       {attachments.length > 0 && (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 px-4 py-2 border-t flex-shrink-0">
           {attachments.map((file, index) => (
             <div
               key={index}
-              className="flex items-center gap-2 bg-muted px-3 py-1 rounded-full text-sm"
+              className="flex items-center gap-2 bg-muted px-3 py-1 rounded-full text-sm flex-shrink-0"
             >
               <span className="truncate max-w-[200px]">{file.name}</span>
               <button
@@ -118,7 +120,7 @@ export function MessageInput({ onSend, isLoading, placeholder }: MessageInputPro
         </div>
       )}
 
-      <div className="flex justify-between items-center pt-2 border-t">
+      <div className="flex justify-between items-center p-2 border-t flex-shrink-0">
         <div className="flex items-center gap-2">
           <input
             type="file"
