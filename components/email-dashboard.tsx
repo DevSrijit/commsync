@@ -73,12 +73,12 @@ export function EmailDashboard() {
 
     loadEmails();
 
-    // Set up polling for new emails every 2 minutes
+    // Set up polling for new emails every 0.5 minutes
     const intervalId = setInterval(() => {
       if (session?.user?.accessToken) {
         loadEmails();
       }
-    }, 2 * 60 * 1000);
+    }, 0.5 * 60 * 1000);
 
     return () => clearInterval(intervalId);
   }, [session, setEmails]);
