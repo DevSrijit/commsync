@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import { Search } from "lucide-react";
-
 import { Input } from "@/components/ui/input";
 import { useEmailStore } from "@/lib/email-store";
 import { ContactItem } from "@/components/contact-item";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { MessageCategory } from "@/components/sidebar";
 
 interface EmailListProps {
   isLoading: boolean;
@@ -22,14 +22,52 @@ export function EmailList({
   onSelectContact,
   className,
 }: EmailListProps) {
-  const { contacts } = useEmailStore();
+  const { contacts, emails, activeFilter } = useEmailStore();
   const [searchQuery, setSearchQuery] = useState("");
 
-  const filteredContacts = contacts.filter(
-    (contact) =>
-      contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      contact.email.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredContacts = contacts.filter(contact => {
+    // First filter by search query
+    const matchesSearch = contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      contact.email.toLowerCase().includes(searchQuery.toLowerCase());
+
+    if (!matchesSearch) return false;
+
+    // Then filter by category
+    const contactEmails = emails.filter(email => 
+      email.from.email === contact.email || 
+      email.to.some(to => to.email === contact.email)
+    );
+
+    switch (activeFilter) {
+      case "inbox":
+        return contactEmails.some(email => 
+          !email.labels.includes("TRASH") && 
+          !email.labels.includes("SENT")
+        );
+      case "draft":
+        return contactEmails.some(email => 
+          email.labels.includes("DRAFT")
+        );
+      case "sent":
+        return contactEmails.some(email => 
+          email.labels.includes("SENT")
+        );
+      case "starred":
+        return contactEmails.some(email => 
+          email.labels.includes("STARRED")
+        );
+      case "trash":
+        return contactEmails.some(email => 
+          email.labels.includes("TRASH")
+        );
+      case "archive":
+        return contactEmails.some(email => 
+          email.labels.includes("ARCHIVE")
+        );
+      default:
+        return true;
+    }
+  });
 
   return (
     <div

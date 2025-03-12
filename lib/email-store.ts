@@ -2,16 +2,22 @@
 
 import { create } from "zustand"
 import type { Email, Contact } from "@/lib/types"
+import { MessageCategory } from '@/components/sidebar'
 
 interface EmailStore {
   emails: Email[]
-  setEmails: (emails: Email[]) => void
-  addEmail: (email: Email) => void
   contacts: Contact[]
+  activeFilter: MessageCategory
+  setEmails: (emails: Email[]) => void
+  setActiveFilter: (filter: MessageCategory) => void
+  addEmail: (email: Email) => void
 }
 
 export const useEmailStore = create<EmailStore>((set, get) => ({
   emails: [],
+  contacts: [],
+  activeFilter: "inbox",
+  setActiveFilter: (filter) => set({ activeFilter: filter }),
   setEmails: (emails) => {
     set({ emails })
 
@@ -98,7 +104,6 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
     updatedContacts.sort((a, b) => new Date(b.lastMessageDate).getTime() - new Date(a.lastMessageDate).getTime())
 
     set({ contacts: updatedContacts })
-  },
-  contacts: [],
+  }
 }))
 
