@@ -64,7 +64,7 @@ export function EmailList({
             ))}
           </div>
         ) : (
-          <div className="divide-y divide-border">
+          <div className="h-full">
             {filteredContacts.map((contact) => (
               <ContactItem
                 key={contact.email}
