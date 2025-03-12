@@ -19,7 +19,7 @@ function displayLabels(labels: string) {
 
 export function ContactItem({ contact, isSelected, onClick }: ContactItemProps) {
   return (
-    <div className={cn("p-4 cursor-pointer hover:bg-accent/50", isSelected && "bg-accent")} onClick={onClick}>
+    <div className={cn("p-4 cursor-pointer hover:bg-accent/50 rounded-lg border m-2 overflow-hidden", isSelected && "bg-accent")} onClick={onClick}>
       <div className="flex justify-between items-start mb-1">
         <h3 className="font-medium truncate">{contact.name}</h3>
         <span className="text-xs text-muted-foreground whitespace-nowrap">
@@ -27,9 +27,9 @@ export function ContactItem({ contact, isSelected, onClick }: ContactItemProps) 
         </span>
       </div>
       <p className="text-sm text-muted-foreground truncate mb-2">{contact.lastMessageSubject}</p>
-      <div className="flex gap-2">
+      <div className="flex overflow-x-auto scrollbar-none">
         {contact.labels.map((label) => (
-          <Badge key={label} variant="outline" className="text-xs bg-neutral-900">
+          <Badge key={label} variant="outline" className="text-xs bg-neutral-900 whitespace-nowrap mr-1">
             {displayLabels(label)}
           </Badge>
         ))}
