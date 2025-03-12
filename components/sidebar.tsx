@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Separator } from "./ui/separator";
 
 export type MessageCategory =
   | "inbox"
@@ -150,6 +151,8 @@ export function Sidebar() {
           </Button>
         </nav>
       </ScrollArea>
+
+      <Separator />
     </div>
   );
 }

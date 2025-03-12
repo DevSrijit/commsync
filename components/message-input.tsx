@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useEditor, EditorContent, BubbleMenu } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import {
@@ -10,12 +10,18 @@ import {
   Italic,
   List,
   ListOrdered,
-  Link,
+  Link as LinkIcon,
   Undo,
   Redo,
+  Highlighter,
+  Strikethrough,
 } from "lucide-react";
 import Placeholder from "@tiptap/extension-placeholder";
-
+import Link from "@tiptap/extension-link";
+import Underline from "@tiptap/extension-underline";
+import Strike from "@tiptap/extension-strike";
+import Highlight from "@tiptap/extension-highlight";
+import { UnderlineIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -58,6 +64,19 @@ export function MessageInput({
       Placeholder.configure({
         placeholder: placeholder || "Write something …",
       }),
+      Link.configure({
+        openOnClick: false,
+        HTMLAttributes: {
+          class: 'text-primary underline'
+        }
+      }),
+      Underline,
+      Strike,
+      Highlight.configure({
+        HTMLAttributes: {
+          class: 'bg-yellow-200 dark:bg-yellow-800 px-0.5 rounded',
+        }
+      }),
     ],
     editorProps: {
       attributes: {
@@ -67,6 +86,29 @@ export function MessageInput({
     },
     content: "",
   });
+
+  const setLink = useCallback(() => {
+    if (!editor) return;
+
+    const previousUrl = editor.getAttributes('link').href;
+    const url = window.prompt('URL', previousUrl);
+
+    // cancelled
+    if (url === null) {
+      return;
+    }
+
+    // empty
+    if (url === '') {
+      editor.chain().focus().extendMarkRange('link').unsetLink().run();
+      return;
+    }
+
+    // Add https if no protocol is specified
+    const normalizedUrl = url.startsWith('http://') || url.startsWith('https://') ? url : `https://${url}`;
+
+    editor.chain().focus().extendMarkRange('link').setLink({ href: normalizedUrl }).run();
+  }, [editor]);
 
   const handleSend = () => {
     if (editor && !editor.isEmpty) {
@@ -130,6 +172,50 @@ export function MessageInput({
             <Button
               variant="ghost"
               size="sm"
+              onClick={() => editor.chain().focus().toggleUnderline().run()}
+              className={cn(
+                "flex-shrink-0",
+                editor.isActive("underline") && "bg-muted"
+              )}
+            >
+              <UnderlineIcon className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => editor.chain().focus().toggleStrike().run()}
+              className={cn(
+                "flex-shrink-0",
+                editor.isActive("strike") && "bg-muted"
+              )}
+            >
+              <Strikethrough className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => editor.chain().focus().toggleHighlight().run()}
+              className={cn(
+                "flex-shrink-0",
+                editor.isActive("highlight") && "bg-muted"
+              )}
+            >
+              <Highlighter className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={setLink}
+              className={cn(
+                "flex-shrink-0",
+                editor.isActive("link") && "bg-muted"
+              )}
+            >
+              <LinkIcon className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => editor.chain().focus().toggleBulletList().run()}
               className={cn(
                 "flex-shrink-0",
@@ -179,6 +265,50 @@ export function MessageInput({
         <Button
           variant="ghost"
           size="sm"
+          onClick={() => editor?.chain().focus().toggleUnderline().run()}
+          className={cn(
+            "flex-shrink-0",
+            editor?.isActive("underline") && "bg-muted"
+          )}
+        >
+          <UnderlineIcon className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => editor?.chain().focus().toggleStrike().run()}
+          className={cn(
+            "flex-shrink-0",
+            editor?.isActive("strike") && "bg-muted"
+          )}
+        >
+          <Strikethrough className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => editor?.chain().focus().toggleHighlight().run()}
+          className={cn(
+            "flex-shrink-0",
+            editor?.isActive("highlight") && "bg-muted"
+          )}
+        >
+          <Highlighter className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={setLink}
+          className={cn(
+            "flex-shrink-0",
+            editor?.isActive("link") && "bg-muted"
+          )}
+        >
+          <LinkIcon className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => editor?.chain().focus().toggleBulletList().run()}
           className={cn(
             "flex-shrink-0",
@@ -219,7 +349,7 @@ export function MessageInput({
         </Button>
       </div>
 
-      <div className="flex-1 min-h-0 p-4 overflow-y-auto">
+      <div className="flex-1 min-h-0 p-2 overflow-y-auto">
         <EditorContent editor={editor} className="h-full" />
       </div>
 
