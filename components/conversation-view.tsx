@@ -157,15 +157,28 @@ export function ConversationView({
                               return (
                                 <a
                                   key={attachment.id}
-                                  href={`${attachment.url}&access_token=${session?.user?.accessToken}`}
+                                  href={attachment.url}
                                   target="_blank"
                                   rel="noopener noreferrer"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    if (attachment.url) {
+                                      window.open(attachment.url, '_blank');
+                                      fetch(attachment.url, {
+                                        headers: {
+                                          Authorization: `Bearer ${session?.user?.accessToken}`
+                                        }
+                                      }).catch(error => {
+                                        console.error('Error downloading attachment:', error);
+                                      });
+                                    }
+                                  }}
                                   className="group relative flex flex-col gap-1 p-2 bg-background/10 rounded-lg hover:bg-background/20 transition-colors"
                                 >
                                   {isImage ? (
                                     <div className="aspect-video relative rounded-md overflow-hidden bg-background/20">
                                       <img
-                                        src={`${attachment.url}&access_token=${session?.user?.accessToken}`}
+                                        src={attachment.url}
                                         alt={attachment.name}
                                         className="absolute inset-0 w-full h-full object-cover"
                                       />

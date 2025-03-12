@@ -38,23 +38,32 @@ export function EmailDashboard() {
           const cachedEmails = localStorage.getItem("emails");
           const cachedTimestamp = localStorage.getItem("emailsTimestamp");
 
+          // Load cached emails if available
+          if (cachedEmails) {
+            setEmails(JSON.parse(cachedEmails));
+          }
+
           let shouldFetch = true;
-          if (cachedEmails && cachedTimestamp) {
+          if (cachedTimestamp) {
             const timestamp = Number.parseInt(cachedTimestamp);
-            // If cache is less than 5 minutes old, use it
+            // If cache is less than 5 minutes old, skip fetch
             if (Date.now() - timestamp < 5 * 60 * 1000) {
-              setEmails(JSON.parse(cachedEmails));
               shouldFetch = false;
             }
           }
 
           if (shouldFetch) {
-            const fetchedEmails = await fetchEmails(session.user.accessToken);
-            setEmails(fetchedEmails);
+            try {
+              const fetchedEmails = await fetchEmails(session.user.accessToken);
+              setEmails(fetchedEmails);
 
-            // Cache the emails
-            localStorage.setItem("emails", JSON.stringify(fetchedEmails));
-            localStorage.setItem("emailsTimestamp", Date.now().toString());
+              // Cache the emails
+              localStorage.setItem("emails", JSON.stringify(fetchedEmails));
+              localStorage.setItem("emailsTimestamp", Date.now().toString());
+            } catch (fetchError) {
+              console.error("Failed to fetch new emails:", fetchError);
+              // Keep using cached data, don't clear it
+            }
           }
         } catch (error) {
           console.error("Failed to load emails:", error);
@@ -117,14 +126,14 @@ export function EmailDashboard() {
               maxSize={40}
               className="h-full"
             >
-                <div className="w-full h-full z-0">
-                  <EmailList
-                    isLoading={isLoading}
-                    selectedContact={selectedContact}
-                    onSelectContact={setSelectedContact}
-                    className="w-full"
-                  />
-                </div>
+              <div className="w-full h-full z-0">
+                <EmailList
+                  isLoading={isLoading}
+                  selectedContact={selectedContact}
+                  onSelectContact={setSelectedContact}
+                  className="w-full"
+                />
+              </div>
             </ResizablePanel>
 
             <ResizableHandle />
