@@ -131,12 +131,6 @@ export function EmailDashboard() {
                   onSelectContact={setSelectedContact}
                   className="w-full"
                 />
-                {/**add a floating button that will let the user craft an email */}
-                <div className="sticky bottom-4 z-10">
-                  <button className="hover:bg-neutral-500 bg-neutral-700 text-white font-bold p-4 rounded-full">
-                    <PenIcon />
-                  </button>
-                </div>
               </div>
             </ResizablePanel>
 

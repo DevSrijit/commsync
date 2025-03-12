@@ -178,7 +178,7 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
                             <SelectContent>
                                 <SelectItem value="email">Email</SelectItem>
                                 <SelectItem value="whatsapp" disabled>WhatsApp (Coming Soon)</SelectItem>
-                                <SelectItem value="sms" disabled>SMS (Coming Soon)</SelectItem>
+                                <SelectItem value="twilio" disabled>Twilio (Coming Soon)</SelectItem>
                                 <SelectItem value="slack" disabled>Slack (Coming Soon)</SelectItem>
                                 <SelectItem value="reddit" disabled>Reddit (Coming Soon)</SelectItem>
                             </SelectContent>

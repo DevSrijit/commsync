@@ -4,7 +4,6 @@ import { formatDistanceToNow } from "date-fns"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import type { Contact } from "@/lib/types"
-import { ScrollArea } from "@radix-ui/react-scroll-area"
 
 interface ContactItemProps {
   contact: Contact
