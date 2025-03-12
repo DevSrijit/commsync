@@ -13,7 +13,6 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "./ui/resizable";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 export function EmailDashboard() {
   const { data: session } = useSession();
@@ -22,8 +21,15 @@ export function EmailDashboard() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Clear email cache when session changes
-    if (!session?.user?.accessToken) {
+    // Try to load cached emails first, regardless of session
+    const cachedEmails = localStorage.getItem("emails");
+    if (cachedEmails) {
+      setEmails(JSON.parse(cachedEmails));
+      setIsLoading(false);
+    }
+
+    // Only clear cache if explicitly logged out
+    if (session === null) {
       localStorage.removeItem("emails");
       localStorage.removeItem("emailsTimestamp");
       setEmails([]);
@@ -34,16 +40,9 @@ export function EmailDashboard() {
       if (session?.user?.accessToken) {
         setIsLoading(true);
         try {
-          // First try to load from local storage
-          const cachedEmails = localStorage.getItem("emails");
+          let shouldFetch = true;
           const cachedTimestamp = localStorage.getItem("emailsTimestamp");
 
-          // Load cached emails if available
-          if (cachedEmails) {
-            setEmails(JSON.parse(cachedEmails));
-          }
-
-          let shouldFetch = true;
           if (cachedTimestamp) {
             const timestamp = Number.parseInt(cachedTimestamp);
             // If cache is less than 5 minutes old, skip fetch
@@ -65,8 +64,6 @@ export function EmailDashboard() {
               // Keep using cached data, don't clear it
             }
           }
-        } catch (error) {
-          console.error("Failed to load emails:", error);
         } finally {
           setIsLoading(false);
         }
