@@ -10,17 +10,23 @@ import { useSession } from "next-auth/react"
 import { sendEmail } from "@/lib/gmail-api"
 import { useToast } from "@/hooks/use-toast"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Paperclip } from "lucide-react"
+import { Paperclip, Image, FileText, File } from "lucide-react"
+import DOMPurify from "isomorphic-dompurify"
 
 interface ConversationViewProps {
   contactEmail: string | null
   isLoading: boolean
 }
 
+const getAttachmentIcon = (mimeType: string) => {
+  if (mimeType.startsWith("image/")) return Image
+  if (mimeType.startsWith("text/")) return FileText
+  return File
+}
+
 export function ConversationView({ contactEmail, isLoading }: ConversationViewProps) {
   const { data: session } = useSession()
   const { emails, contacts, addEmail } = useEmailStore()
-  const [replyText, setReplyText] = useState("")
   const [isSending, setIsSending] = useState(false)
   const { toast } = useToast()
 
@@ -32,36 +38,6 @@ export function ConversationView({ contactEmail, isLoading }: ConversationViewPr
         (email.from.email === session?.user?.email && email.to.some((to) => to.email === contactEmail)),
     )
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-
-  const handleSendReply = async () => {
-    if (!contactEmail || !replyText.trim() || !session?.user?.accessToken) return
-
-    setIsSending(true)
-    try {
-      const newEmail = await sendEmail({
-        accessToken: session.user.accessToken,
-        to: contactEmail,
-        subject: `Re: ${contact?.lastMessageSubject || "No subject"}`,
-        body: replyText,
-      })
-
-      addEmail(newEmail)
-      setReplyText("")
-      toast({
-        title: "Email sent",
-        description: "Your reply has been sent successfully",
-      })
-    } catch (error) {
-      console.error("Failed to send email:", error)
-      toast({
-        title: "Failed to send email",
-        description: "Please try again later",
-        variant: "destructive",
-      })
-    } finally {
-      setIsSending(false)
-    }
-  }
 
   if (!contactEmail) {
     return (
@@ -124,33 +100,47 @@ export function ConversationView({ contactEmail, isLoading }: ConversationViewPr
                           {formatDistanceToNow(new Date(email.date), { addSuffix: true })}
                         </span>
                       </div>
-                      <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
-                        {email.body}
-                      </div>
+                      <div 
+                        className="prose prose-sm dark:prose-invert max-w-none overflow-hidden"
+                        dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(email.body) }}
+                      />
                       {email.attachments && email.attachments.length > 0 && (
-                        <div className="mt-2 space-y-2">
-                          {email.attachments.map((attachment) => (
-                            <div
-                              key={attachment.id}
-                              className="flex items-center gap-2 bg-background/10 rounded-lg p-2 text-sm"
-                            >
-                              <Paperclip className="h-4 w-4" />
-                              <span className="truncate flex-1">{attachment.name}</span>
-                              <span className="text-xs opacity-70">
-                                {Math.round(attachment.size / 1024)}KB
-                              </span>
-                              {attachment.url && (
-                                <a
-                                  href={attachment.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary-foreground/70 hover:text-primary-foreground"
-                                >
-                                  Download
-                                </a>
-                              )}
-                            </div>
-                          ))}
+                        <div className="mt-2 grid grid-cols-2 gap-2">
+                          {email.attachments.map((attachment) => {
+                            const IconComponent = getAttachmentIcon(attachment.mimeType)
+                            const isImage = attachment.mimeType.startsWith("image/")
+
+                            return (
+                              <a
+                                key={attachment.id}
+                                href={`${attachment.url}&access_token=${session?.user?.accessToken}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="group relative flex flex-col gap-1 p-2 bg-background/10 rounded-lg hover:bg-background/20 transition-colors"
+                              >
+                                {isImage ? (
+                                  <div className="aspect-video relative rounded-md overflow-hidden bg-background/20">
+                                    <img
+                                      src={`${attachment.url}&access_token=${session?.user?.accessToken}`}
+                                      alt={attachment.name}
+                                      className="absolute inset-0 w-full h-full object-cover"
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="aspect-video flex items-center justify-center bg-background/20 rounded-md">
+                                    <IconComponent className="h-8 w-8 opacity-50" />
+                                  </div>
+                                )}
+                                <div className="flex items-center gap-2">
+                                  <Paperclip className="h-3 w-3 flex-shrink-0 opacity-50" />
+                                  <span className="text-xs truncate flex-1">{attachment.name}</span>
+                                  <span className="text-xs opacity-70">
+                                    {Math.round(attachment.size / 1024)}KB
+                                  </span>
+                                </div>
+                              </a>
+                            )
+                          })}
                         </div>
                       )}
                     </div>
@@ -167,43 +157,47 @@ export function ConversationView({ contactEmail, isLoading }: ConversationViewPr
         </div>
       </ScrollArea>
 
-      <div className="border-t border-border p-4 bg-card/50 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="max-w-3xl mx-auto">
-          <MessageInput
-            onSend={async (content, attachments) => {
-              if (!contactEmail || !session?.user?.accessToken) return
+        <div className="border-t border-border p-4 bg-card/50 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <div className="max-w-3xl mx-auto">
+            <MessageInput
+              onSend={async (content, attachments) => {
+                if (!contactEmail || !session?.user?.accessToken) return
 
-              setIsSending(true)
-              try {
-                const newEmail = await sendEmail({
-                  accessToken: session.user.accessToken,
-                  to: contactEmail,
-                  subject: `Re: ${contact?.lastMessageSubject || "No subject"}`,
-                  body: content,
-                })
+                setIsSending(true)
+                try {
+                  const newEmail = await sendEmail({
+                    accessToken: session.user.accessToken,
+                    to: contactEmail,
+                    subject: `Re: ${contact?.lastMessageSubject || "No subject"}`,
+                    body: content,
+                  })
 
-                addEmail(newEmail)
-                toast({
-                  title: "Email sent",
-                  description: "Your reply has been sent successfully",
-                })
-              } catch (error) {
-                console.error("Failed to send email:", error)
-                toast({
-                  title: "Failed to send email",
-                  description: "Please try again later",
-                  variant: "destructive",
-                })
-              } finally {
-                setIsSending(false)
-              }
-            }}
-            isLoading={isSending}
-            placeholder={`Reply to ${contact?.name || contactEmail}...`}
-          />
+                  addEmail(newEmail)
+                  toast({
+                    title: "Email sent",
+                    description: "Your reply has been sent successfully",
+                  })
+                } catch (error) {
+                  console.error("Failed to send email:", error)
+                  toast({
+                    title: "Failed to send email",
+                    description: "Please try again later",
+                    variant: "destructive",
+                  })
+                } finally {
+                  setIsSending(false)
+                }
+              }}
+              isLoading={isSending}
+              placeholder={`Reply to ${contact?.name || contactEmail}...`}
+            />
+          </div>
         </div>
-      </div>
     </div>
   )
 }
+
+
+
+
 
