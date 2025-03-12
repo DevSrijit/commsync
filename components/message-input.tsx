@@ -15,6 +15,7 @@ import {
   Redo,
   Highlighter,
   Strikethrough,
+  X,
 } from "lucide-react";
 import Placeholder from "@tiptap/extension-placeholder";
 import Link from "@tiptap/extension-link";
@@ -38,12 +39,16 @@ interface MessageInputProps {
   onSend: (content: string, attachments: File[]) => void;
   isLoading?: boolean;
   placeholder?: string;
+  showSend?: boolean;
+  customSend?: () => void;
 }
 
 export function MessageInput({
   onSend,
   isLoading,
   placeholder,
+  showSend = true,
+  customSend,
 }: MessageInputProps) {
   const [attachments, setAttachments] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -85,7 +90,7 @@ export function MessageInput({
       Strike,
       Highlight.configure({
         HTMLAttributes: {
-          class: 'bg-yellow-200 dark:bg-yellow-800 px-0.5 rounded',
+          class: 'bg-purple-400 dark:bg-purple-300 px-0.5 rounded',
         }
       }),
     ],
@@ -128,8 +133,6 @@ export function MessageInput({
     if (editor && !editor.isEmpty) {
       const content = editor.getHTML();
       onSend(content, attachments);
-      editor.commands.clearContent();
-      setAttachments([]);
     }
   };
 
@@ -380,7 +383,7 @@ export function MessageInput({
                   onClick={() => removeAttachment(index)}
                   className="text-muted-foreground hover:text-foreground"
                 >
-                  ×
+                  <X className="h-5 w-5" />
                 </button>
               </div>
             ))}
@@ -405,14 +408,16 @@ export function MessageInput({
               <Paperclip className="h-4 w-4" />
             </Button>
           </div>
-
+       
+          {showSend && (
           <Button
-            onClick={handleSend}
+            onClick={customSend ? customSend : handleSend}
             disabled={!editor || editor.isEmpty || isLoading}
             className="rounded-full"
           >
             <Send className="h-4 w-4" />
-          </Button>
+          </Button>)}
+
         </div>
       </div>
 
