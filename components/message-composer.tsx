@@ -3,13 +3,12 @@
 import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { MessageInput } from "@/components/message-input";
-import { X, Send, Loader2 } from "lucide-react";
+import { X } from "lucide-react";
 import {
     Dialog,
     DialogContent,
     DialogHeader,
     DialogTitle,
-    DialogFooter,
     DialogClose
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -46,7 +45,13 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
     const { sendMessage, status } = useSendMessage();
     const isSubmitting = status.sending;
 
-    const handleSubmit = async () => {
+    const handleMessageInputSave = (content: string, uploadedAttachments: File[]) => {
+        setMessageContent(content);
+        setAttachments(uploadedAttachments);
+    };
+
+    // Update the handleSubmit to accept current content directly
+    const handleSubmit = async (currentContent?: string, currentAttachments?: File[]) => {
         if (!recipients.trim()) {
             toast({
                 title: "Recipient required",
@@ -56,7 +61,12 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
             return;
         }
 
-        if (!messageContent) {
+        // Use current content if provided, otherwise fall back to state
+        const contentToSend = currentContent || messageContent;
+        const attachmentsToSend = currentAttachments || attachments;
+
+        // Check for actual content, not just messageContent state
+        if (!contentToSend || contentToSend === '<p></p>') {
             toast({
                 title: "Message content required",
                 description: "Please enter a message",
@@ -70,12 +80,11 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
                 platform,
                 recipients,
                 subject,
-                content: messageContent,
-                attachments,
+                content: contentToSend,
+                attachments: attachmentsToSend,
             }, {
                 accessToken: session?.user?.accessToken,
                 onSuccess: (newEmail) => {
-                    // Add to store if email platform
                     if (platform === "email") {
                         addEmail(newEmail);
                     }
@@ -90,14 +99,8 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
             onOpenChange(false);
 
         } catch (error) {
-            // Error handling is done within the sendMessage utility
             console.error("Message sending failed:", error);
         }
-    };
-
-    const handleMessageInputSave = (content: string, uploadedAttachments: File[]) => {
-        setMessageContent(content);
-        setAttachments(uploadedAttachments);
     };
 
     // Function to render different recipient fields based on platform
@@ -164,7 +167,7 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
                 onOpenChange(newOpen);
             }
         }}>
-            <DialogContent className="sm:max-w-[700px] h-[80vh] flex flex-col p-0">
+            <DialogContent className="sm:max-w-[700px] h-[80vh] flex flex-col p-2">
                 <DialogHeader className="px-4 py-3 border-b flex flex-row items-center justify-between">
                     <div className="flex items-center gap-3">
                         <DialogTitle className="text-lg font-medium">New Message</DialogTitle>
@@ -206,7 +209,7 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
                             onSend={handleMessageInputSave}
                             isLoading={isSubmitting}
                             placeholder="Write your message here..."
-                            showSend={true} // maybe add this prop to hide the send button
+                            showSend={true}
                             customSend={handleSubmit}
                         />
                     </div>

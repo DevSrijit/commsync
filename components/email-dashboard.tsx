@@ -13,7 +13,6 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "./ui/resizable";
-import { PenIcon } from "lucide-react";
 
 export function EmailDashboard() {
   const { data: session } = useSession();

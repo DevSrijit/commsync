@@ -40,7 +40,7 @@ interface MessageInputProps {
   isLoading?: boolean;
   placeholder?: string;
   showSend?: boolean;
-  customSend?: () => void;
+  customSend?: (content: string, attachments: File[]) => void;
 }
 
 export function MessageInput({
@@ -408,15 +408,23 @@ export function MessageInput({
               <Paperclip className="h-4 w-4" />
             </Button>
           </div>
-       
+
           {showSend && (
-          <Button
-            onClick={customSend ? customSend : handleSend}
-            disabled={!editor || editor.isEmpty || isLoading}
-            className="rounded-full"
-          >
-            <Send className="h-4 w-4" />
-          </Button>)}
+            <Button
+              onClick={() => {
+                if (editor && !editor.isEmpty) {
+                  const content = editor.getHTML();
+                  // First save content via handleSend to update parent state
+                  onSend(content, attachments);
+                  // Then trigger custom send action if provided, passing current content directly
+                  if (customSend) customSend(content, attachments);
+                }
+              }}
+              disabled={!editor || editor.isEmpty || isLoading}
+              className="rounded-full"
+            >
+              <Send className="h-4 w-4" />
+            </Button>)}
 
         </div>
       </div>
