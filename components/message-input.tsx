@@ -264,7 +264,7 @@ export function MessageInput({
         <Button
           onClick={handleSend}
           disabled={!editor || editor.isEmpty || isLoading}
-          className="rounded-full px-4"
+          className="rounded-full"
         >
           <Send className="h-4 w-4" />
         </Button>

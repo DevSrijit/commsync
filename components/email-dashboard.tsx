@@ -112,7 +112,7 @@ export function EmailDashboard() {
         <ResizableHandle />
 
         {/* Main Area Panel */}
-        <ResizablePanel className="flex flex-col h-full overflow-hidden">
+        <ResizablePanel className="flex flex-col h-full overflow-hidden" defaultSize={85}>
           <ResizablePanelGroup
             direction="horizontal"
             className="flex-1 h-full overflow-hidden"
@@ -143,7 +143,7 @@ export function EmailDashboard() {
             <ResizableHandle />
 
             {/* Conversation View Panel */}
-            <ResizablePanel className="flex flex-col h-full overflow-hidden">
+            <ResizablePanel className="flex flex-col h-full overflow-hidden" defaultSize={70}>
               <ConversationView
                 contactEmail={selectedContact}
                 isLoading={isLoading}

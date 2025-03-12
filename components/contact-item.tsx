@@ -28,7 +28,7 @@ export function ContactItem({ contact, isSelected, onClick }: ContactItemProps) 
           </span>
         </div>
         <p className="text-sm text-muted-foreground truncate mb-2">{contact.lastMessageSubject}</p>
-        <div className="flex overflow-x-auto scrollbar-none scroll-m-2">
+        <div className="flex overflow-x-auto scroll-smooth">
           {contact.labels.map((label) => (
             <Badge key={label} variant="outline" className="text-xs bg-neutral-900 whitespace-nowrap mr-1">
               {displayLabels(label)}
