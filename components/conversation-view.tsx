@@ -17,6 +17,8 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
+import { useEffect } from "react";
+import { fetchEmails } from "@/lib/gmail-api";
 
 interface ConversationViewProps {
   contactEmail: string | null;
@@ -40,8 +42,9 @@ export function ConversationView({
   isLoading,
 }: ConversationViewProps) {
   const { data: session } = useSession();
-  const { emails, contacts, addEmail } = useEmailStore();
+  const { emails, contacts, addEmail, setEmails } = useEmailStore();
   const [isSending, setIsSending] = useState(false);
+  const [isRefetching, setIsRefetching] = useState(false);
   const { toast } = useToast();
 
   const contact = contacts.find((c) => c.email === contactEmail);
@@ -56,6 +59,71 @@ export function ConversationView({
           email.to.some((to) => to.email === contactEmail))
     )
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  // Add useEffect to handle empty conversation
+  useEffect(() => {
+    const fetchConversation = async () => {
+      if (
+        !isLoading &&
+        !isRefetching &&
+        contactEmail &&
+        session?.user?.accessToken &&
+        contact && // Make sure we have a contact
+        conversation.length === 0 // Only fetch if conversation is empty
+      ) {
+        setIsRefetching(true);
+        toast({
+          title: "Loading conversation",
+          description: "Fetching messages for this contact...",
+        });
+
+        try {
+          const fetchedEmails = await fetchEmails(session.user.accessToken);
+          
+          // Filter emails for this contact
+          const relevantEmails = fetchedEmails.filter(
+            (email) =>
+              (email.from.email === contactEmail &&
+                email.to.some((to) => to.email === session?.user?.email)) ||
+              (email.from.email === session?.user?.email &&
+                email.to.some((to) => to.email === contactEmail))
+          );
+
+          if (relevantEmails.length > 0) {
+            // Update local storage with new emails
+            const existingEmails = new Map(emails.map(e => [e.id, e]));
+            relevantEmails.forEach(email => existingEmails.set(email.id, email));
+            
+            setEmails(Array.from(existingEmails.values()));
+            
+            toast({
+              title: "Conversation loaded",
+              description: `Found ${relevantEmails.length} messages`,
+            });
+          } else {
+            toast({
+              title: "No messages found",
+              description: "Start a new conversation",
+            });
+          }
+        } catch (error) {
+          console.error("Error fetching conversation:", error);
+          toast({
+            title: "Error loading conversation",
+            description: "Please try again later",
+            variant: "destructive",
+          });
+        } finally {
+          setIsRefetching(false);
+        }
+      }
+    };
+
+    fetchConversation();
+  }, [contactEmail, isLoading, isRefetching, session?.user?.accessToken, contact, conversation.length, emails, setEmails, toast]);
+
+  // Update loading state to include refetching
+  const isLoadingState = isLoading || isRefetching;
 
   if (!contactEmail) {
     return (
@@ -98,8 +166,8 @@ export function ConversationView({
       >
         <ScrollArea className="flex-1">
           <div className="space-y-4 max-w-5xl mx-auto p-4">
-            {isLoading ? (
-              // Show skeleton placeholders while loading
+            {isLoadingState ? (
+              // Show skeleton placeholders while loading or refetching
               <div className="space-y-4">
                 {Array.from({ length: 3 }).map((_, i) => (
                   <div key={i} className="flex flex-col space-y-2">

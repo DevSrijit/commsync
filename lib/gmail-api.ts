@@ -47,16 +47,63 @@ export async function fetchEmails(accessToken: string): Promise<Email[]> {
       })
     );
 
-    // Filter out failed requests and return successful ones
-    return emails
+    // Filter out failed requests and get successful ones
+    const fetchedEmails = emails
       .filter(
         (result): result is PromiseFulfilledResult<Email> =>
           result.status === "fulfilled" && result.value !== null
       )
       .map((result) => result.value);
+
+    // Sync with local storage
+    syncWithLocalStorage(fetchedEmails);
+
+    return fetchedEmails;
   } catch (error) {
     console.error("Error fetching emails:", error);
     return [];
+  }
+}
+
+// Add new sync function
+function syncWithLocalStorage(gmailEmails: Email[]) {
+  try {
+    // Create a map of fetched emails for quick lookup
+    const gmailEmailMap = new Map(gmailEmails.map(email => [email.id, email]));
+    
+    // Get current local storage
+    const localStorageEmails = localStorage.getItem('emails');
+    let currentEmails: Email[] = localStorageEmails ? JSON.parse(localStorageEmails) : [];
+    
+    // Filter out emails that no longer exist in Gmail
+    currentEmails = currentEmails.filter(email => gmailEmailMap.has(email.id));
+    
+    // Update or add new emails from Gmail
+    gmailEmails.forEach(gmailEmail => {
+      const existingIndex = currentEmails.findIndex(e => e.id === gmailEmail.id);
+      if (existingIndex !== -1) {
+        // Update existing email if content is different
+        if (JSON.stringify(currentEmails[existingIndex]) !== JSON.stringify(gmailEmail)) {
+          currentEmails[existingIndex] = gmailEmail;
+        }
+      } else {
+        // Add new email
+        currentEmails.push(gmailEmail);
+      }
+    });
+    
+    // Sort by date (newest first)
+    currentEmails.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    
+    // Update local storage
+    localStorage.setItem('emails', JSON.stringify(currentEmails));
+    
+    // Update timestamp
+    localStorage.setItem('emailsTimestamp', Date.now().toString());
+    
+    console.log(`Synced ${gmailEmails.length} emails with local storage`);
+  } catch (error) {
+    console.error('Error syncing with local storage:', error);
   }
 }
 
