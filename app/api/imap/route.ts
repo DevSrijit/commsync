@@ -23,24 +23,32 @@ export async function POST(req: NextRequest) {
   try {
     const { action, account, data } = await req.json();
 
-    // Securely store the account information
+    // Save account information securely.
     if (action === "saveAccount") {
-      // Encrypt sensitive information
-      const encrypted = encryptData(JSON.stringify(account));
+      // Convert account fields to match database schema
+      const processedAccount = {
+        name: account.label || account.name || "Email Account",
+        host: account.host,
+        port: account.port,
+        user: account.username || account.user, // Handle either field
+        password: account.password,
+        secure: account.secure,
+      };
 
-      // Save to database
+      const encrypted = encryptData(JSON.stringify(processedAccount));
+
       const savedAccount = await prisma.ImapAccount.upsert({
         where: {
           id: account.id || "new",
           userId: session.user.id,
         },
         update: {
-          name: account.name,
+          name: processedAccount.name,
           credentials: encrypted,
           lastSync: new Date(),
         },
         create: {
-          name: account.name,
+          name: processedAccount.name,
           credentials: encrypted,
           userId: session.user.id,
           lastSync: new Date(),
@@ -50,9 +58,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, id: savedAccount.id });
     }
 
-    // Test connection
+    // Test connection using the provided account credentials.
     if (action === "testConnection") {
-      const success = await testImapConnection(account);
+      // Handle field mapping between UI and service
+      const testAccount: ImapAccount = {
+        host: account.host,
+        port: account.port,
+        username: account.username, // From UI
+        user: account.user,         // Alternative field
+        password: account.password,
+        secure: account.secure,
+      };
+      const success = await testImapConnection(testAccount);
       return NextResponse.json({ success });
     }
 
@@ -97,7 +114,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
-    // Mark emails as read/unread
+    // Mark emails as read/unread or flagged/unflagged
     if (action === "markMessages") {
       const { messageIds, markAs } = data;
       await markImapMessages(account, messageIds, markAs);
@@ -148,10 +165,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         id: account.id,
         name: account.name,
+        label: account.name, // Add this for the UI
         host: decrypted.host,
         port: decrypted.port,
         user: decrypted.user,
-        // Not returning password for security
+        username: decrypted.user, // Add this for the UI
         secure: decrypted.secure,
         lastSync: account.lastSync,
       });
@@ -168,7 +186,13 @@ export async function GET(req: NextRequest) {
         },
       });
 
-      return NextResponse.json({ accounts });
+      // Map to include label for UI compatibility
+      const mappedAccounts = accounts.map(account => ({
+        ...account,
+        label: account.name
+      }));
+
+      return NextResponse.json({ accounts: mappedAccounts });
     }
   } catch (error: any) {
     console.error("IMAP API error:", error);

@@ -12,7 +12,7 @@ export const authOptions: NextAuthOptions = {
           access_type: "offline",
           response_type: "code",
           scope:
-            "openid email profile https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send",
+            "openid email profile https://mail.google.com/",
         },
       },
     }),

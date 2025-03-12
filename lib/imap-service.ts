@@ -1,14 +1,15 @@
 import Imap from "imap";
 import { simpleParser } from "mailparser";
 import nodemailer from "nodemailer";
-import { promisify } from "util";
 
 export interface ImapAccount {
   id?: string;
-  name: string;
+  label?: string;  // Added to match UI form
+  name?: string;   // Keep for backward compatibility
   host: string;
   port: number;
-  user: string;
+  user?: string;   // For backward compatibility
+  username?: string;  // Added to match UI form
   password: string;
   secure: boolean;
 }
@@ -39,13 +40,20 @@ export async function testImapConnection(
   account: ImapAccount
 ): Promise<boolean> {
   return new Promise((resolve) => {
+    // Handle either username or user field
+    const username = account.username || account.user || '';
+    
     const imap = new Imap({
-      user: account.user,
+      user: username,
       password: account.password,
       host: account.host,
       port: account.port,
       tls: account.secure,
-      tlsOptions: { rejectUnauthorized: false },
+      tlsOptions: {
+        rejectUnauthorized: false,
+        checkServerIdentity: () => undefined, // disable hostname verification
+      },
+      authTimeout: 10000, // Increase timeout
     });
 
     imap.once("ready", () => {
@@ -55,6 +63,7 @@ export async function testImapConnection(
 
     imap.once("error", (err: Error) => {
       console.error("IMAP connection error:", err);
+      imap.end(); // ensure the connection is closed on error
       resolve(false);
     });
 
@@ -70,32 +79,31 @@ export async function fetchImapEmails(
   options: FetchOptions = {}
 ): Promise<ImapFetchResult> {
   const { page = 1, pageSize = 20, filter = {} } = options;
+  // Handle either username or user field
+  const username = account.username || account.user || '';
 
   return new Promise<ImapFetchResult>((resolve, reject) => {
     const imap = new Imap({
-      user: account.user,
+      user: username,
       password: account.password,
       host: account.host,
       port: account.port,
       tls: account.secure,
-      tlsOptions: { rejectUnauthorized: false },
+      tlsOptions: {
+        rejectUnauthorized: false,
+        checkServerIdentity: () => undefined, // disable hostname verification
+      },
     });
 
-    const messages: any[] = [];
-    let total = 0;
-
     imap.once("ready", () => {
-      imap.openBox("INBOX", true, (err: Error | null, box: Imap.Box) => {
+      imap.openBox("INBOX", true, (err, box) => {
         if (err) {
           imap.end();
           return reject(err);
         }
 
-        total = box.messages.total;
-
-        // Build search criteria from filters
+        // Build search criteria based on provided filters
         const searchCriteria: any[] = [];
-
         if (filter.since) searchCriteria.push(["SINCE", filter.since]);
         if (filter.before) searchCriteria.push(["BEFORE", filter.before]);
         if (filter.from) searchCriteria.push(["FROM", filter.from]);
@@ -107,88 +115,96 @@ export async function fetchImapEmails(
         if (filter.flagged !== undefined) {
           searchCriteria.push(filter.flagged ? "FLAGGED" : "UNFLAGGED");
         }
-
-        // Default search if no filters provided
         const criteria = searchCriteria.length > 0 ? searchCriteria : ["ALL"];
 
-        // Calculate start and end for pagination
-        const start = Math.max(1, total - page * pageSize + 1);
-        const end = Math.max(1, total - (page - 1) * pageSize);
-
-        imap.search(criteria, (err: Error | null, results: number[]) => {
+        imap.search(criteria, (err, results) => {
           if (err) {
             imap.end();
             return reject(err);
           }
 
-          if (results.length === 0) {
+          if (!results || results.length === 0) {
             imap.end();
-            return resolve({ messages: [], total });
+            return resolve({ messages: [], total: 0 });
           }
 
-          // Paginate results
-          const paginatedResults = results.slice(
-            Math.max(0, results.length - end),
-            Math.max(0, results.length - start + 1)
-          );
+          // Pagination: results are in ascending order (oldest first)
+          // Slice from the end to get the most recent messages.
+          const startIndex = Math.max(0, results.length - page * pageSize);
+          const endIndex = results.length - (page - 1) * pageSize;
+          const paginatedResults = results.slice(startIndex, endIndex);
 
           if (paginatedResults.length === 0) {
             imap.end();
             return resolve({ messages: [], total: results.length });
           }
 
+          // Fetch the entire raw message so we can parse it with simpleParser.
           const fetch = imap.fetch(paginatedResults, {
-            bodies: ["HEADER.FIELDS (FROM TO SUBJECT DATE)", "TEXT"],
+            bodies: "",
             struct: true,
           });
 
-          fetch.on("message", (msg: Imap.ImapMessage, seqno: number) => {
-            const message: any = { id: seqno };
+          const messagePromises: Promise<any>[] = [];
 
-            msg.on(
-              "body",
-              (
-                stream: NodeJS.ReadableStream,
-                info: Imap.ImapMessageBodyInfo
-              ) => {
-                let buffer = "";
+          fetch.on("message", (msg, seqno) => {
+            let buffer = "";
+            let attributes: any = null;
 
-                stream.on("data", (chunk: Buffer) => {
-                  buffer += chunk.toString("utf8");
-                });
-
-                stream.once("end", () => {
-                  if (info.which === "TEXT") {
-                    message.body = buffer;
-                  } else {
-                    message.header = Imap.parseHeader(buffer);
-                  }
-                });
-              }
-            );
-
-            msg.once("attributes", (attrs: Imap.ImapMessageAttributes) => {
-              message.attributes = attrs;
+            msg.on("body", (stream, info) => {
+              stream.on("data", (chunk: Buffer) => {
+                buffer += chunk.toString("utf8");
+              });
             });
 
-            msg.once("end", () => {
-              messages.push(message);
+            msg.once("attributes", (attrs) => {
+              attributes = attrs;
             });
+
+            const msgPromise = new Promise((resolveMsg) => {
+              msg.once("end", () => {
+                simpleParser(buffer)
+                  .then((parsed) => {
+                    resolveMsg({
+                      id: seqno,
+                      header: parsed.headers,
+                      body: parsed.text,
+                      html: parsed.html,
+                      attachments: parsed.attachments,
+                      attributes,
+                    });
+                  })
+                  .catch((err) => {
+                    console.error("Parsing error:", err);
+                    resolveMsg({ id: seqno, error: err, attributes });
+                  });
+              });
+            });
+
+            messagePromises.push(msgPromise);
           });
 
           fetch.once("error", (err: Error) => {
-            reject(err);
+            imap.end();
+            return reject(err);
           });
 
-          fetch.once("end", () => {
-            imap.end();
-            resolve({ messages, total: results.length });
+          fetch.once("end", async () => {
+            try {
+              const messages = await Promise.all(messagePromises);
+              imap.end();
+              resolve({ messages, total: results.length });
+            } catch (err) {
+              imap.end();
+              reject(err);
+            }
           });
         });
       });
     });
 
     imap.once("error", (err: Error) => {
+      imap.end();
       reject(err);
     });
 
@@ -218,12 +234,15 @@ export async function sendImapEmail({
   cc?: string | string[];
   bcc?: string | string[];
 }) {
+  // Handle either username or user field
+  const username = account.username || account.user || '';
+
   const transporter = nodemailer.createTransport({
     host: account.host,
     port: account.port,
     secure: account.secure,
     auth: {
-      user: account.user,
+      user: username,
       pass: account.password,
     },
     tls: {
@@ -232,7 +251,7 @@ export async function sendImapEmail({
   });
 
   const mailOptions = {
-    from: account.user,
+    from: username,
     to,
     cc,
     bcc,
@@ -242,7 +261,8 @@ export async function sendImapEmail({
     attachments,
   };
 
-  return transporter.sendMail(mailOptions);
+  // Await the sendMail call to ensure the email is sent before returning.
+  return await transporter.sendMail(mailOptions);
 }
 
 /**
@@ -252,9 +272,12 @@ export async function deleteImapEmails(
   account: ImapAccount,
   messageIds: number[]
 ): Promise<boolean> {
+  // Handle either username or user field
+  const username = account.username || account.user || '';
+
   return new Promise((resolve, reject) => {
     const imap = new Imap({
-      user: account.user,
+      user: username,
       password: account.password,
       host: account.host,
       port: account.port,
@@ -263,19 +286,19 @@ export async function deleteImapEmails(
     });
 
     imap.once("ready", () => {
-      imap.openBox("INBOX", false, (err: Error | null) => {
+      imap.openBox("INBOX", false, (err) => {
         if (err) {
           imap.end();
           return reject(err);
         }
 
-        imap.setFlags(messageIds, "\\Deleted", (err: Error | null) => {
+        imap.setFlags(messageIds, "\\Deleted", (err) => {
           if (err) {
             imap.end();
             return reject(err);
           }
 
-          imap.expunge((err: Error | null) => {
+          imap.expunge((err) => {
             if (err) {
               imap.end();
               return reject(err);
@@ -289,6 +312,7 @@ export async function deleteImapEmails(
     });
 
     imap.once("error", (err: Error) => {
+      imap.end();
       reject(err);
     });
 
@@ -307,9 +331,12 @@ export async function markImapMessages(
     flagged?: boolean;
   }
 ): Promise<boolean> {
+  // Handle either username or user field
+  const username = account.username || account.user || '';
+
   return new Promise((resolve, reject) => {
     const imap = new Imap({
-      user: account.user,
+      user: username,
       password: account.password,
       host: account.host,
       port: account.port,
@@ -318,7 +345,7 @@ export async function markImapMessages(
     });
 
     imap.once("ready", () => {
-      imap.openBox("INBOX", false, (err: Error | null) => {
+      imap.openBox("INBOX", false, (err) => {
         if (err) {
           imap.end();
           return reject(err);
@@ -337,7 +364,7 @@ export async function markImapMessages(
           return resolve(true);
         }
 
-        imap.setFlags(messageIds, flags, (err: Error | null) => {
+        imap.setFlags(messageIds, flags, (err) => {
           if (err) {
             imap.end();
             return reject(err);
@@ -350,6 +377,7 @@ export async function markImapMessages(
     });
 
     imap.once("error", (err: Error) => {
+      imap.end();
       reject(err);
     });
 
