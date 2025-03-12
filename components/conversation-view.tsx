@@ -5,7 +5,7 @@ import { MessageInput } from "@/components/message-input";
 import { formatDistanceToNow } from "date-fns";
 import { useEmailStore } from "@/lib/email-store";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useSession } from "next-auth/react";
 import { sendEmail } from "@/lib/gmail-api";
 import { useToast } from "@/hooks/use-toast";
@@ -27,6 +27,12 @@ const getAttachmentIcon = (mimeType: string) => {
   if (mimeType.startsWith("image/")) return Image;
   if (mimeType.startsWith("text/")) return FileText;
   return File;
+};
+
+// Add this helper function at the top of the file
+const getGravatarUrl = (email: string) => {
+  const hash = email.trim().toLowerCase();
+  return `https://www.gravatar.com/avatar/${hash}?d=404`;
 };
 
 export function ConversationView({
@@ -73,7 +79,8 @@ export function ConversationView({
       >
         <div className="flex items-center">
           <Avatar className="h-10 w-10 mr-4">
-            <AvatarFallback>{contact?.name.charAt(0) || "?"}</AvatarFallback>
+            <AvatarImage src={getGravatarUrl(contactEmail || "")} />
+            <AvatarFallback>{contact?.name?.charAt(0) || "?"}</AvatarFallback>
           </Avatar>
           <div>
             <h2 className="font-medium">{contact?.name || contactEmail}</h2>
@@ -114,8 +121,9 @@ export function ConversationView({
                     {/* Avatar on the left if it's from the contact */}
                     {!isFromMe && (
                       <Avatar className="h-8 w-8">
+                        <AvatarImage src={getGravatarUrl(email.from.email)} />
                         <AvatarFallback>
-                          {contact?.name.charAt(0) || "?"}
+                          {contact?.name?.charAt(0) || "?"}
                         </AvatarFallback>
                       </Avatar>
                     )}
@@ -163,13 +171,16 @@ export function ConversationView({
                                   onClick={(e) => {
                                     e.preventDefault();
                                     if (attachment.url) {
-                                      window.open(attachment.url, '_blank');
+                                      window.open(attachment.url, "_blank");
                                       fetch(attachment.url, {
                                         headers: {
-                                          Authorization: `Bearer ${session?.user?.accessToken}`
-                                        }
-                                      }).catch(error => {
-                                        console.error('Error downloading attachment:', error);
+                                          Authorization: `Bearer ${session?.user?.accessToken}`,
+                                        },
+                                      }).catch((error) => {
+                                        console.error(
+                                          "Error downloading attachment:",
+                                          error
+                                        );
                                       });
                                     }
                                   }}
@@ -207,6 +218,7 @@ export function ConversationView({
                     {/* Avatar on the right if it's from me */}
                     {isFromMe && (
                       <Avatar className="h-8 w-8">
+                        <AvatarImage src={session?.user?.image || ""} />
                         <AvatarFallback>
                           {session?.user?.name?.charAt(0) || "U"}
                         </AvatarFallback>
@@ -238,9 +250,7 @@ export function ConversationView({
               const newEmail = await sendEmail({
                 accessToken: session.user.accessToken,
                 to: contactEmail,
-                subject: `Re: ${
-                  contact?.lastMessageSubject || "No subject"
-                }`,
+                subject: `Re: ${contact?.lastMessageSubject || "No subject"}`,
                 body: content,
               });
 

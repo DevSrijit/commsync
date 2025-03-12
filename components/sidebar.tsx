@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { useEmailStore } from "@/lib/email-store"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
 export function Sidebar() {
   const { data: session } = useSession()
@@ -25,7 +26,10 @@ export function Sidebar() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="w-full justify-start">
-              <User className="mr-2 h-4 w-4" />
+              <Avatar className="h-6 w-6 mr-2">
+                <AvatarImage src={session?.user?.image || ''} />
+                <AvatarFallback>{session?.user?.name?.[0] || 'U'}</AvatarFallback>
+              </Avatar>
               {session?.user?.name || "User"}
               <ChevronDown className="ml-auto h-4 w-4" />
             </Button>
