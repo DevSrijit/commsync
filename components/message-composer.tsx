@@ -50,15 +50,15 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
         setAttachments(uploadedAttachments);
     };
 
-    // Update the handleSubmit to accept current content directly
-    const handleSubmit = async (currentContent?: string, currentAttachments?: File[]) => {
+    // Update handleSubmit to return a promise that resolves to boolean
+    const handleSubmit = async (currentContent?: string, currentAttachments?: File[]): Promise<boolean> => {
         if (!recipients.trim()) {
             toast({
                 title: "Recipient required",
                 description: "Please enter at least one recipient",
                 variant: "destructive",
             });
-            return;
+            return false;
         }
 
         // Use current content if provided, otherwise fall back to state
@@ -72,7 +72,7 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
                 description: "Please enter a message",
                 variant: "destructive",
             });
-            return;
+            return false;
         }
 
         try {
@@ -98,8 +98,10 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
             setAttachments([]);
             onOpenChange(false);
 
+            return true;
         } catch (error) {
             console.error("Message sending failed:", error);
+            return false;
         }
     };
 

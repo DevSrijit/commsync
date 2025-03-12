@@ -40,7 +40,7 @@ interface MessageInputProps {
   isLoading?: boolean;
   placeholder?: string;
   showSend?: boolean;
-  customSend?: (content: string, attachments: File[]) => void;
+  customSend?: (content: string, attachments: File[]) => Promise<boolean> | void;
 }
 
 export function MessageInput({
@@ -154,6 +154,13 @@ export function MessageInput({
   const removeAttachment = (index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   };
+
+  const clearEditor = useCallback(() => {
+    if (editor) {
+      editor.commands.clearContent(true);
+    }
+    setAttachments([]);
+  }, [editor]);
 
   return (
     <>
@@ -411,13 +418,28 @@ export function MessageInput({
 
           {showSend && (
             <Button
-              onClick={() => {
+              onClick={async () => {
                 if (editor && !editor.isEmpty) {
                   const content = editor.getHTML();
                   // First save content via handleSend to update parent state
                   onSend(content, attachments);
+
                   // Then trigger custom send action if provided, passing current content directly
-                  if (customSend) customSend(content, attachments);
+                  if (customSend) {
+                    try {
+                      const result = await Promise.resolve(customSend(content, attachments));
+                      // If customSend returns successfully or returns true, clear the editor
+                      if (result !== false) {
+                        clearEditor();
+                      }
+                    } catch (error) {
+                      // Don't clear the editor if there was an error
+                      console.error("Error sending message:", error);
+                    }
+                  } else {
+                    // If no customSend provided, we assume success and clear
+                    clearEditor();
+                  }
                 }
               }}
               disabled={!editor || editor.isEmpty || isLoading}
