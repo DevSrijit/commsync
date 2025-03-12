@@ -1,95 +1,144 @@
-"use client"
+"use client";
 
-import { useEffect, useState } from "react"
-import { useSession } from "next-auth/react"
+import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 
-import { Sidebar } from "@/components/sidebar"
-import { EmailList } from "@/components/email-list"
-import { ConversationView } from "@/components/conversation-view"
-import { useEmailStore } from "@/lib/email-store"
-import { fetchEmails } from "@/lib/gmail-api"
+import { Sidebar } from "@/components/sidebar";
+import { EmailList } from "@/components/email-list";
+import { ConversationView } from "@/components/conversation-view";
+import { useEmailStore } from "@/lib/email-store";
+import { fetchEmails } from "@/lib/gmail-api";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "./ui/resizable";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 export function EmailDashboard() {
-  const { data: session } = useSession()
-  const [selectedContact, setSelectedContact] = useState<string | null>(null)
-  const { emails, setEmails, contacts } = useEmailStore()
-  const [isLoading, setIsLoading] = useState(true)
+  const { data: session } = useSession();
+  const [selectedContact, setSelectedContact] = useState<string | null>(null);
+  const { emails, setEmails, contacts } = useEmailStore();
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     // Clear email cache when session changes
     if (!session?.user?.accessToken) {
-      localStorage.removeItem("emails")
-      localStorage.removeItem("emailsTimestamp")
-      setEmails([])
-      return
+      localStorage.removeItem("emails");
+      localStorage.removeItem("emailsTimestamp");
+      setEmails([]);
+      return;
     }
 
     const loadEmails = async () => {
       if (session?.user?.accessToken) {
-        setIsLoading(true)
+        setIsLoading(true);
         try {
           // First try to load from local storage
-          const cachedEmails = localStorage.getItem("emails")
-          const cachedTimestamp = localStorage.getItem("emailsTimestamp")
+          const cachedEmails = localStorage.getItem("emails");
+          const cachedTimestamp = localStorage.getItem("emailsTimestamp");
 
-          let shouldFetch = true
+          let shouldFetch = true;
           if (cachedEmails && cachedTimestamp) {
-            const timestamp = Number.parseInt(cachedTimestamp)
+            const timestamp = Number.parseInt(cachedTimestamp);
             // If cache is less than 5 minutes old, use it
             if (Date.now() - timestamp < 5 * 60 * 1000) {
-              setEmails(JSON.parse(cachedEmails))
-              shouldFetch = false
+              setEmails(JSON.parse(cachedEmails));
+              shouldFetch = false;
             }
           }
 
           if (shouldFetch) {
-            const fetchedEmails = await fetchEmails(session.user.accessToken)
-            setEmails(fetchedEmails)
+            const fetchedEmails = await fetchEmails(session.user.accessToken);
+            setEmails(fetchedEmails);
 
             // Cache the emails
-            localStorage.setItem("emails", JSON.stringify(fetchedEmails))
-            localStorage.setItem("emailsTimestamp", Date.now().toString())
+            localStorage.setItem("emails", JSON.stringify(fetchedEmails));
+            localStorage.setItem("emailsTimestamp", Date.now().toString());
           }
         } catch (error) {
-          console.error("Failed to load emails:", error)
+          console.error("Failed to load emails:", error);
         } finally {
-          setIsLoading(false)
+          setIsLoading(false);
         }
       }
-    }
+    };
 
-    loadEmails()
+    loadEmails();
 
     // Set up polling for new emails every 2 minutes
-    const intervalId = setInterval(
-      () => {
-        if (session?.user?.accessToken) {
-          loadEmails()
-        }
-      },
-      2 * 60 * 1000,
-    )
+    const intervalId = setInterval(() => {
+      if (session?.user?.accessToken) {
+        loadEmails();
+      }
+    }, 2 * 60 * 1000);
 
-    return () => clearInterval(intervalId)
-  }, [session, setEmails])
+    return () => clearInterval(intervalId);
+  }, [session, setEmails]);
 
   // Set the first contact as selected by default when contacts load
   useEffect(() => {
     if (contacts.length > 0 && !selectedContact) {
-      setSelectedContact(contacts[0].email)
+      setSelectedContact(contacts[0].email);
     }
-  }, [contacts, selectedContact])
+  }, [contacts, selectedContact]);
 
   return (
-    <div className="flex h-screen bg-background">
-      <Sidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <div className="flex flex-1 overflow-hidden">
-          <EmailList isLoading={isLoading} selectedContact={selectedContact} onSelectContact={setSelectedContact} />
-          <ConversationView contactEmail={selectedContact} isLoading={isLoading} />
-        </div>
-      </div>
-    </div>
-  )
-}
+    /**
+     * Full-screen container with overflow hidden so only the panels themselves scroll.
+     */
+    <div className="flex h-screen w-screen overflow-hidden bg-background">
+      <ResizablePanelGroup
+        direction="horizontal"
+        className="flex-1 h-full overflow-hidden"
+      >
+        {/* Sidebar Panel */}
+        <ResizablePanel
+          defaultSize={15}
+          minSize={15}
+          maxSize={20}
+          className="h-full overflow-hidden"
+        >
+          <Sidebar />
+        </ResizablePanel>
 
+        <ResizableHandle />
+
+        {/* Main Area Panel */}
+        <ResizablePanel className="flex flex-col h-full overflow-hidden">
+          <ResizablePanelGroup
+            direction="horizontal"
+            className="flex-1 h-full overflow-hidden"
+          >
+            {/* Contact List Panel */}
+            <ResizablePanel
+              defaultSize={30}
+              minSize={25}
+              maxSize={40}
+              className="h-full"
+            >
+                <div className="w-full h-full z-0">
+                  <EmailList
+                    isLoading={isLoading}
+                    selectedContact={selectedContact}
+                    onSelectContact={setSelectedContact}
+                    className="w-full"
+                  />
+                </div>
+            </ResizablePanel>
+
+            <ResizableHandle />
+
+            {/* Conversation View Panel */}
+            <ResizablePanel className="flex flex-col h-full overflow-hidden">
+              <ConversationView
+                contactEmail={selectedContact}
+                isLoading={isLoading}
+              />
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </ResizablePanel>
+      </ResizablePanelGroup>
+    </div>
+  );
+}

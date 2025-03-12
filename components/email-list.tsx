@@ -1,33 +1,45 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Search } from "lucide-react"
+import { useState } from "react";
+import { Search } from "lucide-react";
 
-import { Input } from "@/components/ui/input"
-import { useEmailStore } from "@/lib/email-store"
-import { ContactItem } from "@/components/contact-item"
-import { Skeleton } from "@/components/ui/skeleton"
+import { Input } from "@/components/ui/input";
+import { useEmailStore } from "@/lib/email-store";
+import { ContactItem } from "@/components/contact-item";
+import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 interface EmailListProps {
-  isLoading: boolean
-  selectedContact: string | null
-  onSelectContact: (email: string) => void
+  isLoading: boolean;
+  selectedContact: string | null;
+  onSelectContact: (email: string) => void;
+  className?: string;
 }
 
-export function EmailList({ isLoading, selectedContact, onSelectContact }: EmailListProps) {
-  const { contacts } = useEmailStore()
-  const [searchQuery, setSearchQuery] = useState("")
+export function EmailList({
+  isLoading,
+  selectedContact,
+  onSelectContact,
+  className,
+}: EmailListProps) {
+  const { contacts } = useEmailStore();
+  const [searchQuery, setSearchQuery] = useState("");
 
   const filteredContacts = contacts.filter(
     (contact) =>
       contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      contact.email.toLowerCase().includes(searchQuery.toLowerCase()),
-  )
+      contact.email.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
-    <div className="min-w-[320px] max-w-[320px] border-r border-border flex flex-col overflow-hidden">
+    <div
+      className={cn(
+        "max-w-full border-r border-border flex flex-col w-full z-10 h-full",
+        className
+      )}
+    >
       <div className="p-4 border-b border-border">
-        <div className="relative">
+        <div className="sticky top-0">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search"
@@ -38,7 +50,7 @@ export function EmailList({ isLoading, selectedContact, onSelectContact }: Email
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-y-auto">
         {isLoading ? (
           <div className="p-4 space-y-4">
             {Array.from({ length: 5 }).map((_, i) => (
@@ -65,6 +77,5 @@ export function EmailList({ isLoading, selectedContact, onSelectContact }: Email
         )}
       </div>
     </div>
-  )
+  );
 }
-

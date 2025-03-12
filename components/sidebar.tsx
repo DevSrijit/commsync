@@ -20,7 +20,7 @@ export function Sidebar() {
   const archiveCount = emails.filter((email) => email.labels.includes("ARCHIVE")).length
 
   return (
-    <div className="w-64 border-r border-border bg-card flex flex-col h-full">
+    <div className="w-full border-r border-border bg-card flex flex-col h-full">
       <div className="p-4 border-b border-border flex-shrink-0">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
