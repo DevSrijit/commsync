@@ -33,8 +33,9 @@ const getAttachmentIcon = (mimeType: string) => {
 
 // Add this helper function at the top of the file
 const getGravatarUrl = (email: string) => {
-  const hash = email.trim().toLowerCase();
-  return `https://www.gravatar.com/avatar/${hash}?d=404`;
+  const firstChar = email.charAt(0).toLowerCase();
+  const img = `https://avatar.iran.liara.run/username?username=${firstChar}`
+  return img;
 };
 
 export function ConversationView({
@@ -79,7 +80,7 @@ export function ConversationView({
 
         try {
           const fetchedEmails = await fetchEmails(session.user.accessToken);
-          
+
           // Filter emails for this contact
           const relevantEmails = fetchedEmails.filter(
             (email) =>
@@ -93,9 +94,9 @@ export function ConversationView({
             // Update local storage with new emails
             const existingEmails = new Map(emails.map(e => [e.id, e]));
             relevantEmails.forEach(email => existingEmails.set(email.id, email));
-            
+
             setEmails(Array.from(existingEmails.values()));
-            
+
             toast({
               title: "Conversation loaded",
               description: `Found ${relevantEmails.length} messages`,
@@ -182,9 +183,8 @@ export function ConversationView({
                 return (
                   <div
                     key={email.id}
-                    className={`flex ${
-                      isFromMe ? "justify-end" : "justify-start"
-                    } gap-3 items-end`}
+                    className={`flex ${isFromMe ? "justify-end" : "justify-start"
+                      } gap-3 items-end`}
                   >
                     {/* Avatar on the left if it's from the contact */}
                     {!isFromMe && (
@@ -197,11 +197,10 @@ export function ConversationView({
                     )}
                     {/* Message bubble */}
                     <div
-                      className={`max-w-[85%] rounded-2xl p-4 ${
-                        isFromMe
-                          ? "bg-primary text-primary-foreground rounded-br-sm"
-                          : "bg-muted rounded-bl-sm"
-                      }`}
+                      className={`max-w-[85%] rounded-2xl p-4 ${isFromMe
+                        ? "bg-primary text-primary-foreground rounded-br-sm"
+                        : "bg-muted rounded-bl-sm"
+                        }`}
                     >
                       <div className="flex flex-col gap-1">
                         <div className="flex justify-between items-baseline gap-4">
@@ -345,3 +344,4 @@ export function ConversationView({
     </ResizablePanelGroup>
   );
 }
+

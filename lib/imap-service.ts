@@ -4,12 +4,12 @@ import nodemailer from "nodemailer";
 
 export interface ImapAccount {
   id?: string;
-  label?: string;  // Added to match UI form
-  name?: string;   // Keep for backward compatibility
+  label?: string; // Added to match UI form
+  name?: string; // Keep for backward compatibility
   host: string;
   port: number;
-  user?: string;   // For backward compatibility
-  username?: string;  // Added to match UI form
+  user?: string; // For backward compatibility
+  username?: string; // Added to match UI form
   password: string;
   secure: boolean;
   lastSync?: Date;
@@ -42,8 +42,8 @@ export async function testImapConnection(
 ): Promise<boolean> {
   return new Promise((resolve) => {
     // Handle either username or user field
-    const username = account.username || account.user || '';
-    
+    const username = account.username || account.user || "";
+
     const imap = new Imap({
       user: username,
       password: account.password,
@@ -81,7 +81,7 @@ export async function fetchImapEmails(
 ): Promise<ImapFetchResult> {
   const { page = 1, pageSize = 20, filter = {} } = options;
   // Handle either username or user field
-  const username = account.username || account.user || '';
+  const username = account.username || account.user || "";
 
   return new Promise<ImapFetchResult>((resolve, reject) => {
     const imap = new Imap({
@@ -164,21 +164,51 @@ export async function fetchImapEmails(
 
             const msgPromise = new Promise((resolveMsg) => {
               msg.once("end", () => {
-                simpleParser(buffer)
-                  .then((parsed) => {
-                    resolveMsg({
-                      id: seqno,
-                      header: parsed.headers,
-                      body: parsed.text,
-                      html: parsed.html,
-                      attachments: parsed.attachments,
-                      attributes,
-                    });
-                  })
-                  .catch((err) => {
-                    console.error("Parsing error:", err);
-                    resolveMsg({ id: seqno, error: err, attributes });
+                simpleParser(buffer).then((parsed) => {
+                  // Transform from field
+                  const from = parsed.from
+                    ? {
+                        name: parsed.from.value[0]?.name || "",
+                        email: parsed.from.value[0]?.address || "",
+                      }
+                    : { name: "", email: "" };
+
+                  // Transform to field
+                  const to = parsed.to
+                    ? parsed.to.value.map(
+                        (recipient: { name?: string; address?: string }) => ({
+                          name: recipient.name || "",
+                          email: recipient.address || "",
+                        })
+                      )
+                    : [];
+
+                  // Format the body - prefer HTML content, fallback to text with <br> for newlines
+                  let bodyContent = "";
+                  if (parsed.html) {
+                    bodyContent = parsed.html;
+                  } else if (parsed.text) {
+                    bodyContent = parsed.text.replace(/\n/g, "<br>");
+                  }
+
+                  resolveMsg({
+                    id: seqno.toString(),
+                    threadId: attributes.uid?.toString() || seqno.toString(),
+                    from,
+                    to,
+                    subject: parsed.subject || "(No Subject)",
+                    body: bodyContent,
+                    attachments: parsed.attachments,
+                    date: parsed.date
+                      ? parsed.date.toISOString()
+                      : new Date().toISOString(),
+                    labels: attributes.flags
+                      ? attributes.flags.map((flag: string) =>
+                          flag.replace(/\\/g, "")
+                        )
+                      : [],
                   });
+                });
               });
             });
 
@@ -236,7 +266,7 @@ export async function sendImapEmail({
   bcc?: string | string[];
 }) {
   // Handle either username or user field
-  const username = account.username || account.user || '';
+  const username = account.username || account.user || "";
 
   const transporter = nodemailer.createTransport({
     host: account.host,
@@ -274,7 +304,7 @@ export async function deleteImapEmails(
   messageIds: number[]
 ): Promise<boolean> {
   // Handle either username or user field
-  const username = account.username || account.user || '';
+  const username = account.username || account.user || "";
 
   return new Promise((resolve, reject) => {
     const imap = new Imap({
@@ -333,7 +363,7 @@ export async function markImapMessages(
   }
 ): Promise<boolean> {
   // Handle either username or user field
-  const username = account.username || account.user || '';
+  const username = account.username || account.user || "";
 
   return new Promise((resolve, reject) => {
     const imap = new Imap({
