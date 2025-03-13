@@ -7,10 +7,15 @@ import {
   Inbox,
   LogOut,
   Mail,
+  MessageSquarePlus,
   PenSquare,
   Send,
   Star,
   Trash,
+  User,
+  X,
+  Plus,
+  Settings,
   Server,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -28,7 +33,28 @@ import { Separator } from "./ui/separator";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { MessageComposer } from "./message-composer";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { MessageInput } from "./message-input";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ImapAccountDialog } from "./imap-account-dialog";
+import { Badge } from "./ui/badge";
 
 export type MessageCategory =
   | "inbox"
