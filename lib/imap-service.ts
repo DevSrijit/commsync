@@ -26,9 +26,11 @@ interface FetchOptions {
     subject?: string;
     seen?: boolean;
     flagged?: boolean;
+    threadId?: string;
+    messageId?: string;
   };
+  includeBody?: boolean;
 }
-
 export interface ImapFetchResult {
   messages: any[];
   total: number;

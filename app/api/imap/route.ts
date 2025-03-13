@@ -31,9 +31,52 @@ async function getUserIdFromSession(session: any) {
   return user.id;
 }
 
+// Transform IMAP email format to a standardized format for the conversation view
+function standardizeEmailFormat(email: any, accountType = "imap", accountId: string) {
+  // Ensure date is in ISO format
+  const date = email.date ? new Date(email.date).toISOString() : new Date().toISOString();
+
+  // Ensure labels array exists and has at least INBOX if empty
+  const labels = Array.isArray(email.labels) && email.labels.length > 0 
+    ? email.labels 
+    : ["INBOX"];
+
+  // Ensure from and to objects have the correct structure
+  const from = {
+    name: email.from?.name || "",
+    email: email.from?.email || ""
+  };
+
+  const to = Array.isArray(email.to) 
+    ? email.to.map((recipient: any) => ({
+        name: recipient?.name || "",
+        email: recipient?.email || ""
+      }))
+    : [{ name: "", email: email.to || "" }];
+
+  // Ensure body has HTML content
+  const body = email.html || email.body || email.textBody || "";
+
+  return {
+    id: email.id || email.messageId,
+    threadId: email.threadId || email.id || email.messageId,
+    from,
+    to,
+    subject: email.subject || "(No Subject)",
+    body,
+    htmlBody: email.html || email.htmlBody || body,
+    date,
+    attachments: Array.isArray(email.attachments) ? email.attachments : [],
+    labels,
+    read: email.read || false,
+    flagged: email.flagged || false,
+    accountType,
+    accountId // Add the accountId to the email object
+  };
+}
+
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
-  console.log("Session:", session);
 
   if (!session) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -41,17 +84,11 @@ export async function POST(req: NextRequest) {
 
   try {
     const { action, account, data } = await req.json();
-    console.log("Action:", action);
-    console.log("Account:", account);
-    console.log("Data:", data);
-
-    // Get the user ID from the session
     const userId = await getUserIdFromSession(session);
 
-    // Save account information securely.
+    // Save account information securely
     if (action === "saveAccount") {
       try {
-        // Convert account fields to match database schema
         const processedAccount = {
           label: account.label,
           host: account.host,
@@ -61,13 +98,9 @@ export async function POST(req: NextRequest) {
           secure: account.secure,
         };
 
-        // First stringify the account data
         const accountJson = JSON.stringify(processedAccount);
-
-        // Then encrypt it
         const encrypted = encryptData(accountJson);
 
-        // Create the account with minimal data first
         const savedAccount = await db.imapAccount.create({
           data: {
             label: processedAccount.label,
@@ -83,7 +116,6 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({ success: true, id: savedAccount.id });
       } catch (error: any) {
-        // Log the full error details
         console.error("Error in saveAccount:", {
           message: error.message,
           name: error.name,
@@ -92,7 +124,6 @@ export async function POST(req: NextRequest) {
           stack: error.stack,
         });
 
-        // Return a more detailed error response
         return NextResponse.json(
           {
             error: "Failed to save account",
@@ -104,9 +135,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Test connection using the provided account credentials.
+    // Test connection
     if (action === "testConnection") {
-      // Handle field mapping between UI and service
       const testAccount: ImapAccount = {
         host: account.host,
         port: account.port,
@@ -119,7 +149,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success });
     }
 
-    // Fetch emails with filtering and pagination
+    // Fetch emails
     if (action === "fetchEmails") {
       const { page = 1, pageSize = 20, filter = {} } = data || {};
       const emails: ImapFetchResult = await fetchImapEmails(account, {
@@ -128,15 +158,20 @@ export async function POST(req: NextRequest) {
         filter,
       });
 
+      // Standardize the email format with account ID
+      const standardizedEmails = emails.messages.map((email) =>
+        standardizeEmailFormat(email, "imap", account.id)
+      );
+
       return NextResponse.json({
-        emails: emails.messages,
+        emails: standardizedEmails,
         total: emails.total,
         page,
         pageSize,
       });
     }
 
-    // Send email with support for HTML and attachments
+    // Send email
     if (action === "sendEmail") {
       const { to, subject, body, html, attachments, cc, bcc } = data;
       const email = await sendImapEmail({
@@ -150,7 +185,9 @@ export async function POST(req: NextRequest) {
         bcc,
       });
 
-      return NextResponse.json({ success: true, email });
+      // Standardize the sent email format
+      const standardizedEmail = standardizeEmailFormat(email, "imap", account.id);
+      return NextResponse.json({ success: true, email: standardizedEmail });
     }
 
     // Delete emails
@@ -160,18 +197,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
-    // Mark emails as read/unread or flagged/unflagged
+    // Mark messages
     if (action === "markMessages") {
       const { messageIds, markAs } = data;
       await markImapMessages(account, messageIds, markAs);
       return NextResponse.json({ success: true });
     }
 
-    // Add to the existing POST handler:
+    // Delete account
     if (action === "deleteAccount") {
       const { accountId } = data;
-
-      // First verify the account belongs to the user
       const account = await db.imapAccount.findFirst({
         where: {
           id: accountId,
@@ -186,7 +221,6 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Delete the account
       await db.imapAccount.delete({
         where: { id: accountId },
       });
@@ -194,6 +228,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
+    // Update last sync
     if (action === "updateLastSync") {
       const { accountId } = data;
       await db.imapAccount.update({
@@ -202,6 +237,43 @@ export async function POST(req: NextRequest) {
       });
       return NextResponse.json({ success: true });
     }
+
+    // Get conversation
+if (action === "getConversation") {
+  const { messageId, threadId } = data || {};
+  
+  // Fetch all messages since we can't filter by threadId at the IMAP level
+  const emails: ImapFetchResult = await fetchImapEmails(account, {
+    includeBody: true,
+  });
+
+  // Filter messages in memory based on threadId or messageId
+  let conversationEmails = emails.messages;
+  if (threadId) {
+    conversationEmails = emails.messages.filter(email => 
+      email.threadId === threadId || email.id === threadId
+    );
+  } else if (messageId) {
+    conversationEmails = emails.messages.filter(email => 
+      email.id === messageId || email.messageId === messageId
+    );
+  }
+
+  // Standardize the email format with account ID
+  const standardizedEmails = conversationEmails.map((email) =>
+    standardizeEmailFormat(email, "imap", account.id)
+  );
+
+  // Sort by date
+  standardizedEmails.sort(
+    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+  );
+
+  return NextResponse.json({
+    messages: standardizedEmails,
+    total: standardizedEmails.length,
+  });
+}
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   } catch (error: any) {
@@ -227,26 +299,17 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Get the user ID from the session
     const userId = await getUserIdFromSession(session);
-
     const url = new URL(req.url);
     const accountId = url.searchParams.get("accountId");
 
     if (accountId) {
-      // Fetch specific account
-      let account;
-      try {
-        account = await db.imapAccount.findUnique({
-          where: {
-            id: accountId,
-            userId: userId,
-          },
-        });
-      } catch (dbError) {
-        console.error(`Error fetching account ${accountId}:`, dbError);
-        throw dbError;
-      }
+      const account = await db.imapAccount.findUnique({
+        where: {
+          id: accountId,
+          userId: userId,
+        },
+      });
 
       if (!account) {
         return NextResponse.json(
@@ -255,7 +318,6 @@ export async function GET(req: NextRequest) {
         );
       }
 
-      // Make sure we're safely accessing properties
       if (!account.credentials) {
         return NextResponse.json(
           { error: "Account credentials not found" },
@@ -274,23 +336,16 @@ export async function GET(req: NextRequest) {
         lastSync: account.lastSync,
       });
     } else {
-      // Fetch all accounts for user
-      let accounts;
-      try {
-        accounts = await db.imapAccount.findMany({
-          where: {
-            userId: userId,
-          },
-          select: {
-            id: true,
-            label: true,
-            lastSync: true,
-          },
-        });
-      } catch (dbError) {
-        console.error("Error fetching accounts:", dbError);
-        throw dbError;
-      }
+      const accounts = await db.imapAccount.findMany({
+        where: {
+          userId: userId,
+        },
+        select: {
+          id: true,
+          label: true,
+          lastSync: true,
+        },
+      });
 
       return NextResponse.json({ accounts });
     }

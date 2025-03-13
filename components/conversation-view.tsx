@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/resizable";
 import { useEffect } from "react";
 import { fetchEmails } from "@/lib/gmail-api";
+import { Email } from "@/lib/types";
 
 interface ConversationViewProps {
   contactEmail: string | null;
@@ -31,7 +32,6 @@ const getAttachmentIcon = (mimeType: string) => {
   return File;
 };
 
-// Add this helper function at the top of the file
 const getGravatarUrl = (email: string) => {
   const firstChar = email.charAt(0).toLowerCase();
   const img = `https://avatar.iran.liara.run/username?username=${firstChar}`
@@ -43,23 +43,66 @@ export function ConversationView({
   isLoading,
 }: ConversationViewProps) {
   const { data: session } = useSession();
-  const { emails, contacts, addEmail, setEmails } = useEmailStore();
+  const { emails, contacts, addEmail, setEmails, imapAccounts } = useEmailStore();
   const [isSending, setIsSending] = useState(false);
   const [isRefetching, setIsRefetching] = useState(false);
   const { toast } = useToast();
 
   const contact = contacts.find((c) => c.email === contactEmail);
 
-  // Filter all emails related to this conversation
+  // Enhanced debugging for troubleshooting
+  useEffect(() => {
+    if (contactEmail && contact) {
+      console.log(`Contact selected: ${contactEmail}, Account ID: ${contact.accountId}`);
+      if (contact.accountId) {
+        const imapAccount = imapAccounts.find(acc => acc.id === contact.accountId);
+        console.log(`Found IMAP account:`, imapAccount?.label);
+      }
+    }
+  }, [contactEmail, contact, imapAccounts]);
+
+  // Filter all emails related to this conversation, considering account IDs
   const conversation = emails
-    .filter(
-      (email) =>
-        (email.from.email === contactEmail &&
-          email.to.some((to) => to.email === session?.user?.email)) ||
-        (email.from.email === session?.user?.email &&
-          email.to.some((to) => to.email === contactEmail))
-    )
+    .filter((email) => {
+      if (contactEmail === null) return false;
+
+      // Enhanced debugging
+      console.log(`Checking email: ${email.id}, from: ${email.from.email}, accountId: ${email.accountId}, type: ${email.accountType || 'unknown'}`);
+
+      // For Gmail emails (from the user's Gmail account)
+      if (session?.user?.email && (!email.accountId || email.accountType === 'gmail')) {
+        const isGmailConversation =
+          (email.from.email === contactEmail &&
+            email.to.some((to) => to.email === session.user.email)) ||
+          (email.from.email === session.user.email &&
+            email.to.some((to) => to.email === contactEmail));
+
+        if (isGmailConversation) {
+          console.log(`Including Gmail email: ${email.id}`);
+          return true;
+        }
+      }
+
+      // For IMAP emails
+      if (contact?.accountId && email.accountId === contact.accountId) {
+        // Fixed IMAP email filtering - don't check for account ID in the to/from fields
+        const isImapConversation =
+          (email.from.email === contactEmail) ||
+          (email.to.some((to) => to.email === contactEmail));
+
+        if (isImapConversation) {
+          console.log(`Including IMAP email: ${email.id}`);
+          return true;
+        }
+      }
+
+      return false;
+    })
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+  useEffect(() => {
+    console.log(`Conversation contains ${conversation.length} emails`);
+  }, [conversation.length]);
 
   // Add useEffect to handle empty conversation
   useEffect(() => {
@@ -79,33 +122,79 @@ export function ConversationView({
         });
 
         try {
-          const fetchedEmails = await fetchEmails(session.user.accessToken);
+          // For Gmail accounts
+          if (!contact.accountId) {
+            const fetchedEmails = await fetchEmails(session.user.accessToken);
 
-          // Filter emails for this contact
-          const relevantEmails = fetchedEmails.filter(
-            (email) =>
-              (email.from.email === contactEmail &&
-                email.to.some((to) => to.email === session?.user?.email)) ||
-              (email.from.email === session?.user?.email &&
-                email.to.some((to) => to.email === contactEmail))
-          );
+            // Filter emails for this contact
+            const relevantEmails = fetchedEmails.filter(
+              (email) =>
+                (email.from.email === contactEmail &&
+                  email.to.some((to) => to.email === session?.user?.email)) ||
+                (email.from.email === session?.user?.email &&
+                  email.to.some((to) => to.email === contactEmail))
+            );
 
-          if (relevantEmails.length > 0) {
-            // Update local storage with new emails
-            const existingEmails = new Map(emails.map(e => [e.id, e]));
-            relevantEmails.forEach(email => existingEmails.set(email.id, email));
+            if (relevantEmails.length > 0) {
+              // Update local storage with new emails
+              const existingEmails = new Map(emails.map(e => [e.id, e]));
+              relevantEmails.forEach(email => existingEmails.set(email.id, email));
 
-            setEmails(Array.from(existingEmails.values()));
+              setEmails(Array.from(existingEmails.values()));
 
-            toast({
-              title: "Conversation loaded",
-              description: `Found ${relevantEmails.length} messages`,
-            });
-          } else {
-            toast({
-              title: "No messages found",
-              description: "Start a new conversation",
-            });
+              toast({
+                title: "Conversation loaded",
+                description: `Found ${relevantEmails.length} messages`,
+              });
+            } else {
+              toast({
+                title: "No messages found",
+                description: "Start a new conversation",
+              });
+            }
+          }
+          // For IMAP accounts
+          // For IMAP accounts
+          else if (contact.accountId) {
+            const imapAccount = imapAccounts.find(acc => acc.id === contact.accountId);
+
+            if (imapAccount) {
+              const response = await fetch("/api/imap", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  action: "fetchEmails",
+                  account: imapAccount,
+                  data: {
+                    filter: {
+                      from: contactEmail,
+                    },
+                    includeBody: true,
+                  },
+                }),
+              });
+
+              const data = await response.json();
+              if (data.emails && data.emails.length > 0) {
+                // Add these emails to the store
+                const existingEmails = new Map(emails.map(e => [e.id, e]));
+                data.emails.forEach((email: Email) => existingEmails.set(email.id, email));
+
+                setEmails(Array.from(existingEmails.values()));
+
+                toast({
+                  title: "Conversation loaded",
+                  description: `Found ${data.emails.length} messages`,
+                });
+              } else {
+                toast({
+                  title: "No messages found",
+                  description: "Start a new conversation",
+                });
+              }
+            }
           }
         } catch (error) {
           console.error("Error fetching conversation:", error);
@@ -121,7 +210,7 @@ export function ConversationView({
     };
 
     fetchConversation();
-  }, [contactEmail, isLoading, isRefetching, session?.user?.accessToken, contact, conversation.length, emails, setEmails, toast]);
+  }, [contactEmail, isLoading, isRefetching, session?.user?.accessToken, contact, conversation.length, emails, setEmails, toast, imapAccounts]);
 
   // Update loading state to include refetching
   const isLoadingState = isLoading || isRefetching;
@@ -179,7 +268,14 @@ export function ConversationView({
               </div>
             ) : (
               conversation.map((email) => {
-                const isFromMe = email.from.email === session?.user?.email;
+                // Fixed isFromMe logic: 
+                // For Gmail: check against session.user.email
+                // For IMAP: check if this is the account owner's email
+                const isFromMe = email.accountType === 'gmail'
+                  ? email.from.email === session?.user?.email
+                  : email.accountId === contact?.accountId &&
+                  !email.from.email.includes(contactEmail);
+
                 return (
                   <div
                     key={email.id}
@@ -344,4 +440,3 @@ export function ConversationView({
     </ResizablePanelGroup>
   );
 }
-

@@ -138,7 +138,10 @@ export function Sidebar() {
           >
             <Inbox className="mr-2 h-4 w-4" />
             Inbox
-            <span className="ml-auto text-muted-foreground text-sm">
+            <span
+              className="ml-auto text-muted-foreground text-sm"
+              suppressHydrationWarning
+            >
               {inboxCount}
             </span>
           </Button>
@@ -152,7 +155,10 @@ export function Sidebar() {
           >
             <Mail className="mr-2 h-4 w-4" />
             Drafts
-            <span className="ml-auto text-muted-foreground text-sm">
+            <span
+              className="ml-auto text-muted-foreground text-sm"
+              suppressHydrationWarning
+            >
               {draftCount}
             </span>
           </Button>
@@ -166,7 +172,10 @@ export function Sidebar() {
           >
             <Send className="mr-2 h-4 w-4" />
             Sent
-            <span className="ml-auto text-muted-foreground text-sm">
+            <span
+              className="ml-auto text-muted-foreground text-sm"
+              suppressHydrationWarning
+            >
               {sentCount}
             </span>
           </Button>
@@ -180,7 +189,10 @@ export function Sidebar() {
           >
             <Star className="mr-2 h-4 w-4" />
             Starred
-            <span className="ml-auto text-muted-foreground text-sm">
+            <span
+              className="ml-auto text-muted-foreground text-sm"
+              suppressHydrationWarning
+            >
               {starredCount}
             </span>
           </Button>
@@ -194,7 +206,10 @@ export function Sidebar() {
           >
             <Trash className="mr-2 h-4 w-4" />
             Trash
-            <span className="ml-auto text-muted-foreground text-sm">
+            <span
+              className="ml-auto text-muted-foreground text-sm"
+              suppressHydrationWarning
+            >
               {trashCount}
             </span>
           </Button>
@@ -208,7 +223,10 @@ export function Sidebar() {
           >
             <Archive className="mr-2 h-4 w-4" />
             Archive
-            <span className="ml-auto text-muted-foreground text-sm">
+            <span
+              className="ml-auto text-muted-foreground text-sm"
+              suppressHydrationWarning
+            >
               {archiveCount}
             </span>
           </Button>
@@ -225,7 +243,11 @@ export function Sidebar() {
           >
             <Server className="h-4 w-4" />
             <span>IMAP Accounts</span>
-            <Badge variant="secondary" className="ml-auto">
+            <Badge
+              variant="secondary"
+              className="ml-auto"
+              suppressHydrationWarning
+            >
               {imapAccounts.length}
             </Badge>
           </Button>
