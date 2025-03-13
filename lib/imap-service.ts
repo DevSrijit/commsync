@@ -12,6 +12,7 @@ export interface ImapAccount {
   username?: string;  // Added to match UI form
   password: string;
   secure: boolean;
+  lastSync?: Date;
 }
 
 interface FetchOptions {

@@ -13,12 +13,18 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "./ui/resizable";
+import { ImapAccountCard } from "@/components/imap-account-card";
+import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
+import { ImapAccountDialog } from "@/components/imap-account-dialog";
 
 export function EmailDashboard() {
   const { data: session } = useSession();
-  const [selectedContact, setSelectedContact] = useState<string | null>(null);
-  const { emails, setEmails, contacts } = useEmailStore();
+  const [selectedContact, setSelectedContact] = useState(null);
+  const { emails, setEmails, contacts, imapAccounts, syncEmails } = useEmailStore();
   const [isLoading, setIsLoading] = useState(true);
+  const [isImapDialogOpen, setIsImapDialogOpen] = useState(false);
+  const [viewMode, setViewMode] = useState("emails"); // "emails" or "accounts"
 
   useEffect(() => {
     // Try to load cached emails first, regardless of session
@@ -53,12 +59,16 @@ export function EmailDashboard() {
 
           if (shouldFetch) {
             try {
+              // Fetch emails from Gmail API
               const fetchedEmails = await fetchEmails(session.user.accessToken);
               setEmails(fetchedEmails);
 
               // Cache the emails
               localStorage.setItem("emails", JSON.stringify(fetchedEmails));
               localStorage.setItem("emailsTimestamp", Date.now().toString());
+              
+              // Also sync IMAP accounts
+              syncEmails(session.user.accessToken);
             } catch (fetchError) {
               console.error("Failed to fetch new emails:", fetchError);
               // Keep using cached data, don't clear it
@@ -80,7 +90,7 @@ export function EmailDashboard() {
     }, 0.5 * 60 * 1000);
 
     return () => clearInterval(intervalId);
-  }, [session, setEmails]);
+  }, [session, setEmails, syncEmails]);
 
   // Set the first contact as selected by default when contacts load
   useEffect(() => {
@@ -89,11 +99,33 @@ export function EmailDashboard() {
     }
   }, [contacts, selectedContact]);
 
+  // Render the accounts management view
+  const renderAccountsView = () => {
+    return (
+      <div className="container mx-auto p-4 h-full overflow-auto">
+        <div className="flex justify-between items-center mb-4">
+          <h1 className="text-2xl font-bold">Email Accounts</h1>
+          <Button onClick={() => setIsImapDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add IMAP Account
+          </Button>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {imapAccounts.map((account) => (
+            <ImapAccountCard key={account.id} account={account} />
+          ))}
+        </div>
+        <ImapAccountDialog
+          open={isImapDialogOpen}
+          onOpenChange={setIsImapDialogOpen}
+        />
+      </div>
+    );
+  };
+
+  // Render the main email interface
+  const renderEmailView = () => {
   return (
-    /**
-     * Full-screen container with overflow hidden so only the panels themselves scroll.
-     */
-    <div className="flex h-screen w-screen overflow-hidden bg-background">
       <ResizablePanelGroup
         direction="horizontal"
         className="flex-1 h-full overflow-hidden"
@@ -105,13 +137,14 @@ export function EmailDashboard() {
           maxSize={20}
           className="h-full overflow-hidden"
         >
-          <Sidebar />
+          <Sidebar onViewModeChange={setViewMode} currentViewMode={viewMode} />
         </ResizablePanel>
 
         <ResizableHandle />
 
         {/* Main Area Panel */}
         <ResizablePanel className="flex flex-col h-full overflow-hidden" defaultSize={85}>
+          {viewMode === "emails" ? (
           <ResizablePanelGroup
             direction="horizontal"
             className="flex-1 h-full overflow-hidden"
@@ -143,8 +176,17 @@ export function EmailDashboard() {
               />
             </ResizablePanel>
           </ResizablePanelGroup>
+          ) : (
+            renderAccountsView()
+          )}
         </ResizablePanel>
       </ResizablePanelGroup>
+    );
+  };
+
+  return (
+    <div className="flex h-screen w-screen overflow-hidden bg-background">
+      {renderEmailView()}
     </div>
   );
 }

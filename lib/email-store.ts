@@ -4,6 +4,7 @@ import { create } from "zustand";
 import type { Email, Contact } from "@/lib/types";
 import { MessageCategory } from "@/components/sidebar";
 import { ImapAccount } from "@/lib/imap-service";
+import { SyncService } from "./sync-service";
 
 interface EmailStore {
   emails: Email[];
@@ -16,9 +17,15 @@ interface EmailStore {
   addImapAccount: (account: ImapAccount) => void;
   removeImapAccount: (id: string) => void;
   getImapAccount: (id: string) => ImapAccount | undefined;
+  syncEmails: (gmailToken: string | null) => Promise<void>;
 }
 
 export const useEmailStore = create<EmailStore>((set, get) => ({
+  syncEmails: async (gmailToken: string | null) => {
+    const { imapAccounts } = get();
+    await SyncService.getInstance().syncAllEmails(gmailToken, imapAccounts);
+  },
+
   emails: [],
   contacts: [],
   activeFilter: "inbox",

@@ -73,20 +73,19 @@ export function ImapAccountDialog({ open, onOpenChange }: ImapAccountDialogProps
                 },
                 body: JSON.stringify({
                     action: "saveAccount",
-                    account: {
-                        id: Date.now().toString(),
-                        ...data,
-                    },
+                    account: data,
                 }),
             });
 
+            const result = await response.json();
+
             if (!response.ok) {
-                throw new Error("Failed to save IMAP account");
+                throw new Error(result.error || "Failed to save IMAP account");
             }
 
-            // Add account to store
+            // Add account to store with the server-generated ID
             addImapAccount({
-                id: Date.now().toString(),
+                id: result.id,
                 ...data,
             });
 
@@ -131,8 +130,6 @@ export function ImapAccountDialog({ open, onOpenChange }: ImapAccountDialogProps
                 body: JSON.stringify({
                     action: "testConnection",
                     account: {
-                        id: "test",
-                        label: "Test",
                         host,
                         port,
                         username,

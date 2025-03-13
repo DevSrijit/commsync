@@ -11,10 +11,29 @@ import {
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
 import { encryptData, decryptData } from "@/lib/encryption";
-import prisma from "@/lib/prisma";
+import { db } from "@/lib/db";
+
+async function getUserIdFromSession(session: any) {
+  if (!session?.user?.email) {
+    throw new Error("No user email found in session");
+  }
+
+  const user = await db.user.findUnique({
+    where: {
+      email: session.user.email,
+    },
+  });
+
+  if (!user) {
+    throw new Error("User not found in database");
+  }
+
+  return user.id;
+}
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
+  console.log("Session:", session);
 
   if (!session) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
@@ -22,40 +41,67 @@ export async function POST(req: NextRequest) {
 
   try {
     const { action, account, data } = await req.json();
+    console.log("Action:", action);
+    console.log("Account:", account);
+    console.log("Data:", data);
+
+    // Get the user ID from the session
+    const userId = await getUserIdFromSession(session);
 
     // Save account information securely.
     if (action === "saveAccount") {
-      // Convert account fields to match database schema
-      const processedAccount = {
-        name: account.label || account.name || "Email Account",
-        host: account.host,
-        port: account.port,
-        user: account.username || account.user, // Handle either field
-        password: account.password,
-        secure: account.secure,
-      };
+      try {
+        // Convert account fields to match database schema
+        const processedAccount = {
+          label: account.label,
+          host: account.host,
+          port: account.port,
+          user: account.username,
+          password: account.password,
+          secure: account.secure,
+        };
 
-      const encrypted = encryptData(JSON.stringify(processedAccount));
+        // First stringify the account data
+        const accountJson = JSON.stringify(processedAccount);
 
-      const savedAccount = await prisma.ImapAccount.upsert({
-        where: {
-          id: account.id || "new",
-          userId: session.user.id,
-        },
-        update: {
-          name: processedAccount.name,
-          credentials: encrypted,
-          lastSync: new Date(),
-        },
-        create: {
-          name: processedAccount.name,
-          credentials: encrypted,
-          userId: session.user.id,
-          lastSync: new Date(),
-        },
-      });
+        // Then encrypt it
+        const encrypted = encryptData(accountJson);
 
-      return NextResponse.json({ success: true, id: savedAccount.id });
+        // Create the account with minimal data first
+        const savedAccount = await db.imapAccount.create({
+          data: {
+            label: processedAccount.label,
+            credentials: encrypted,
+            lastSync: new Date(),
+            user: {
+              connect: {
+                id: userId,
+              },
+            },
+          },
+        });
+
+        return NextResponse.json({ success: true, id: savedAccount.id });
+      } catch (error: any) {
+        // Log the full error details
+        console.error("Error in saveAccount:", {
+          message: error.message,
+          name: error.name,
+          code: error.code,
+          meta: error.meta,
+          stack: error.stack,
+        });
+
+        // Return a more detailed error response
+        return NextResponse.json(
+          {
+            error: "Failed to save account",
+            message: error.message,
+            code: error.code,
+          },
+          { status: 500 }
+        );
+      }
     }
 
     // Test connection using the provided account credentials.
@@ -64,11 +110,11 @@ export async function POST(req: NextRequest) {
       const testAccount: ImapAccount = {
         host: account.host,
         port: account.port,
-        username: account.username, // From UI
-        user: account.user,         // Alternative field
+        user: account.username,
         password: account.password,
         secure: account.secure,
       };
+
       const success = await testImapConnection(testAccount);
       return NextResponse.json({ success });
     }
@@ -121,13 +167,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
+    // Add to the existing POST handler:
+    if (action === "deleteAccount") {
+      const { accountId } = data;
+      await db.imapAccount.delete({
+        where: { id: accountId },
+      });
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "updateLastSync") {
+      const { accountId } = data;
+      await db.imapAccount.update({
+        where: { id: accountId },
+        data: { lastSync: new Date() },
+      });
+      return NextResponse.json({ success: true });
+    }
+
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   } catch (error: any) {
-    console.error("IMAP API error:", error);
+    console.error("IMAP API error:", error?.message || "Unknown error", {
+      name: error?.name,
+      code: error?.code,
+    });
     return NextResponse.json(
       {
         error: "Server error",
-        message: error.message || "Unknown error occurred",
+        message: error?.message || "Unknown error occurred",
       },
       { status: 500 }
     );
@@ -142,17 +209,26 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    // Get the user ID from the session
+    const userId = await getUserIdFromSession(session);
+
     const url = new URL(req.url);
     const accountId = url.searchParams.get("accountId");
 
     if (accountId) {
       // Fetch specific account
-      const account = await prisma.ImapAccount.findUnique({
-        where: {
-          id: accountId,
-          userId: session.user.id,
-        },
-      });
+      let account;
+      try {
+        account = await db.imapAccount.findUnique({
+          where: {
+            id: accountId,
+            userId: userId,
+          },
+        });
+      } catch (dbError) {
+        console.error(`Error fetching account ${accountId}:`, dbError);
+        throw dbError;
+      }
 
       if (!account) {
         return NextResponse.json(
@@ -161,45 +237,54 @@ export async function GET(req: NextRequest) {
         );
       }
 
+      // Make sure we're safely accessing properties
+      if (!account.credentials) {
+        return NextResponse.json(
+          { error: "Account credentials not found" },
+          { status: 500 }
+        );
+      }
+
       const decrypted = JSON.parse(decryptData(account.credentials));
       return NextResponse.json({
         id: account.id,
-        name: account.name,
-        label: account.name, // Add this for the UI
+        label: account.label,
         host: decrypted.host,
         port: decrypted.port,
-        user: decrypted.user,
-        username: decrypted.user, // Add this for the UI
+        username: decrypted.user,
         secure: decrypted.secure,
         lastSync: account.lastSync,
       });
     } else {
       // Fetch all accounts for user
-      const accounts = await prisma.ImapAccount.findMany({
-        where: {
-          userId: session.user.id,
-        },
-        select: {
-          id: true,
-          name: true,
-          lastSync: true,
-        },
-      });
+      let accounts;
+      try {
+        accounts = await db.imapAccount.findMany({
+          where: {
+            userId: userId,
+          },
+          select: {
+            id: true,
+            label: true,
+            lastSync: true,
+          },
+        });
+      } catch (dbError) {
+        console.error("Error fetching accounts:", dbError);
+        throw dbError;
+      }
 
-      // Map to include label for UI compatibility
-      const mappedAccounts = accounts.map(account => ({
-        ...account,
-        label: account.name
-      }));
-
-      return NextResponse.json({ accounts: mappedAccounts });
+      return NextResponse.json({ accounts });
     }
   } catch (error: any) {
-    console.error("IMAP API error:", error);
+    console.error("IMAP API error:", error?.message || "Unknown error", {
+      name: error?.name,
+      code: error?.code,
+    });
     return NextResponse.json(
       {
         error: "Server error",
-        message: error.message || "Unknown error occurred",
+        message: error?.message || "Unknown error occurred",
       },
       { status: 500 }
     );
