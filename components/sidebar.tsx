@@ -55,6 +55,7 @@ import {
 } from "@/components/ui/select";
 import { ImapAccountDialog } from "./imap-account-dialog";
 import { Badge } from "./ui/badge";
+import { ImapAccountCard } from "./imap-account-card";
 
 export type MessageCategory =
   | "inbox"
@@ -67,35 +68,31 @@ export type MessageCategory =
 
 export function Sidebar() {
   const { data: session } = useSession();
-  const { emails, setActiveFilter, activeFilter, imapAccounts } = useEmailStore();
+  const { emails, setActiveFilter, activeFilter, imapAccounts } =
+    useEmailStore();
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [isImapDialogOpen, setIsImapDialogOpen] = useState(false);
+  const [isImapListOpen, setIsImapListOpen] = useState(false);
 
   const inboxCount = emails.filter(
-    (email) => !email.labels.includes("TRASH") && !email.labels.includes("SENT")
+    (email) =>
+      !(email.labels?.includes("TRASH") || email.labels?.includes("SENT"))
   ).length;
   const draftCount = emails.filter((email) =>
-    email.labels.includes("DRAFT")
+    email.labels?.includes("DRAFT")
   ).length;
   const sentCount = emails.filter((email) =>
-    email.labels.includes("SENT")
+    email.labels?.includes("SENT")
   ).length;
   const trashCount = emails.filter((email) =>
-    email.labels.includes("TRASH")
+    email.labels?.includes("TRASH")
   ).length;
   const starredCount = emails.filter((email) =>
-    email.labels.includes("STARRED")
+    email.labels?.includes("STARRED")
   ).length;
   const archiveCount = emails.filter((email) =>
-    email.labels.includes("ARCHIVE")
+    email.labels?.includes("ARCHIVE")
   ).length;
-
-  const handleSendMessage = async (recipients: string, subject: string, content: string, attachments: File[]) => {
-    // Implementation for sending the message
-    // For now just log and wait to simulate sending
-    console.log("Sending message:", { recipients, subject, content, attachments });
-    await new Promise(resolve => setTimeout(resolve, 1000));
-  };
 
   return (
     <div className="w-full border-r border-border bg-card flex flex-col h-full">
@@ -219,8 +216,19 @@ export function Sidebar() {
 
         <Separator className="my-5" />
 
-        {/* New Message Button */}
-        <div className="px-2">
+        {/* Account Management Buttons */}
+        <div className="px-2 space-y-2">
+          <Button
+            variant="outline"
+            className="w-full flex items-center gap-2"
+            onClick={() => setIsImapListOpen(true)}
+          >
+            <Server className="h-4 w-4" />
+            <span>IMAP Accounts</span>
+            <Badge variant="secondary" className="ml-auto">
+              {imapAccounts.length}
+            </Badge>
+          </Button>
           <Button
             variant="default"
             className="w-full flex items-center gap-2 bg-neutral-400"
@@ -232,14 +240,41 @@ export function Sidebar() {
         </div>
       </ScrollArea>
 
-      {/* Message Composer */}
+      {/* IMAP Accounts Dialog */}
+      <Dialog open={isImapListOpen} onOpenChange={setIsImapListOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>IMAP Accounts</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                setIsImapListOpen(false);
+                setIsImapDialogOpen(true);
+              }}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Account
+            </Button>
+            <div className="space-y-2">
+              {imapAccounts.map((account) => (
+                <ImapAccountCard key={account.id} account={account} />
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Existing Message Composer and IMAP Account Dialog */}
       <MessageComposer
         open={isComposerOpen}
         onOpenChange={setIsComposerOpen}
         onSend={async (recipients, subject, content, attachments) => {
           // This is a fallback and won't be used with our new implementation
           console.log("Legacy send method called");
-          await new Promise(resolve => setTimeout(resolve, 1000));
+          await new Promise((resolve) => setTimeout(resolve, 1000));
         }}
       />
 

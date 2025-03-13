@@ -6,7 +6,7 @@ import { useEmailStore } from "@/lib/email-store";
 import { ImapAccount } from "@/lib/imap-service";
 import { formatDistanceToNow } from "date-fns";
 import { RefreshCw, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
 interface ImapAccountCardProps {
@@ -17,6 +17,10 @@ export function ImapAccountCard({ account }: ImapAccountCardProps) {
   const { removeImapAccount } = useEmailStore();
   const [isSyncing, setIsSyncing] = useState(false);
   const { toast } = useToast();
+
+  useEffect(() => {
+    handleSync();
+  }, []);
 
   const handleSync = async () => {
     setIsSyncing(true);
@@ -41,9 +45,40 @@ export function ImapAccountCard({ account }: ImapAccountCardProps) {
       }
 
       const data = await response.json();
+
+      // Format emails to ensure they have required properties
+      const formattedEmails = data.emails.map((email: any) => ({
+        ...email,
+        labels: email.labels || [],
+        from: email.from || { name: '', email: '' },
+        to: email.to || [],
+        date: email.date || new Date().toISOString(),
+        subject: email.subject || '(No Subject)',
+      }));
+
+      // Update the email store with fetched emails
+      const store = useEmailStore.getState();
+      store.setEmails([...store.emails, ...formattedEmails]);
+
+      // Update last sync time
+      if (account.id) {
+        await fetch("/api/imap", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            action: "updateLastSync",
+            data: {
+              accountId: account.id,
+            }
+          }),
+        });
+      }
+
       toast({
         title: "Sync successful",
-        description: `Synced ${data.emails.length} emails from ${account.label}`,
+        description: `Synced ${formattedEmails.length} emails from ${account.label}`,
       });
     } catch (error) {
       toast({
@@ -65,7 +100,9 @@ export function ImapAccountCard({ account }: ImapAccountCardProps) {
         },
         body: JSON.stringify({
           action: "deleteAccount",
-          accountId: account.id,
+          data: {
+            accountId: account.id,
+          }
         }),
       });
 
@@ -88,34 +125,43 @@ export function ImapAccountCard({ account }: ImapAccountCardProps) {
   };
 
   return (
-    <Card className="w-full">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">{account.label}</CardTitle>
-        <div className="flex items-center gap-2">
+    <Card className="w-full mx-2 mb-2">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 pt-3">
+        <CardTitle className="text-sm font-medium truncate flex-1">
+          {account.label}
+        </CardTitle>
+        <div className="flex items-center gap-1 ml-2">
           <Button
             variant="ghost"
-            size="icon"
+            size="sm"
+            className="h-8 w-8 p-0"
             onClick={handleSync}
             disabled={isSyncing}
           >
             <RefreshCw className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`} />
           </Button>
-          <Button variant="ghost" size="icon" onClick={handleDelete}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0"
+            onClick={handleDelete}
+          >
             <Trash2 className="h-4 w-4" />
           </Button>
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="text-xs text-muted-foreground">
-          <p>Host: {account.host}</p>
+      <CardContent className="px-3 pb-3 pt-0">
+        <div className="text-xs text-muted-foreground space-y-0.5">
+          <p className="truncate">Host: {account.host}</p>
           <p>Port: {account.port}</p>
-          <p>Username: {account.username}</p>
+          <p className="truncate">Username: {account.username}</p>
           <p>
             Last sync:{" "}
             {account.lastSync
               ? formatDistanceToNow(new Date(account.lastSync), {
-                  addSuffix: true,
-                })
+                addSuffix: true,
+                includeSeconds: true
+              })
               : "Never"}
           </p>
         </div>

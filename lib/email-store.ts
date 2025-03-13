@@ -20,21 +20,44 @@ interface EmailStore {
   syncEmails: (gmailToken: string | null) => Promise<void>;
 }
 
+// Helper function to load persisted data
+const loadPersistedData = () => {
+  if (typeof window === "undefined") return { emails: [], imapAccounts: [] };
+
+  try {
+    const savedEmails = localStorage.getItem("emails");
+    const savedAccounts = localStorage.getItem("imapAccounts");
+    
+    return {
+      emails: savedEmails ? JSON.parse(savedEmails) : [],
+      imapAccounts: savedAccounts ? JSON.parse(savedAccounts) : [],
+    };
+  } catch (e) {
+    console.error("Failed to load persisted data:", e);
+    return { emails: [], imapAccounts: [] };
+  }
+};
+
 export const useEmailStore = create<EmailStore>((set, get) => ({
   syncEmails: async (gmailToken: string | null) => {
     const { imapAccounts } = get();
     await SyncService.getInstance().syncAllEmails(gmailToken, imapAccounts);
   },
 
-  emails: [],
+  // Initialize with persisted data
+  ...loadPersistedData(),
   contacts: [],
   activeFilter: "inbox",
-  imapAccounts: [],
 
   setActiveFilter: (filter) => set({ activeFilter: filter }),
 
   setEmails: (emails) => {
     set({ emails });
+    
+    // Persist emails
+    if (typeof window !== "undefined") {
+      localStorage.setItem("emails", JSON.stringify(emails));
+    }
 
     // Extract unique contacts from emails
     const contactsMap = new Map<string, Contact>();
@@ -93,7 +116,13 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
 
   addEmail: (email) => {
     const { emails } = get();
-    set({ emails: [...emails, email] });
+    const updatedEmails = [...emails, email];
+    set({ emails: updatedEmails });
+
+    // Persist updated emails
+    if (typeof window !== "undefined") {
+      localStorage.setItem("emails", JSON.stringify(updatedEmails));
+    }
 
     // Update contacts
     const { contacts } = get();
@@ -140,13 +169,13 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
   // IMAP account management
   addImapAccount: (account) => {
     const { imapAccounts } = get();
-    set({ imapAccounts: [...imapAccounts, account] });
+    const updatedAccounts = [...imapAccounts, account];
+    set({ imapAccounts: updatedAccounts });
 
-    // Save to localStorage for persistence
-    localStorage.setItem(
-      "imapAccounts",
-      JSON.stringify([...imapAccounts, account])
-    );
+    // Persist IMAP accounts
+    if (typeof window !== "undefined") {
+      localStorage.setItem("imapAccounts", JSON.stringify(updatedAccounts));
+    }
   },
 
   removeImapAccount: (id) => {
@@ -154,25 +183,13 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
     const updated = imapAccounts.filter((account) => account.id !== id);
     set({ imapAccounts: updated });
 
-    // Update localStorage
-    localStorage.setItem("imapAccounts", JSON.stringify(updated));
+    // Persist updated IMAP accounts
+    if (typeof window !== "undefined") {
+      localStorage.setItem("imapAccounts", JSON.stringify(updated));
+    }
   },
 
   getImapAccount: (id) => {
     return get().imapAccounts.find((account) => account.id === id);
   },
 }));
-
-// Initialize IMAP accounts from localStorage on load
-if (typeof window !== "undefined") {
-  const savedAccounts = localStorage.getItem("imapAccounts");
-  if (savedAccounts) {
-    try {
-      const accounts = JSON.parse(savedAccounts);
-      const store = useEmailStore.getState();
-      store.imapAccounts = accounts; // Instead of using .set()
-    } catch (e) {
-      console.error("Failed to load saved IMAP accounts:", e);
-    }
-  }
-}

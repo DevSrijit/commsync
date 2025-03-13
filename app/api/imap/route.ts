@@ -170,9 +170,27 @@ export async function POST(req: NextRequest) {
     // Add to the existing POST handler:
     if (action === "deleteAccount") {
       const { accountId } = data;
+
+      // First verify the account belongs to the user
+      const account = await db.imapAccount.findFirst({
+        where: {
+          id: accountId,
+          userId: userId,
+        },
+      });
+
+      if (!account) {
+        return NextResponse.json(
+          { error: "Account not found or unauthorized" },
+          { status: 404 }
+        );
+      }
+
+      // Delete the account
       await db.imapAccount.delete({
         where: { id: accountId },
       });
+
       return NextResponse.json({ success: true });
     }
 
