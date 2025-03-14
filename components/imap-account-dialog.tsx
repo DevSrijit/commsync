@@ -91,6 +91,7 @@ export function ImapAccountDialog({ open, onOpenChange }: ImapAccountDialogProps
             addImapAccount({
                 id: result.id,
                 ...data,
+                lastSync: data.lastSync || undefined,
             });
 
             if (result.lastSync) {
