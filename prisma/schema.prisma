@@ -55,9 +55,12 @@ model VerificationToken {
 }
 
 model ImapAccount {
-  id          String   @id @default(uuid()) @map("_id")
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
   label       String
   credentials String    // Encrypted credentials
+  username    String?   // Added username field
+  host        String?   // Added host field
+  port        Int?      // Added port field
   userId      String   @db.ObjectId
   lastSync    DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)

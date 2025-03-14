@@ -26,7 +26,8 @@ interface ConversationViewProps {
   isLoading: boolean;
 }
 
-const getAttachmentIcon = (mimeType: string) => {
+const getAttachmentIcon = (mimeType: string | undefined) => {
+  if (!mimeType) return File;
   if (mimeType.startsWith("image/")) return Image;
   if (mimeType.startsWith("text/")) return FileText;
   return File;
@@ -36,6 +37,16 @@ const getGravatarUrl = (email: string) => {
   const firstChar = email.charAt(0).toLowerCase();
   const img = `https://avatar.iran.liara.run/username?username=${firstChar}`
   return img;
+};
+
+const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return '0 Bytes';
+  
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 };
 
 export function ConversationView({
@@ -153,7 +164,6 @@ export function ConversationView({
               });
             }
           }
-          // For IMAP accounts
           // For IMAP accounts
           else if (contact.accountId) {
             const imapAccount = imapAccounts.find(acc => acc.id === contact.accountId);
@@ -317,59 +327,84 @@ export function ConversationView({
                         />
                         {/* Attachments */}
                         {email.attachments && email.attachments.length > 0 && (
-                          <div className="mt-2 grid grid-cols-2 gap-2">
-                            {email.attachments.map((attachment) => {
-                              const IconComponent = getAttachmentIcon(
-                                attachment.mimeType
-                              );
-                              const isImage =
-                                attachment.mimeType.startsWith("image/");
+                          <div key={`attachments-${email.id}`} className="mt-2 grid grid-cols-2 gap-2">
+                            {email.attachments.map((attachment, index) => {
+                              // Ensure we have a valid attachment with required properties
+                              if (!attachment || !attachment.id) {
+                                return (
+                                  <div 
+                                    key={`invalid-attachment-${index}`} 
+                                    className="p-2 bg-background/10 rounded-lg text-xs opacity-70"
+                                  >
+                                    Invalid attachment
+                                  </div>
+                                );
+                              }
 
+                              // Safely determine mime type and icon
+                              const mimeType = attachment.mimeType || '';
+                              const IconComponent = getAttachmentIcon(mimeType);
+                              const isImage = mimeType && mimeType.startsWith("image/");
+                              
+                              // Generate a safe filename
+                              const filename = attachment.filename || `attachment-${index + 1}`;
+                              
+                              // Handle attachment preview and download safely
                               return (
                                 <a
                                   key={attachment.id}
-                                  href={attachment.url}
+                                  href={attachment.url || '#'}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   onClick={(e) => {
-                                    e.preventDefault();
-                                    if (attachment.url) {
-                                      window.open(attachment.url, "_blank");
-                                      fetch(attachment.url, {
-                                        headers: {
-                                          Authorization: `Bearer ${session?.user?.accessToken}`,
-                                        },
-                                      }).catch((error) => {
-                                        console.error(
-                                          "Error downloading attachment:",
-                                          error
-                                        );
+                                    if (!attachment.url) {
+                                      e.preventDefault();
+                                      toast({
+                                        title: "Attachment unavailable",
+                                        description: "This attachment cannot be downloaded",
+                                        variant: "destructive",
                                       });
                                     }
                                   }}
                                   className="group relative flex flex-col gap-1 p-2 bg-background/10 rounded-lg hover:bg-background/20 transition-colors"
                                 >
                                   {isImage ? (
-                                    <div className="aspect-video relative rounded-md overflow-hidden bg-background/20">
-                                      <img
-                                        src={attachment.url}
-                                        alt={attachment.name}
-                                        className="absolute inset-0 w-full h-full object-cover"
-                                      />
+                                    // Safe image preview with fallback
+                                    <div className="relative w-full aspect-square bg-muted/50 rounded overflow-hidden">
+                                      {attachment.url ? (
+                                        <img
+                                          src={attachment.url}
+                                          alt={filename}
+                                          className="w-full h-full object-cover"
+                                          onError={(e) => {
+                                            e.currentTarget.style.display = 'none';
+                                            const container = e.currentTarget.parentElement;
+                                            if (container) {
+                                              const iconEl = document.createElement('div');
+                                              iconEl.className = 'flex items-center justify-center w-full h-full';
+                                              iconEl.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-image"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>';
+                                              container.appendChild(iconEl);
+                                            }
+                                          }}
+                                        />
+                                      ) : (
+                                        <div className="flex items-center justify-center w-full h-full">
+                                          <IconComponent className="w-8 h-8 opacity-50" />
+                                        </div>
+                                      )}
                                     </div>
                                   ) : (
-                                    <div className="aspect-video flex items-center justify-center bg-background/20 rounded-md">
-                                      <IconComponent className="h-8 w-8 opacity-50" />
+                                    <div className="flex items-center justify-center w-full aspect-square bg-muted/30 rounded">
+                                      <IconComponent className="w-8 h-8 opacity-70" />
                                     </div>
                                   )}
-                                  <div className="flex items-center gap-2">
-                                    <Paperclip className="h-3 w-3 flex-shrink-0 opacity-50" />
-                                    <span className="text-xs truncate flex-1">
-                                      {attachment.name}
-                                    </span>
-                                    <span className="text-xs opacity-70">
-                                      {Math.round(attachment.size / 1024)}KB
-                                    </span>
+                                  <div className="text-xs truncate max-w-full">
+                                    {filename}
+                                  </div>
+                                  <div className="text-xs opacity-70">
+                                    {attachment.size 
+                                      ? formatFileSize(attachment.size) 
+                                      : mimeType.split('/')[0] || 'Unknown'}
                                   </div>
                                 </a>
                               );

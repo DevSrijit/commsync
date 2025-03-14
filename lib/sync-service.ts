@@ -2,10 +2,12 @@ import { Email } from "@/lib/types";
 import { ImapAccount } from "@/lib/imap-service";
 import { fetchEmails as fetchGmailEmails } from "@/lib/gmail-api";
 import { useEmailStore } from "@/lib/email-store";
+import { EmailContentLoader } from "@/lib/email-content-loader";
 
 export class SyncService {
   private static instance: SyncService;
   private syncInProgress = false;
+  private contentLoader = EmailContentLoader.getInstance();
 
   private constructor() {}
 
@@ -86,10 +88,29 @@ export class SyncService {
         }
       });
 
+      // Load content for emails that don't have it
+      this.loadMissingContent(allEmails);
+
     } catch (error) {
       console.error("Error syncing emails:", error);
     } finally {
       this.syncInProgress = false;
+    }
+  }
+
+  private async loadMissingContent(emails: Email[]) {
+    // Find emails that don't have body content
+    const emailsWithoutContent = emails.filter(email => !email.body || email.body.length === 0);
+    
+    // Load content for up to 5 emails at a time to avoid overwhelming the server
+    const batchSize = 5;
+    for (let i = 0; i < emailsWithoutContent.length; i += batchSize) {
+      const batch = emailsWithoutContent.slice(i, i + batchSize);
+      
+      // Load content for each email in the batch concurrently
+      await Promise.allSettled(
+        batch.map(email => this.contentLoader.loadEmailContent(email))
+      );
     }
   }
 }

@@ -18,6 +18,8 @@ interface EmailStore {
   removeImapAccount: (id: string) => void;
   getImapAccount: (id: string) => ImapAccount | undefined;
   syncEmails: (gmailToken: string | null) => Promise<void>;
+  syncImapAccounts: () => Promise<void>;
+  setImapAccounts: (accounts: ImapAccount[]) => void;
 }
 
 // Helper function to load persisted data
@@ -41,22 +43,68 @@ const loadPersistedData = () => {
   }
 };
 
-// Improved email key generation function that doesn't rely on date
+// Improved email key generation function
 const generateEmailKey = (email: Email) => {
-  // For IMAP emails, use a combination of threadId and id
+  // For IMAP emails, use a combination of accountId and id
   if (email.accountId) {
-    // Include accountId to prevent cross-account collisions
-    return `${email.accountId}-${email.id}`;
+    return `imap-${email.accountId}-${email.id}`;
   }
   
   // For Gmail emails, use the id (which is already unique)
-  return email.id;
+  return `gmail-${email.id}`;
+};
+
+// Filter function to identify valid emails
+const isValidEmail = (email: Email): boolean => {
+  // Check if email has basic required properties
+  if (!email.id || !email.from || !email.from.email || !email.subject) {
+    return false;
+  }
+  
+  // Skip emails with empty body
+  if (!email.body || email.body.trim() === '') {
+    return false;
+  }
+  
+  // Ensure required fields are present
+  if (!email.labels) {
+    email.labels = [];
+  }
+  
+  return true;
 };
 
 export const useEmailStore = create<EmailStore>((set, get) => ({
   syncEmails: async (gmailToken: string | null) => {
     const { imapAccounts } = get();
     await SyncService.getInstance().syncAllEmails(gmailToken, imapAccounts);
+  },
+
+  syncImapAccounts: async () => {
+    try {
+      const response = await fetch('/api/imap?action=getAccounts');
+      if (response.ok) {
+        const { accounts } = await response.json();
+        if (accounts && accounts.length > 0) {
+          set(state => ({ ...state, imapAccounts: accounts }));
+          
+          // Sync emails for each account
+          for (const account of accounts) {
+            await fetch("/api/imap", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "syncEmails",
+                account,
+                data: { limit: 50 }
+              }),
+            });
+          }
+        }
+      }
+    } catch (error) {
+      console.error("Error syncing IMAP accounts:", error);
+    }
   },
 
   // Initialize with empty arrays first
@@ -68,6 +116,12 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
   setActiveFilter: (filter) => set({ activeFilter: filter }),
 
   setEmails: (emails) => {
+    // Ensure emails is an array
+    if (!Array.isArray(emails)) {
+      console.error("setEmails received non-array value:", emails);
+      return; // Exit early if not an array
+    }
+
     // Create a map to track unique emails
     const uniqueEmailsMap = new Map<string, Email>();
 
@@ -91,8 +145,21 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
       
       // Always use the newer version when available
       const existingEmail = uniqueEmailsMap.get(key);
-      if (!existingEmail || new Date(email.date) > new Date(existingEmail.date)) {
+      if (!existingEmail) {
         uniqueEmailsMap.set(key, email);
+      } else {
+        // Merge the emails, preferring the newer one but keeping content if available
+        const mergedEmail = {
+          ...existingEmail,
+          ...email,
+          // Keep existing body content if new email doesn't have it
+          body: email.body || existingEmail.body,
+          // Keep existing attachments if new email doesn't have them
+          attachments: email.attachments || existingEmail.attachments,
+          // Use the newer date
+          date: new Date(email.date) > new Date(existingEmail.date) ? email.date : existingEmail.date,
+        };
+        uniqueEmailsMap.set(key, mergedEmail);
       }
     });
 
@@ -105,7 +172,11 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
 
     // Persist emails
     if (typeof window !== "undefined") {
-      localStorage.setItem("emails", JSON.stringify(uniqueEmails));
+      try {
+        localStorage.setItem("emails", JSON.stringify(uniqueEmails));
+      } catch (e) {
+        console.error("Failed to persist emails to localStorage:", e);
+      }
     }
 
     // Extract unique contacts from emails
@@ -186,8 +257,6 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
       email.accountType = 'gmail';
     }
 
-    console.log(`Adding email to store: ${email.id}, type: ${email.accountType}, accountId: ${email.accountId}`);
-
     const { emails } = get();
     const key = generateEmailKey(email);
 
@@ -200,15 +269,32 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
     if (existingEmailIndex === -1) {
       updatedEmails = [...emails, email];
     } else {
+      // Merge the emails, keeping content if available
+      const existingEmail = emails[existingEmailIndex];
+      const mergedEmail = {
+        ...existingEmail,
+        ...email,
+        // Keep existing body content if new email doesn't have it
+        body: email.body || existingEmail.body,
+        // Keep existing attachments if new email doesn't have them
+        attachments: email.attachments || existingEmail.attachments,
+        // Use the newer date
+        date: new Date(email.date) > new Date(existingEmail.date) ? email.date : existingEmail.date,
+      };
+      
       updatedEmails = [...emails];
-      updatedEmails[existingEmailIndex] = email;
+      updatedEmails[existingEmailIndex] = mergedEmail;
     }
 
     set({ emails: updatedEmails });
 
     // Persist updated emails
     if (typeof window !== "undefined") {
-      localStorage.setItem("emails", JSON.stringify(updatedEmails));
+      try {
+        localStorage.setItem("emails", JSON.stringify(updatedEmails));
+      } catch (e) {
+        console.error("Failed to persist emails to localStorage:", e);
+      }
     }
 
     // Update contacts
@@ -313,6 +399,15 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
 
   getImapAccount: (id) => {
     return get().imapAccounts.find((account) => account.id === id);
+  },
+
+  setImapAccounts: (accounts) => {
+    set({ imapAccounts: accounts });
+    
+    // Persist IMAP accounts
+    if (typeof window !== "undefined") {
+      localStorage.setItem("imapAccounts", JSON.stringify(accounts));
+    }
   },
 }));
 

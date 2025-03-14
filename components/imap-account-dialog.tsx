@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
     Dialog,
@@ -27,6 +27,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Checkbox } from "@/components/ui/checkbox";
 import { LoadingSpinner } from "@/components/loading-spinner";
+import { formatDistanceToNow } from "date-fns";
 
 const imapFormSchema = z.object({
     label: z.string().min(1, "Label is required"),
@@ -37,7 +38,9 @@ const imapFormSchema = z.object({
     secure: z.boolean().default(true),
 });
 
-type ImapFormValues = z.infer<typeof imapFormSchema>;
+type ImapFormValues = z.infer<typeof imapFormSchema> & {
+    lastSync?: Date | null;
+};
 
 interface ImapAccountDialogProps {
     open: boolean;
@@ -49,6 +52,7 @@ export function ImapAccountDialog({ open, onOpenChange }: ImapAccountDialogProps
     const { addImapAccount } = useEmailStore();
     const [isLoading, setIsLoading] = useState(false);
     const [testStatus, setTestStatus] = useState<"idle" | "testing" | "success" | "failed">("idle");
+    const [lastSyncDate, setLastSyncDate] = useState<Date | null>(null);
 
     const form = useForm<ImapFormValues>({
         resolver: zodResolver(imapFormSchema),
@@ -88,6 +92,10 @@ export function ImapAccountDialog({ open, onOpenChange }: ImapAccountDialogProps
                 id: result.id,
                 ...data,
             });
+
+            if (result.lastSync) {
+                setLastSyncDate(new Date(result.lastSync));
+            }
 
             toast({
                 title: "Account added",
@@ -275,6 +283,14 @@ export function ImapAccountDialog({ open, onOpenChange }: ImapAccountDialogProps
                                 </FormItem>
                             )}
                         />
+
+                        <div className="text-sm text-muted-foreground mt-2">
+                            {lastSyncDate ? (
+                                <p>Last synced: {formatDistanceToNow(lastSyncDate, { addSuffix: true })}</p>
+                            ) : (
+                                <p>Last synced: Never</p>
+                            )}
+                        </div>
 
                         <DialogFooter className="gap-2 sm:gap-0">
                             <Button

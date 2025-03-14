@@ -8,7 +8,8 @@ import { formatDistanceToNow } from "date-fns";
 import { RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-
+import { EmailContentLoader } from "@/lib/email-content-loader";
+import { Email } from "@/lib/types";
 interface ImapAccountCardProps {
   account: ImapAccount;
 }
@@ -17,6 +18,7 @@ export function ImapAccountCard({ account }: ImapAccountCardProps) {
   const { removeImapAccount } = useEmailStore();
   const [isSyncing, setIsSyncing] = useState(false);
   const { toast } = useToast();
+  const contentLoader = EmailContentLoader.getInstance();
 
   useEffect(() => {
     handleSync();
@@ -54,6 +56,8 @@ export function ImapAccountCard({ account }: ImapAccountCardProps) {
         to: email.to || [],
         date: email.date || new Date().toISOString(),
         subject: email.subject || '(No Subject)',
+        accountType: 'imap',
+        accountId: account.id,
       }));
 
       // Update the email store with fetched emails
@@ -74,6 +78,26 @@ export function ImapAccountCard({ account }: ImapAccountCardProps) {
             }
           }),
         });
+      }
+
+      // Load content for emails that don't have it
+      const emailsWithoutContent = formattedEmails.filter((email: Email) => !email.body || email.body.length === 0);
+      
+      // Only show one toast for all emails being loaded
+      if (emailsWithoutContent.length > 0) {
+        toast({
+          title: "Loading email content",
+          description: `Loading content for ${emailsWithoutContent.length} emails in the background`,
+        });
+        
+        // Load content for up to 5 emails at a time
+        const batchSize = 5;
+        for (let i = 0; i < emailsWithoutContent.length; i += batchSize) {
+          const batch = emailsWithoutContent.slice(i, i + batchSize);
+          await Promise.allSettled(
+            batch.map((email: Email) => contentLoader.loadEmailContent(email))
+          );
+        }
       }
 
       toast({

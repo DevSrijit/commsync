@@ -3,17 +3,18 @@ export interface EmailAddress {
   email: string
 }
 
-export interface Attachment {
-  id: string
-  name: string
-  mimeType: string
-  size: number
-  url?: string
+export interface EmailAttachment {
+  id: string;
+  filename?: string;
+  mimeType?: string;
+  size?: number;
+  url?: string;
+  content?: string;
 }
 
 export interface Email {
   id: string;
-  threadId?: string;  // Optional for IMAP emails
+  threadId?: string;
   from: {
     name: string;
     email: string;
@@ -23,25 +24,21 @@ export interface Email {
     email: string;
   }>;
   subject: string;
+  snippet?: string;
   body: string;
-  attachments: Array<{
-    id: string;
-    name: string;
-    mimeType: string;
-    size: number;
-    url?: string;
-  }>;
   date: string;
-  labels: string[];
-  accountId?: string;  // Add this line for IMAP account identification
-  accountType?: string; // Add this line to distinguish between gmail and imap
+  labels: string[]; // Keep this required
+  attachments?: EmailAttachment[];
+  accountId?: string;
+  accountType?: 'gmail' | 'imap';
+  read?: boolean;
 }
 
 export interface Contact {
-  name: string;
+  name: string; // Keep this required
   email: string;
   lastMessageDate: string;
   lastMessageSubject: string;
-  labels: string[];
-  accountId?: string;  // Add this line for IMAP account identification
+  labels: string[]; // Keep this required
+  accountId?: string;
 }
