@@ -35,14 +35,15 @@ model Session {
 }
 
 model User {
-  id            String       @id @default(auto()) @map("_id") @db.ObjectId
+  id            String        @id @default(auto()) @map("_id") @db.ObjectId
   name          String?
-  email         String?      @unique
+  email         String?       @unique
   emailVerified DateTime?
   image         String?
   accounts      Account[]
   sessions      Session[]
   imapAccounts  ImapAccount[]
+  Group         Group[]
 }
 
 model VerificationToken {
@@ -57,13 +58,25 @@ model VerificationToken {
 model ImapAccount {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
   label       String
-  credentials String    // Encrypted credentials
-  username    String?   // Added username field
-  host        String?   // Added host field
-  port        Int?      // Added port field
+  credentials String // Encrypted credentials
+  username    String? // Added username field
+  host        String? // Added host field
+  port        Int? // Added port field
   userId      String   @db.ObjectId
   lastSync    DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
+  @@index([userId])
+}
+
+model Group {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  addresses String[] // Array of email addresses in the group
+  userId    String   @db.ObjectId
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([userId])
 }

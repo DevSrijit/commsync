@@ -80,7 +80,7 @@ export function ContactList({
                 ) : (
                     <>
                         {filteredGroups.length > 0 && (
-                            <div className="mb-4">
+                            <div className="mb-4 px-3">
                                 <h3 className="text-sm font-medium text-muted-foreground px-3 mb-2">Groups</h3>
                                 {filteredGroups.map(group => (
                                     <Button

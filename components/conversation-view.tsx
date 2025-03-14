@@ -10,7 +10,7 @@ import { useSession } from "next-auth/react";
 import { sendEmail } from "@/lib/gmail-api";
 import { useToast } from "@/hooks/use-toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Paperclip, Image, FileText, File } from "lucide-react";
+import { Paperclip, Image, FileText, File, Users } from "lucide-react";
 import DOMPurify from "isomorphic-dompurify";
 import {
   ResizableHandle,
@@ -23,6 +23,8 @@ import { Email } from "@/lib/types";
 interface ConversationViewProps {
   contactEmail: string | null;
   isLoading: boolean;
+  isGroup?: boolean;
+  groupId?: string | null;
 }
 
 const getAttachmentIcon = (mimeType: string | undefined) => {
@@ -34,49 +36,61 @@ const getAttachmentIcon = (mimeType: string | undefined) => {
 
 const getGravatarUrl = (email: string) => {
   const firstChar = email.charAt(0).toLowerCase();
-  const img = `https://avatar.iran.liara.run/username?username=${firstChar}`
+  const img = `https://avatar.iran.liara.run/username?username=${firstChar}`;
   return img;
 };
 
 const formatFileSize = (bytes: number): string => {
-  if (bytes === 0) return '0 Bytes';
-  
+  if (bytes === 0) return "0 Bytes";
+
   const k = 1024;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const sizes = ["Bytes", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-  
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
 };
 
 export function ConversationView({
   contactEmail,
   isLoading,
+  isGroup = false,
+  groupId = null,
 }: ConversationViewProps) {
   const { data: session } = useSession();
-  const { emails, activeFilter, activeGroup, groups, contacts, addEmail, setEmails, imapAccounts } = useEmailStore();
+  const {
+    emails,
+    activeFilter,
+    activeGroup,
+    groups,
+    contacts,
+    addEmail,
+    setEmails,
+    imapAccounts,
+  } = useEmailStore();
   const { toast } = useToast();
-  
+
   // Filter emails based on active filter and group
   const filteredEmails = useMemo(() => {
     if (activeFilter.startsWith("group:") && activeGroup) {
       // Find the active group
-      const group = groups.find(g => g.id === activeGroup);
+      const group = groups.find((g) => g.id === activeGroup);
       if (group) {
         // Filter emails that involve any address in the group
-        return emails.filter(email => 
-          group.addresses.some(addr => 
-            email.from?.includes(addr) || 
-            email.to?.includes(addr)
+        return emails.filter((email) =>
+          group.addresses.some(
+            (addr) =>
+              email.from?.email === addr ||
+              email.to?.some((to) => to.email === addr)
           )
         );
       }
       return [];
     }
-    
+
     // Original filtering logic for other filters
     if (activeFilter === "inbox") {
       return emails.filter(
-        (email) => 
+        (email) =>
           !(email.labels?.includes("TRASH") || email.labels?.includes("SENT"))
       );
     } else if (activeFilter === "draft") {
@@ -104,9 +118,13 @@ export function ConversationView({
   // Enhanced debugging for troubleshooting
   useEffect(() => {
     if (contactEmail && contact) {
-      console.log(`Contact selected: ${contactEmail}, Account ID: ${contact.accountId}`);
+      console.log(
+        `Contact selected: ${contactEmail}, Account ID: ${contact.accountId}`
+      );
       if (contact.accountId) {
-        const imapAccount = imapAccounts.find(acc => acc.id === contact.accountId);
+        const imapAccount = imapAccounts.find(
+          (acc) => acc.id === contact.accountId
+        );
         console.log(`Found IMAP account:`, imapAccount?.label);
       }
     }
@@ -118,10 +136,37 @@ export function ConversationView({
       if (contactEmail === null) return false;
 
       // Enhanced debugging
-      console.log(`Checking email: ${email.id}, from: ${email.from.email}, accountId: ${email.accountId}, type: ${email.accountType || 'unknown'}`);
+      console.log(
+        `Checking email: ${email.id}, from: ${email.from.email}, accountId: ${
+          email.accountId
+        }, type: ${email.accountType || "unknown"}`
+      );
+
+      // For group conversations
+      if (isGroup && groupId) {
+        // Find the group by ID
+        const group = groups.find((g) => g.id === groupId);
+        if (group) {
+          // Check if this email involves any address in the group
+          const isGroupConversation =
+            group.addresses.includes(email.from.email) ||
+            email.to.some((to) => group.addresses.includes(to.email)) ||
+            (email.from.email === session?.user?.email &&
+              email.to.some((to) => group.addresses.includes(to.email)));
+
+          if (isGroupConversation) {
+            console.log(`Including group email: ${email.id}`);
+            return true;
+          }
+        }
+        return false;
+      }
 
       // For Gmail emails (from the user's Gmail account)
-      if (session?.user?.email && (!email.accountId || email.accountType === 'gmail')) {
+      if (
+        session?.user?.email &&
+        (!email.accountId || email.accountType === "gmail")
+      ) {
         const isGmailConversation =
           (email.from.email === contactEmail &&
             email.to.some((to) => to.email === session.user.email)) ||
@@ -138,8 +183,8 @@ export function ConversationView({
       if (contact?.accountId && email.accountId === contact.accountId) {
         // Fixed IMAP email filtering - don't check for account ID in the to/from fields
         const isImapConversation =
-          (email.from.email === contactEmail) ||
-          (email.to.some((to) => to.email === contactEmail));
+          email.from.email === contactEmail ||
+          email.to.some((to) => to.email === contactEmail);
 
         if (isImapConversation) {
           console.log(`Including IMAP email: ${email.id}`);
@@ -188,8 +233,10 @@ export function ConversationView({
 
             if (relevantEmails.length > 0) {
               // Update local storage with new emails
-              const existingEmails = new Map(emails.map(e => [e.id, e]));
-              relevantEmails.forEach(email => existingEmails.set(email.id, email));
+              const existingEmails = new Map(emails.map((e) => [e.id, e]));
+              relevantEmails.forEach((email) =>
+                existingEmails.set(email.id, email)
+              );
 
               setEmails(Array.from(existingEmails.values()));
 
@@ -206,7 +253,9 @@ export function ConversationView({
           }
           // For IMAP accounts
           else if (contact.accountId) {
-            const imapAccount = imapAccounts.find(acc => acc.id === contact.accountId);
+            const imapAccount = imapAccounts.find(
+              (acc) => acc.id === contact.accountId
+            );
 
             if (imapAccount) {
               const response = await fetch("/api/imap", {
@@ -229,8 +278,10 @@ export function ConversationView({
               const data = await response.json();
               if (data.emails && data.emails.length > 0) {
                 // Add these emails to the store
-                const existingEmails = new Map(emails.map(e => [e.id, e]));
-                data.emails.forEach((email: Email) => existingEmails.set(email.id, email));
+                const existingEmails = new Map(emails.map((e) => [e.id, e]));
+                data.emails.forEach((email: Email) =>
+                  existingEmails.set(email.id, email)
+                );
 
                 setEmails(Array.from(existingEmails.values()));
 
@@ -260,7 +311,18 @@ export function ConversationView({
     };
 
     fetchConversation();
-  }, [contactEmail, isLoading, isRefetching, session?.user?.accessToken, contact, conversation.length, emails, setEmails, toast, imapAccounts]);
+  }, [
+    contactEmail,
+    isLoading,
+    isRefetching,
+    session?.user?.accessToken,
+    contact,
+    conversation.length,
+    emails,
+    setEmails,
+    toast,
+    imapAccounts,
+  ]);
 
   // Update loading state to include refetching
   const isLoadingState = isLoading || isRefetching;
@@ -287,12 +349,36 @@ export function ConversationView({
       >
         <div className="flex items-center">
           <Avatar className="h-10 w-10 mr-4">
-            <AvatarImage src={getGravatarUrl(contactEmail || "")} />
-            <AvatarFallback>{contact?.name?.charAt(0) || "?"}</AvatarFallback>
+            {isGroup && groupId ? (
+              <div className="h-full w-full flex items-center justify-center bg-primary/10">
+                <Users className="h-5 w-5" />
+              </div>
+            ) : (
+              <AvatarImage src={getGravatarUrl(contactEmail || "")} />
+            )}
+            <AvatarFallback>
+              {isGroup
+                ? groups.find((g) => g.id === groupId)?.name?.charAt(0) || "G"
+                : contact?.name?.charAt(0) || "?"}
+            </AvatarFallback>
           </Avatar>
           <div>
-            <h2 className="font-medium">{contact?.name || contactEmail}</h2>
-            <p className="text-sm text-muted-foreground">{contactEmail}</p>
+            {isGroup && groupId ? (
+              <>
+                <h2 className="font-medium">
+                  {groups.find((g) => g.id === groupId)?.name || "Group"}
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  {groups.find((g) => g.id === groupId)?.addresses.length || 0}{" "}
+                  members
+                </p>
+              </>
+            ) : (
+              <>
+                <h2 className="font-medium">{contact?.name || contactEmail}</h2>
+                <p className="text-sm text-muted-foreground">{contactEmail}</p>
+              </>
+            )}
           </div>
         </div>
       </ResizablePanel>
@@ -318,19 +404,21 @@ export function ConversationView({
               </div>
             ) : (
               conversation.map((email) => {
-                // Fixed isFromMe logic: 
+                // Fixed isFromMe logic:
                 // For Gmail: check against session.user.email
                 // For IMAP: check if this is the account owner's email
-                const isFromMe = email.accountType === 'gmail'
-                  ? email.from.email === session?.user?.email
-                  : email.accountId === contact?.accountId &&
-                  !email.from.email.includes(contactEmail);
+                const isFromMe =
+                  email.accountType === "gmail"
+                    ? email.from.email === session?.user?.email
+                    : email.accountId === contact?.accountId &&
+                      !email.from.email.includes(contactEmail);
 
                 return (
                   <div
                     key={email.id}
-                    className={`flex ${isFromMe ? "justify-end" : "justify-start"
-                      } gap-3 items-end`}
+                    className={`flex ${
+                      isFromMe ? "justify-end" : "justify-start"
+                    } gap-3 items-end`}
                   >
                     {/* Avatar on the left if it's from the contact */}
                     {!isFromMe && (
@@ -343,10 +431,11 @@ export function ConversationView({
                     )}
                     {/* Message bubble */}
                     <div
-                      className={`max-w-[85%] rounded-2xl p-4 ${isFromMe
-                        ? "bg-primary text-primary-foreground rounded-br-sm"
-                        : "bg-muted rounded-bl-sm"
-                        }`}
+                      className={`max-w-[85%] rounded-2xl p-4 ${
+                        isFromMe
+                          ? "bg-primary text-primary-foreground rounded-br-sm"
+                          : "bg-muted rounded-bl-sm"
+                      }`}
                     >
                       <div className="flex flex-col gap-1">
                         <div className="flex justify-between items-baseline gap-4">
@@ -367,13 +456,16 @@ export function ConversationView({
                         />
                         {/* Attachments */}
                         {email.attachments && email.attachments.length > 0 && (
-                          <div key={`attachments-${email.id}`} className="mt-2 grid grid-cols-2 gap-2">
+                          <div
+                            key={`attachments-${email.id}`}
+                            className="mt-2 grid grid-cols-2 gap-2"
+                          >
                             {email.attachments.map((attachment, index) => {
                               // Ensure we have a valid attachment with required properties
                               if (!attachment || !attachment.id) {
                                 return (
-                                  <div 
-                                    key={`invalid-attachment-${index}`} 
+                                  <div
+                                    key={`invalid-attachment-${index}`}
                                     className="p-2 bg-background/10 rounded-lg text-xs opacity-70"
                                   >
                                     Invalid attachment
@@ -382,18 +474,21 @@ export function ConversationView({
                               }
 
                               // Safely determine mime type and icon
-                              const mimeType = attachment.mimeType || '';
+                              const mimeType = attachment.mimeType || "";
                               const IconComponent = getAttachmentIcon(mimeType);
-                              const isImage = mimeType && mimeType.startsWith("image/");
-                              
+                              const isImage =
+                                mimeType && mimeType.startsWith("image/");
+
                               // Generate a safe filename
-                              const filename = attachment.filename || `attachment-${index + 1}`;
-                              
+                              const filename =
+                                attachment.filename ||
+                                `attachment-${index + 1}`;
+
                               // Handle attachment preview and download safely
                               return (
                                 <a
                                   key={attachment.id}
-                                  href={attachment.url || '#'}
+                                  href={attachment.url || "#"}
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   onClick={(e) => {
@@ -401,7 +496,8 @@ export function ConversationView({
                                       e.preventDefault();
                                       toast({
                                         title: "Attachment unavailable",
-                                        description: "This attachment cannot be downloaded",
+                                        description:
+                                          "This attachment cannot be downloaded",
                                         variant: "destructive",
                                       });
                                     }
@@ -417,12 +513,17 @@ export function ConversationView({
                                           alt={filename}
                                           className="w-full h-full object-cover"
                                           onError={(e) => {
-                                            e.currentTarget.style.display = 'none';
-                                            const container = e.currentTarget.parentElement;
+                                            e.currentTarget.style.display =
+                                              "none";
+                                            const container =
+                                              e.currentTarget.parentElement;
                                             if (container) {
-                                              const iconEl = document.createElement('div');
-                                              iconEl.className = 'flex items-center justify-center w-full h-full';
-                                              iconEl.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-image"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>';
+                                              const iconEl =
+                                                document.createElement("div");
+                                              iconEl.className =
+                                                "flex items-center justify-center w-full h-full";
+                                              iconEl.innerHTML =
+                                                '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-image"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>';
                                               container.appendChild(iconEl);
                                             }
                                           }}
@@ -442,9 +543,9 @@ export function ConversationView({
                                     {filename}
                                   </div>
                                   <div className="text-xs opacity-70">
-                                    {attachment.size 
-                                      ? formatFileSize(attachment.size) 
-                                      : mimeType.split('/')[0] || 'Unknown'}
+                                    {attachment.size
+                                      ? formatFileSize(attachment.size)
+                                      : mimeType.split("/")[0] || "Unknown"}
                                   </div>
                                 </a>
                               );
@@ -485,19 +586,41 @@ export function ConversationView({
 
             setIsSending(true);
             try {
-              const newEmail = await sendEmail({
-                accessToken: session.user.accessToken,
-                to: contactEmail,
-                subject: `Re: ${contact?.lastMessageSubject || "No subject"}`,
-                body: content,
-                attachments: uploadedAttachments, // Pass the attachments
-              });
+              // Handle group emails
+              if (isGroup && groupId) {
+                const group = groups.find((g) => g.id === groupId);
+                if (group && group.addresses.length > 0) {
+                  // Send email to all addresses in the group
+                  const newEmail = await sendEmail({
+                    accessToken: session.user.accessToken,
+                    to: group.addresses.join(","),
+                    subject: `Re: Group: ${group.name}`,
+                    body: content,
+                    attachments: uploadedAttachments,
+                  });
 
-              addEmail(newEmail);
-              toast({
-                title: "Email sent",
-                description: "Your reply has been sent successfully",
-              });
+                  addEmail(newEmail);
+                  toast({
+                    title: "Group email sent",
+                    description: `Your message has been sent to ${group.addresses.length} recipients`,
+                  });
+                }
+              } else {
+                // Regular single-recipient email
+                const newEmail = await sendEmail({
+                  accessToken: session.user.accessToken,
+                  to: contactEmail,
+                  subject: `Re: ${contact?.lastMessageSubject || "No subject"}`,
+                  body: content,
+                  attachments: uploadedAttachments, // Pass the attachments
+                });
+
+                addEmail(newEmail);
+                toast({
+                  title: "Email sent",
+                  description: "Your reply has been sent successfully",
+                });
+              }
             } catch (error) {
               console.error("Failed to send email:", error);
               toast({
@@ -510,7 +633,11 @@ export function ConversationView({
             }
           }}
           isLoading={isSending}
-          placeholder={`Reply to ${contact?.name || contactEmail}...`}
+          placeholder={
+            isGroup && groupId
+              ? `Reply to group...`
+              : `Reply to ${contact?.name || contactEmail}...`
+          }
         />
       </ResizablePanel>
     </ResizablePanelGroup>

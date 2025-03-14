@@ -17,8 +17,21 @@ import {
 export function EmailDashboard() {
   const { data: session } = useSession();
   const [selectedContact, setSelectedContact] = useState<string | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [isGroupSelected, setIsGroupSelected] = useState(false);
   const { emails, setEmails, contacts } = useEmailStore();
   const [isLoading, setIsLoading] = useState(true);
+
+  // Enhanced contact selection handler
+  const handleContactSelect = (
+    email: string,
+    isGroup: boolean = false,
+    groupId: string | undefined = undefined
+  ) => {
+    setSelectedContact(email);
+    setIsGroupSelected(isGroup);
+    setSelectedGroupId(groupId || null);
+  };
 
   useEffect(() => {
     // Try to load cached emails first, regardless of session
@@ -86,6 +99,8 @@ export function EmailDashboard() {
   useEffect(() => {
     if (contacts.length > 0 && !selectedContact) {
       setSelectedContact(contacts[0].email);
+      setIsGroupSelected(false);
+      setSelectedGroupId(null);
     }
   }, [contacts, selectedContact]);
 
@@ -111,7 +126,10 @@ export function EmailDashboard() {
         <ResizableHandle />
 
         {/* Main Area Panel */}
-        <ResizablePanel className="flex flex-col h-full overflow-hidden" defaultSize={85}>
+        <ResizablePanel
+          className="flex flex-col h-full overflow-hidden"
+          defaultSize={85}
+        >
           <ResizablePanelGroup
             direction="horizontal"
             className="flex-1 h-full overflow-hidden"
@@ -127,7 +145,7 @@ export function EmailDashboard() {
                 <EmailList
                   isLoading={isLoading}
                   selectedContact={selectedContact}
-                  onSelectContact={setSelectedContact}
+                  onSelectContact={handleContactSelect}
                   className="w-full"
                 />
               </div>
@@ -136,10 +154,15 @@ export function EmailDashboard() {
             <ResizableHandle />
 
             {/* Conversation View Panel */}
-            <ResizablePanel className="flex flex-col h-full overflow-hidden" defaultSize={70}>
+            <ResizablePanel
+              className="flex flex-col h-full overflow-hidden"
+              defaultSize={70}
+            >
               <ConversationView
                 contactEmail={selectedContact}
                 isLoading={isLoading}
+                isGroup={isGroupSelected}
+                groupId={selectedGroupId}
               />
             </ResizablePanel>
           </ResizablePanelGroup>

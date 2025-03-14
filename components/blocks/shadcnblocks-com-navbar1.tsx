@@ -148,7 +148,7 @@ const Navbar1 = ({
   },
 }: Navbar1Props) => {
   return (
-    <section className="py-4 bg-transparent z-20 w-full">
+    <section className="py-4 bg-transparent z-50 w-full px-2">
       <div className="container">
         <nav className="hidden justify-between lg:flex">
           <div className="flex items-center gap-6">

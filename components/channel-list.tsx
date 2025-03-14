@@ -1,18 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import { Search } from "lucide-react";
+import { Search, Users } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useEmailStore } from "@/lib/email-store";
 import { ContactItem } from "@/components/contact-item";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { MessageCategory } from "@/components/sidebar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { Group } from "@/lib/types";
 
 interface EmailListProps {
   isLoading: boolean;
   selectedContact: string | null;
-  onSelectContact: (email: string) => void;
+  onSelectContact: (email: string, isGroup?: boolean, groupId?: string) => void;
   className?: string;
 }
 
@@ -22,52 +25,61 @@ export function EmailList({
   onSelectContact,
   className,
 }: EmailListProps) {
-  const { contacts, emails, activeFilter } = useEmailStore();
+  const { contacts, emails, activeFilter, groups } = useEmailStore();
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
 
-  const filteredContacts = contacts.filter(contact => {
+  const filteredContacts = contacts.filter((contact) => {
     // First filter by search query
-    const matchesSearch = contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    const matchesSearch =
+      contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       contact.email.toLowerCase().includes(searchQuery.toLowerCase());
 
     if (!matchesSearch) return false;
 
     // Then filter by category
-    const contactEmails = emails.filter(email => 
-      email.from.email === contact.email || 
-      email.to.some(to => to.email === contact.email)
+    const contactEmails = emails.filter(
+      (email) =>
+        email.from.email === contact.email ||
+        email.to.some((to) => to.email === contact.email)
     );
 
     switch (activeFilter) {
       case "inbox":
-        return contactEmails.some(email => 
-          !email.labels.includes("TRASH") && 
-          !email.labels.includes("SENT")
+        return contactEmails.some(
+          (email) =>
+            !email.labels.includes("TRASH") && !email.labels.includes("SENT")
         );
       case "draft":
-        return contactEmails.some(email => 
-          email.labels.includes("DRAFT")
-        );
+        return contactEmails.some((email) => email.labels.includes("DRAFT"));
       case "sent":
-        return contactEmails.some(email => 
-          email.labels.includes("SENT")
-        );
+        return contactEmails.some((email) => email.labels.includes("SENT"));
       case "starred":
-        return contactEmails.some(email => 
-          email.labels.includes("STARRED")
-        );
+        return contactEmails.some((email) => email.labels.includes("STARRED"));
       case "trash":
-        return contactEmails.some(email => 
-          email.labels.includes("TRASH")
-        );
+        return contactEmails.some((email) => email.labels.includes("TRASH"));
       case "archive":
-        return contactEmails.some(email => 
-          email.labels.includes("ARCHIVE")
-        );
+        return contactEmails.some((email) => email.labels.includes("ARCHIVE"));
       default:
         return true;
     }
   });
+
+  // Filter groups based on search query
+  const filteredGroups =
+    groups?.filter((group) =>
+      group.name.toLowerCase().includes(searchQuery.toLowerCase())
+    ) || [];
+
+  // Function to handle group selection
+  const handleGroupSelect = (group: Group) => {
+    // Store the selected group ID locally
+    setSelectedGroupId(group.id);
+    // Pass the first email address as the contact email, the group ID, and isGroup flag
+    if (group.addresses.length > 0) {
+      onSelectContact(group.addresses[0], true, group.id);
+    }
+  };
 
   return (
     <div
@@ -103,14 +115,70 @@ export function EmailList({
           </div>
         ) : (
           <div className="h-full">
-            {filteredContacts.map((contact) => (
-              <ContactItem
-                key={contact.email}
-                contact={contact}
-                isSelected={contact.email === selectedContact}
-                onClick={() => onSelectContact(contact.email)}
-              />
-            ))}
+            {/* Display Groups */}
+            {filteredGroups.length > 0 && (
+              <div className="mb-2">
+                <h3 className="text-sm font-medium text-muted-foreground px-4 py-2">
+                  Groups
+                </h3>
+                {filteredGroups.map((group) => (
+                  <Button
+                    key={group.id}
+                    variant={
+                      selectedGroupId === group.id ? "secondary" : "ghost"
+                    }
+                    className={`w-full justify-start p-3 h-auto transition-all ${
+                      selectedGroupId === group.id
+                        ? "bg-secondary"
+                        : "hover:bg-secondary/50"
+                    }`}
+                    onClick={() => handleGroupSelect(group)}
+                  >
+                    <div className="flex items-center gap-3 w-full">
+                      <Avatar className="h-10 w-10 border bg-secondary">
+                        <Users className="h-5 w-5" />
+                        <AvatarFallback>
+                          {group.name.slice(0, 2).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 truncate">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium truncate">
+                            {group.name}
+                          </span>
+                        </div>
+                        <span className="text-sm text-muted-foreground truncate">
+                          {group.addresses.length} members
+                        </span>
+                      </div>
+                    </div>
+                  </Button>
+                ))}
+              </div>
+            )}
+
+            {/* Display Contacts */}
+            {filteredContacts.length > 0 && (
+              <div>
+                <h3 className="text-sm font-medium text-muted-foreground px-4 py-2">
+                  Contacts
+                </h3>
+                {filteredContacts.map((contact) => (
+                  <ContactItem
+                    key={contact.email}
+                    contact={contact}
+                    isSelected={
+                      selectedGroupId === null &&
+                      contact.email === selectedContact
+                    }
+                    onClick={() => {
+                      setSelectedGroupId(null);
+                      onSelectContact(contact.email);
+                    }}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

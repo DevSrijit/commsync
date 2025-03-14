@@ -10,6 +10,7 @@ interface EmailStore {
   emails: Email[];
   contacts: Contact[];
   activeFilter: MessageCategory;
+  activeGroup: string | null;
   imapAccounts: ImapAccount[];
   groups: Group[];
   setEmails: (emails: Email[]) => void;
@@ -62,21 +63,25 @@ const isValidEmail = (email: Email): boolean => {
   if (!email.id || !email.from || !email.from.email || !email.subject) {
     return false;
   }
-  
+
   // Skip emails with empty body
-  if (!email.body || email.body.trim() === '') {
+  if (!email.body || email.body.trim() === "") {
     return false;
   }
-  
+
   // Ensure required fields are present
   if (!email.labels) {
     email.labels = [];
   }
-  
+
   return true;
 };
 
-const generateContactKey = (accountType: string | undefined, accountId: string | undefined, email: string): string => {
+const generateContactKey = (
+  accountType: string | undefined,
+  accountId: string | undefined,
+  email: string
+): string => {
   // Use email address as the primary key, regardless of account
   return email.toLowerCase();
 };
@@ -89,12 +94,12 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
 
   syncImapAccounts: async () => {
     try {
-      const response = await fetch('/api/imap?action=getAccounts');
+      const response = await fetch("/api/imap?action=getAccounts");
       if (response.ok) {
         const { accounts } = await response.json();
         if (accounts && accounts.length > 0) {
-          set(state => ({ ...state, imapAccounts: accounts }));
-          
+          set((state) => ({ ...state, imapAccounts: accounts }));
+
           // Sync emails for each account
           for (const account of accounts) {
             await fetch("/api/imap", {
@@ -103,7 +108,7 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
               body: JSON.stringify({
                 action: "syncEmails",
                 account,
-                data: { limit: 50 }
+                data: { limit: 50 },
               }),
             });
           }
@@ -119,6 +124,7 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
   contacts: [],
   imapAccounts: [],
   activeFilter: "inbox",
+  activeGroup: null,
   groups: [],
 
   setActiveFilter: (filter) => set({ activeFilter: filter }),
@@ -150,13 +156,13 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
 
       // Ensure accountType is set for proper handling
       if (email.accountId && !email.accountType) {
-        email.accountType = 'imap';
+        email.accountType = "imap";
       } else if (!email.accountType) {
-        email.accountType = 'gmail';
+        email.accountType = "gmail";
       }
 
       const key = generateEmailKey(email);
-      
+
       // Always use the newer version when available
       const existingEmail = uniqueEmailsMap.get(key);
       if (!existingEmail) {
@@ -171,17 +177,22 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
           // Keep existing attachments if new email doesn't have them
           attachments: email.attachments || existingEmail.attachments,
           // Use the newer date
-          date: new Date(email.date) > new Date(existingEmail.date) ? email.date : existingEmail.date,
+          date:
+            new Date(email.date) > new Date(existingEmail.date)
+              ? email.date
+              : existingEmail.date,
         };
         uniqueEmailsMap.set(key, mergedEmail);
       }
     });
 
     const uniqueEmails = Array.from(uniqueEmailsMap.values());
-    
+
     // Debug log
-    console.log(`Email store update: ${uniqueEmails.length} unique emails (${emails.length} new emails)`);
-    
+    console.log(
+      `Email store update: ${uniqueEmails.length} unique emails (${emails.length} new emails)`
+    );
+
     set({ emails: uniqueEmails });
 
     // Persist emails
@@ -276,9 +287,9 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
 
     // Ensure accountType is set
     if (email.accountId && !email.accountType) {
-      email.accountType = 'imap';
+      email.accountType = "imap";
     } else if (!email.accountType) {
-      email.accountType = 'gmail';
+      email.accountType = "gmail";
     }
 
     const { emails } = get();
@@ -303,9 +314,12 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
         // Keep existing attachments if new email doesn't have them
         attachments: email.attachments || existingEmail.attachments,
         // Use the newer date
-        date: new Date(email.date) > new Date(existingEmail.date) ? email.date : existingEmail.date,
+        date:
+          new Date(email.date) > new Date(existingEmail.date)
+            ? email.date
+            : existingEmail.date,
       };
-      
+
       updatedEmails = [...emails];
       updatedEmails[existingEmailIndex] = mergedEmail;
     }
@@ -327,9 +341,14 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
 
     // Handle sender contact update
     if (email.from && email.from.email && !email.from.email.includes("me")) {
-      const contactKey = generateContactKey(email.accountType, email.accountId, email.from.email);
+      const contactKey = generateContactKey(
+        email.accountType,
+        email.accountId,
+        email.from.email
+      );
       const existingContactIndex = contacts.findIndex(
-        (c) => generateContactKey(c.accountType, c.accountId, c.email) === contactKey
+        (c) =>
+          generateContactKey(c.accountType, c.accountId, c.email) === contactKey
       );
       const emailDate = new Date(email.date);
 
@@ -361,9 +380,15 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
     if (Array.isArray(email.to)) {
       email.to.forEach((recipient) => {
         if (!recipient.email.includes("me")) {
-          const contactKey = generateContactKey(email.accountType, email.accountId, recipient.email);
+          const contactKey = generateContactKey(
+            email.accountType,
+            email.accountId,
+            recipient.email
+          );
           const existingContactIndex = contacts.findIndex(
-            (c) => generateContactKey(c.accountType, c.accountId, c.email) === contactKey
+            (c) =>
+              generateContactKey(c.accountType, c.accountId, c.email) ===
+              contactKey
           );
           const emailDate = new Date(email.date);
 
@@ -431,7 +456,7 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
 
   setImapAccounts: (accounts) => {
     set({ imapAccounts: accounts });
-    
+
     // Persist IMAP accounts
     if (typeof window !== "undefined") {
       localStorage.setItem("imapAccounts", JSON.stringify(accounts));
@@ -439,11 +464,11 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
   },
 
   addGroup: (group) => {
-    set(state => ({ 
-      ...state, 
-      groups: [...state.groups, group] 
+    set((state) => ({
+      ...state,
+      groups: [...state.groups, group],
     }));
-    
+
     // Persist groups
     if (typeof window !== "undefined") {
       try {
@@ -457,30 +482,32 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
   },
 
   updateGroup: (group) => {
-    set(state => ({
+    set((state) => ({
       ...state,
-      groups: state.groups.map(g => g.id === group.id ? group : g)
+      groups: state.groups.map((g) => (g.id === group.id ? group : g)),
     }));
-    
+
     // Persist updated groups
     if (typeof window !== "undefined") {
       try {
         const savedGroups = localStorage.getItem("groups");
         const groups = savedGroups ? JSON.parse(savedGroups) : [];
-        const updatedGroups = groups.map((g: Group) => g.id === group.id ? group : g);
+        const updatedGroups = groups.map((g: Group) =>
+          g.id === group.id ? group : g
+        );
         localStorage.setItem("groups", JSON.stringify(updatedGroups));
       } catch (e) {
         console.error("Failed to persist groups to localStorage:", e);
       }
     }
   },
-  
+
   deleteGroup: (groupId) => {
-    set(state => ({
+    set((state) => ({
       ...state,
-      groups: state.groups.filter(g => g.id !== groupId)
+      groups: state.groups.filter((g) => g.id !== groupId),
     }));
-    
+
     // Update localStorage
     if (typeof window !== "undefined") {
       try {
