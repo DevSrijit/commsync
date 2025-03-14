@@ -18,6 +18,7 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { fetchEmails } from "@/lib/gmail-api";
+import { AlertTriangle, MessageSquare } from "lucide-react";
 import { Email } from "@/lib/types";
 
 interface ConversationViewProps {
@@ -220,38 +221,18 @@ export function ConversationView({
         try {
           // For Gmail accounts
           if (!contact.accountId) {
-            const fetchedEmails = await fetchEmails(session.user.accessToken);
-
-            // Filter emails for this contact
-            const relevantEmails = fetchedEmails.filter(
-              (email) =>
-                (email.from.email === contactEmail &&
-                  email.to.some((to) => to.email === session?.user?.email)) ||
-                (email.from.email === session?.user?.email &&
-                  email.to.some((to) => to.email === contactEmail))
-            );
-
-            if (relevantEmails.length > 0) {
-              // Update local storage with new emails
-              const existingEmails = new Map(emails.map((e) => [e.id, e]));
-              relevantEmails.forEach((email) =>
-                existingEmails.set(email.id, email)
-              );
-
-              setEmails(Array.from(existingEmails.values()));
-
-              toast({
-                title: "Conversation loaded",
-                description: `Found ${relevantEmails.length} messages`,
-              });
-            } else {
-              toast({
-                title: "No messages found",
-                description: "Start a new conversation",
-              });
-            }
+            // Show Gmail access limitation message instead of attempting to fetch
+            toast({
+              title: "Gmail conversation unavailable",
+              description: "We cannot display this conversation due to Gmail API limitations.",
+              variant: "destructive",
+              duration: 5000,
+            });
+            
+            setIsRefetching(false);
+            return;
           }
-          // For IMAP accounts
+          // For IMAP accounts - keep existing code
           else if (contact.accountId) {
             const imapAccount = imapAccounts.find(
               (acc) => acc.id === contact.accountId
@@ -323,7 +304,7 @@ export function ConversationView({
   ]);
 
   // Update loading state to include refetching
-  const isLoadingState = isLoading || isRefetching;
+  const isLoadingState = isLoading;
 
   if (!contactEmail) {
     return (
@@ -400,7 +381,7 @@ export function ConversationView({
                   </div>
                 ))}
               </div>
-            ) : (
+            ) : conversation.length > 0 ? (
               conversation.map((email) => {
                 // Fixed isFromMe logic:
                 // For Gmail: check against session.user.email
@@ -564,6 +545,33 @@ export function ConversationView({
                   </div>
                 );
               })
+            ) : (
+              // No messages found - show appropriate message
+              <div className="flex flex-col items-center justify-center p-8 text-center">
+                {!contact?.accountId ? (
+                  // Gmail-specific message
+                  <div className="max-w-md">
+                    <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium mb-2">Gmail Conversation Unavailable</h3>
+                    <p className="text-muted-foreground mb-4">
+                      We cannot display this conversation due to Gmail API limitations. 
+                      This may be due to security restrictions or access permissions.
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Try using an IMAP account for full conversation support.
+                    </p>
+                  </div>
+                ) : (
+                  // Generic empty conversation message for IMAP
+                  <div className="max-w-md">
+                    <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-lg font-medium mb-2">No Messages Found</h3>
+                    <p className="text-muted-foreground">
+                      Start a new conversation with this contact.
+                    </p>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </ScrollArea>

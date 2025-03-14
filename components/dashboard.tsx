@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useSession } from "next-auth/react";
 
 import { Sidebar } from "@/components/sidebar";
@@ -23,6 +23,8 @@ export function EmailDashboard() {
   const [isGroupSelected, setIsGroupSelected] = useState(false);
   const { setEmails, contacts } = useEmailStore();
   const [isLoading, setIsLoading] = useState(true);
+  const [isBackgroundSync, setIsBackgroundSync] = useState(false);
+  const initialLoadComplete = useRef(false);
 
   // Enhanced contact selection handler
   const handleContactSelect = (
@@ -41,6 +43,7 @@ export function EmailDashboard() {
     if (cachedEmails) {
       setEmails(JSON.parse(cachedEmails));
       setIsLoading(false);
+      initialLoadComplete.current = true;
     }
 
     // Only clear cache if explicitly logged out
@@ -52,7 +55,13 @@ export function EmailDashboard() {
     }
 
     const loadEmails = async () => {
-      setIsLoading(true);
+      // Only show loading UI for initial load, not background syncs
+      if (!initialLoadComplete.current) {
+        setIsLoading(true);
+      } else {
+        setIsBackgroundSync(true);
+      }
+      
       try {
         // Get current emails from store to merge with new ones
         const currentEmails = useEmailStore.getState().emails;
@@ -158,13 +167,20 @@ export function EmailDashboard() {
         console.error("Failed to sync emails:", error);
       } finally {
         setIsLoading(false);
+        setIsBackgroundSync(false);
+        initialLoadComplete.current = true;
       }
     };
 
     loadEmails();
 
     // Set up polling for new emails every 2 minutes
-    const intervalId = setInterval(loadEmails, 2 * 60 * 1000);
+    const intervalId = setInterval(() => {
+      // For interval syncs, always use background mode
+      setIsBackgroundSync(true);
+      loadEmails();
+    }, 0.5 * 60 * 1000);
+    
     return () => clearInterval(intervalId);
   }, [session, setEmails]);
 
