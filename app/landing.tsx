@@ -1,6 +1,9 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import { HeroSection } from "@/components/blocks/hero-section-dark";
+import { Marquee } from "@/components/ui/marquee"
+import { FeaturesSectionWithBentoGrid } from "@/components/blocks/feature-section-with-bento-grid";
+
 
 const Landing = () => {
   return (
@@ -19,6 +22,14 @@ const Landing = () => {
           dark: "/dashboard.png",
         }}
       />
+      <div className="space-y-8">
+        <Marquee text="Messages made easier" duration={15} suppressHydrationWarning={true} />
+      </div>
+      <div className="min-h-screen w-full">
+        <div className="relative w-full">
+          <FeaturesSectionWithBentoGrid />
+        </div>
+      </div>
     </>
   );
 };
