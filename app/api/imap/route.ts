@@ -318,8 +318,54 @@ export async function GET(req: NextRequest) {
   try {
     const userId = await getUserIdFromSession(session);
     const url = new URL(req.url);
+    const action = url.searchParams.get("action");
     const accountId = url.searchParams.get("accountId");
 
+    // Handle getAccounts action
+    if (action === "getAccounts") {
+      const accounts = await db.imapAccount.findMany({
+        where: {
+          userId: userId,
+        },
+        select: {
+          id: true,
+          label: true,
+          lastSync: true,
+          credentials: true,
+        },
+      });
+
+      // Decrypt credentials for each account
+      const decryptedAccounts = accounts.map(account => {
+        try {
+          const decrypted = decryptData(account.credentials);
+          const credentials = JSON.parse(decrypted);
+          
+          return {
+            id: account.id,
+            label: account.label,
+            lastSync: account.lastSync,
+            host: credentials.host,
+            port: credentials.port,
+            username: credentials.user,
+            password: credentials.password,
+            secure: credentials.secure,
+          };
+        } catch (error) {
+          console.error("Error decrypting account credentials:", error);
+          return {
+            id: account.id,
+            label: account.label,
+            lastSync: account.lastSync,
+            error: "Failed to decrypt credentials"
+          };
+        }
+      });
+
+      return NextResponse.json({ accounts: decryptedAccounts });
+    }
+
+    // Handle single account fetch
     if (accountId) {
       const account = await db.imapAccount.findUnique({
         where: {
@@ -330,42 +376,27 @@ export async function GET(req: NextRequest) {
 
       if (!account) {
         return NextResponse.json(
-          { error: "Account not found" },
+          { error: "Account not found or unauthorized" },
           { status: 404 }
         );
       }
 
-      if (!account.credentials) {
-        return NextResponse.json(
-          { error: "Account credentials not found" },
-          { status: 500 }
-        );
-      }
-
-      const decrypted = JSON.parse(decryptData(account.credentials));
-      return NextResponse.json({
-        id: account.id,
-        label: account.label,
-        host: decrypted.host,
-        port: decrypted.port,
-        username: decrypted.user,
-        secure: decrypted.secure,
-        lastSync: account.lastSync,
-      });
-    } else {
-      const accounts = await db.imapAccount.findMany({
-        where: {
-          userId: userId,
-        },
-        select: {
-          id: true,
-          label: true,
-          lastSync: true,
-        },
-      });
-
-      return NextResponse.json({ accounts });
+      return NextResponse.json({ account });
     }
+
+    // Default: return all accounts with minimal info
+    const accounts = await db.imapAccount.findMany({
+      where: {
+        userId: userId,
+      },
+      select: {
+        id: true,
+        label: true,
+        lastSync: true,
+      },
+    });
+
+    return NextResponse.json({ accounts });
   } catch (error: any) {
     console.error("IMAP API error:", error?.message || "Unknown error", {
       name: error?.name,
