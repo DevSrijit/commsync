@@ -264,22 +264,20 @@ export function ConversationView({
                   "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
-                  action: "fetchEmails",
+                  action: "getConversation",
                   account: imapAccount,
                   data: {
-                    filter: {
-                      from: contactEmail,
-                    },
+                    contactEmail: contactEmail,
                     includeBody: true,
                   },
                 }),
               });
 
               const data = await response.json();
-              if (data.emails && data.emails.length > 0) {
+              if (data.messages && data.messages.length > 0) {
                 // Add these emails to the store
                 const existingEmails = new Map(emails.map((e) => [e.id, e]));
-                data.emails.forEach((email: Email) =>
+                data.messages.forEach((email: Email) =>
                   existingEmails.set(email.id, email)
                 );
 
@@ -287,7 +285,7 @@ export function ConversationView({
 
                 toast({
                   title: "Conversation loaded",
-                  description: `Found ${data.emails.length} messages`,
+                  description: `Found ${data.messages.length} messages`,
                 });
               } else {
                 toast({

@@ -32,25 +32,32 @@ async function getUserIdFromSession(session: any) {
 }
 
 // Transform IMAP email format to a standardized format for the conversation view
-function standardizeEmailFormat(email: any, accountType = "imap", accountId: string) {
+function standardizeEmailFormat(
+  email: any,
+  accountType = "imap",
+  accountId: string
+) {
   // Ensure date is in ISO format
-  const date = email.date ? new Date(email.date).toISOString() : new Date().toISOString();
+  const date = email.date
+    ? new Date(email.date).toISOString()
+    : new Date().toISOString();
 
   // Ensure labels array exists and has at least INBOX if empty
-  const labels = Array.isArray(email.labels) && email.labels.length > 0 
-    ? email.labels 
-    : ["INBOX"];
+  const labels =
+    Array.isArray(email.labels) && email.labels.length > 0
+      ? email.labels
+      : ["INBOX"];
 
   // Ensure from and to objects have the correct structure
   const from = {
     name: email.from?.name || "",
-    email: email.from?.email || ""
+    email: email.from?.email || "",
   };
 
-  const to = Array.isArray(email.to) 
+  const to = Array.isArray(email.to)
     ? email.to.map((recipient: any) => ({
         name: recipient?.name || "",
-        email: recipient?.email || ""
+        email: recipient?.email || "",
       }))
     : [{ name: "", email: email.to || "" }];
 
@@ -71,7 +78,7 @@ function standardizeEmailFormat(email: any, accountType = "imap", accountId: str
     read: email.read || false,
     flagged: email.flagged || false,
     accountType,
-    accountId // Add the accountId to the email object
+    accountId, // Add the accountId to the email object
   };
 }
 
@@ -186,7 +193,11 @@ export async function POST(req: NextRequest) {
       });
 
       // Standardize the sent email format
-      const standardizedEmail = standardizeEmailFormat(email, "imap", account.id);
+      const standardizedEmail = standardizeEmailFormat(
+        email,
+        "imap",
+        account.id
+      );
       return NextResponse.json({ success: true, email: standardizedEmail });
     }
 
@@ -207,15 +218,15 @@ export async function POST(req: NextRequest) {
     // Delete account
     if (action === "deleteAccount") {
       const { accountId } = data;
-      
+
       // Check if accountId is a valid MongoDB ObjectId (no hyphens)
-      if (accountId && accountId.includes('-')) {
-        return NextResponse.json({ 
+      if (accountId && accountId.includes("-")) {
+        return NextResponse.json({
           success: true,
-          message: "Account removed from local state only" 
+          message: "Account removed from local state only",
         });
       }
-      
+
       try {
         const account = await db.imapAccount.findFirst({
           where: {
@@ -248,49 +259,77 @@ export async function POST(req: NextRequest) {
     // Update last sync
     if (action === "updateLastSync") {
       const { accountId } = data;
-      await db.imapAccount.update({
-        where: { id: accountId },
-        data: { lastSync: new Date() },
-      });
-      return NextResponse.json({ success: true });
+
+      // Check if accountId is a valid MongoDB ObjectId (no hyphens)
+      if (accountId && accountId.includes("-")) {
+        return NextResponse.json({
+          success: true,
+          message: "Account sync time updated in local state only",
+        });
+      }
+
+      try {
+        await db.imapAccount.update({
+          where: { id: accountId },
+          data: { lastSync: new Date() },
+        });
+        return NextResponse.json({ success: true });
+      } catch (error) {
+        console.error("Error updating IMAP account last sync:", error);
+        return NextResponse.json({
+          success: true,
+          message: "Account sync time updated in local state only",
+        });
+      }
     }
 
     // Get conversation
-if (action === "getConversation") {
-  const { messageId, threadId } = data || {};
-  
-  // Fetch all messages since we can't filter by threadId at the IMAP level
-  const emails: ImapFetchResult = await fetchImapEmails(account, {
-    includeBody: true,
-  });
+    if (action === "getConversation") {
+      const { messageId, threadId, contactEmail } = data || {};
 
-  // Filter messages in memory based on threadId or messageId
-  let conversationEmails = emails.messages;
-  if (threadId) {
-    conversationEmails = emails.messages.filter(email => 
-      email.threadId === threadId || email.id === threadId
-    );
-  } else if (messageId) {
-    conversationEmails = emails.messages.filter(email => 
-      email.id === messageId || email.messageId === messageId
-    );
-  }
+      // Fetch all messages since we can't filter by threadId at the IMAP level
+      const emails: ImapFetchResult = await fetchImapEmails(account, {
+        includeBody: true,
+      });
 
-  // Standardize the email format with account ID
-  const standardizedEmails = conversationEmails.map((email) =>
-    standardizeEmailFormat(email, "imap", account.id)
-  );
+      // Filter messages in memory based on contact email and threadId/messageId
+      let conversationEmails = emails.messages;
+      
+      // First filter by contact email if provided
+      if (contactEmail) {
+        conversationEmails = conversationEmails.filter(
+          (email) => 
+            email.from?.email === contactEmail || 
+            (email.to && email.to.some((recipient: { email: string }) => recipient.email === contactEmail))
+        );
+      }
+      
+      // Then apply additional filters if provided
+      if (threadId) {
+        conversationEmails = conversationEmails.filter(
+          (email) => email.threadId === threadId || email.id === threadId
+        );
+      } else if (messageId) {
+        conversationEmails = conversationEmails.filter(
+          (email) => email.id === messageId || email.messageId === messageId
+        );
+      }
 
-  // Sort by date
-  standardizedEmails.sort(
-    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-  );
+      // Standardize the email format with account ID
+      const standardizedEmails = conversationEmails.map((email) =>
+        standardizeEmailFormat(email, "imap", account.id)
+      );
 
-  return NextResponse.json({
-    messages: standardizedEmails,
-    total: standardizedEmails.length,
-  });
-}
+      // Sort by date
+      standardizedEmails.sort(
+        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+      );
+
+      return NextResponse.json({
+        messages: standardizedEmails,
+        total: standardizedEmails.length,
+      });
+    }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   } catch (error: any) {
@@ -336,11 +375,11 @@ export async function GET(req: NextRequest) {
       });
 
       // Decrypt credentials for each account
-      const decryptedAccounts = accounts.map(account => {
+      const decryptedAccounts = accounts.map((account) => {
         try {
           const decrypted = decryptData(account.credentials);
           const credentials = JSON.parse(decrypted);
-          
+
           return {
             id: account.id,
             label: account.label,
@@ -357,7 +396,7 @@ export async function GET(req: NextRequest) {
             id: account.id,
             label: account.label,
             lastSync: account.lastSync,
-            error: "Failed to decrypt credentials"
+            error: "Failed to decrypt credentials",
           };
         }
       });
