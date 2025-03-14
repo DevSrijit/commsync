@@ -43,3 +43,9 @@ export interface Contact {
   accountId?: string;
   accountType?: 'gmail' | 'imap';
 }
+
+export interface Group {
+  id: string;
+  name: string;
+  addresses: string[];
+}

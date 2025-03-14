@@ -56,7 +56,7 @@ import {
 import { ImapAccountDialog } from "./imap-account-dialog";
 import { Badge } from "./ui/badge";
 import { ImapAccountCard } from "./imap-account-card";
-
+import GroupDialog from "./group-dialog";
 export type MessageCategory =
   | "inbox"
   | "draft"
@@ -73,6 +73,7 @@ export function Sidebar() {
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [isImapDialogOpen, setIsImapDialogOpen] = useState(false);
   const [isImapListOpen, setIsImapListOpen] = useState(false);
+  const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false);
 
   const inboxCount = emails.filter(
     (email) =>
@@ -252,6 +253,14 @@ export function Sidebar() {
             </Badge>
           </Button>
           <Button
+            variant="outline"
+            className="w-full flex items-center gap-2"
+            onClick={() => setIsGroupDialogOpen(true)}
+          >
+            <MessageSquarePlus className="h-4 w-4" />
+            <span>Email Groups</span>
+          </Button>
+          <Button
             variant="default"
             className="w-full flex items-center gap-2 bg-neutral-400"
             onClick={() => setIsComposerOpen(true)}
@@ -304,6 +313,12 @@ export function Sidebar() {
       <ImapAccountDialog
         open={isImapDialogOpen}
         onOpenChange={setIsImapDialogOpen}
+      />
+
+      {/* Add Group Dialog */}
+      <GroupDialog
+        open={isGroupDialogOpen}
+        onOpenChange={setIsGroupDialogOpen}
       />
     </div>
   );

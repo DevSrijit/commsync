@@ -37,7 +37,7 @@ export function ImapAccountCard({ account }: ImapAccountCardProps) {
           account,
           data: {
             page: 1,
-            pageSize: 50,
+            pageSize: 100,
           },
         }),
       });

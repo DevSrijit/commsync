@@ -1,7 +1,7 @@
 "use client";
 
 import { create } from "zustand";
-import type { Email, Contact } from "@/lib/types";
+import type { Email, Contact, Group } from "@/lib/types";
 import { MessageCategory } from "@/components/sidebar";
 import { ImapAccount } from "@/lib/imap-service";
 import { SyncService } from "./sync-service";
@@ -11,6 +11,7 @@ interface EmailStore {
   contacts: Contact[];
   activeFilter: MessageCategory;
   imapAccounts: ImapAccount[];
+  groups: Group[];
   setEmails: (emails: Email[]) => void;
   setActiveFilter: (filter: MessageCategory) => void;
   addEmail: (email: Email) => void;
@@ -20,26 +21,31 @@ interface EmailStore {
   syncEmails: (gmailToken: string | null) => Promise<void>;
   syncImapAccounts: () => Promise<void>;
   setImapAccounts: (accounts: ImapAccount[]) => void;
+  addGroup: (group: Group) => void;
+  updateGroup: (group: Group) => void;
+  deleteGroup: (groupId: string) => void;
 }
 
 // Helper function to load persisted data
 const loadPersistedData = () => {
   // Always return empty arrays during server-side rendering
   if (typeof window === "undefined") {
-    return { emails: [], imapAccounts: [] };
+    return { emails: [], imapAccounts: [], groups: [] };
   }
 
   try {
     const savedEmails = localStorage.getItem("emails");
     const savedAccounts = localStorage.getItem("imapAccounts");
+    const savedGroups = localStorage.getItem("groups");
 
     return {
       emails: savedEmails ? JSON.parse(savedEmails) : [],
       imapAccounts: savedAccounts ? JSON.parse(savedAccounts) : [],
+      groups: savedGroups ? JSON.parse(savedGroups) : [],
     };
   } catch (e) {
     console.error("Failed to load persisted data:", e);
-    return { emails: [], imapAccounts: [] };
+    return { emails: [], imapAccounts: [], groups: [] };
   }
 };
 
@@ -113,6 +119,7 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
   contacts: [],
   imapAccounts: [],
   activeFilter: "inbox",
+  groups: [],
 
   setActiveFilter: (filter) => set({ activeFilter: filter }),
 
@@ -428,6 +435,62 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
     // Persist IMAP accounts
     if (typeof window !== "undefined") {
       localStorage.setItem("imapAccounts", JSON.stringify(accounts));
+    }
+  },
+
+  addGroup: (group) => {
+    set(state => ({ 
+      ...state, 
+      groups: [...state.groups, group] 
+    }));
+    
+    // Persist groups
+    if (typeof window !== "undefined") {
+      try {
+        const savedGroups = localStorage.getItem("groups");
+        const groups = savedGroups ? JSON.parse(savedGroups) : [];
+        localStorage.setItem("groups", JSON.stringify([...groups, group]));
+      } catch (e) {
+        console.error("Failed to persist groups to localStorage:", e);
+      }
+    }
+  },
+
+  updateGroup: (group) => {
+    set(state => ({
+      ...state,
+      groups: state.groups.map(g => g.id === group.id ? group : g)
+    }));
+    
+    // Persist updated groups
+    if (typeof window !== "undefined") {
+      try {
+        const savedGroups = localStorage.getItem("groups");
+        const groups = savedGroups ? JSON.parse(savedGroups) : [];
+        const updatedGroups = groups.map((g: Group) => g.id === group.id ? group : g);
+        localStorage.setItem("groups", JSON.stringify(updatedGroups));
+      } catch (e) {
+        console.error("Failed to persist groups to localStorage:", e);
+      }
+    }
+  },
+  
+  deleteGroup: (groupId) => {
+    set(state => ({
+      ...state,
+      groups: state.groups.filter(g => g.id !== groupId)
+    }));
+    
+    // Update localStorage
+    if (typeof window !== "undefined") {
+      try {
+        const savedGroups = localStorage.getItem("groups");
+        const groups = savedGroups ? JSON.parse(savedGroups) : [];
+        const filteredGroups = groups.filter((g: Group) => g.id !== groupId);
+        localStorage.setItem("groups", JSON.stringify(filteredGroups));
+      } catch (e) {
+        console.error("Failed to persist groups to localStorage:", e);
+      }
     }
   },
 }));

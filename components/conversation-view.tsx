@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { MessageInput } from "@/components/message-input";
 import { formatDistanceToNow } from "date-fns";
 import { useEmailStore } from "@/lib/email-store";
@@ -17,7 +17,6 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
-import { useEffect } from "react";
 import { fetchEmails } from "@/lib/gmail-api";
 import { Email } from "@/lib/types";
 
@@ -54,10 +53,49 @@ export function ConversationView({
   isLoading,
 }: ConversationViewProps) {
   const { data: session } = useSession();
-  const { emails, contacts, addEmail, setEmails, imapAccounts } = useEmailStore();
+  const { emails, activeFilter, activeGroup, groups, contacts, addEmail, setEmails, imapAccounts } = useEmailStore();
+  const { toast } = useToast();
+  
+  // Filter emails based on active filter and group
+  const filteredEmails = useMemo(() => {
+    if (activeFilter.startsWith("group:") && activeGroup) {
+      // Find the active group
+      const group = groups.find(g => g.id === activeGroup);
+      if (group) {
+        // Filter emails that involve any address in the group
+        return emails.filter(email => 
+          group.addresses.some(addr => 
+            email.from?.includes(addr) || 
+            email.to?.includes(addr)
+          )
+        );
+      }
+      return [];
+    }
+    
+    // Original filtering logic for other filters
+    if (activeFilter === "inbox") {
+      return emails.filter(
+        (email) => 
+          !(email.labels?.includes("TRASH") || email.labels?.includes("SENT"))
+      );
+    } else if (activeFilter === "draft") {
+      return emails.filter((email) => email.labels?.includes("DRAFT"));
+    } else if (activeFilter === "sent") {
+      return emails.filter((email) => email.labels?.includes("SENT"));
+    } else if (activeFilter === "trash") {
+      return emails.filter((email) => email.labels?.includes("TRASH"));
+    } else if (activeFilter === "starred") {
+      return emails.filter((email) => email.labels?.includes("STARRED"));
+    } else if (activeFilter === "archive") {
+      return emails.filter((email) => email.labels?.includes("ARCHIVE"));
+    } else {
+      return emails;
+    }
+  }, [emails, activeFilter, activeGroup, groups]);
+
   const [isSending, setIsSending] = useState(false);
   const [isRefetching, setIsRefetching] = useState(false);
-  const { toast } = useToast();
   const [messageContent, setMessageContent] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
 
@@ -75,7 +113,7 @@ export function ConversationView({
   }, [contactEmail, contact, imapAccounts]);
 
   // Filter all emails related to this conversation, considering account IDs
-  const conversation = emails
+  const conversation = filteredEmails
     .filter((email) => {
       if (contactEmail === null) return false;
 
