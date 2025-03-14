@@ -117,6 +117,17 @@ export function ImapAccountCard({ account }: ImapAccountCardProps) {
 
   const handleDelete = async () => {
     try {
+      // Check if account.id is a valid MongoDB ObjectId
+      if (!account.id || account.id.includes('-')) {
+        // If it's not a valid ObjectId, just remove from local state
+        removeImapAccount(account.id!);
+        toast({
+          title: "Account removed",
+          description: `${account.label} has been removed successfully`,
+        });
+        return;
+      }
+      
       const response = await fetch("/api/imap", {
         method: "POST",
         headers: {

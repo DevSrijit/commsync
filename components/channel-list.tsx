@@ -9,7 +9,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { MessageCategory } from "@/components/sidebar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
 import { Group } from "@/lib/types";
 
 interface EmailListProps {
@@ -81,6 +80,36 @@ export function EmailList({
     }
   };
 
+  // New function to render a group item with the same style as ContactItem
+  const GroupItem = ({ group, isSelected, onClick }: {
+    group: Group; 
+    isSelected: boolean; 
+    onClick: () => void;
+  }) => {
+    return (
+      <div
+        className={`flex items-center gap-3 p-3 cursor-pointer transition-all border m-2 rounded-lg ${
+          isSelected ? "bg-secondary" : "hover:bg-secondary/50"
+        }`}
+        onClick={onClick}
+      >
+        <Avatar className="h-10 w-10 border">
+          <AvatarFallback className="bg-white text-black">
+            {group.name.slice(0, 2).toUpperCase()}
+          </AvatarFallback>
+        </Avatar>
+        <div className="flex-1 truncate">
+          <div className="flex items-center justify-between">
+            <span className="font-medium truncate">{group.name}</span>
+          </div>
+          <span className="text-sm text-muted-foreground truncate">
+            {group.addresses.length} members
+          </span>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div
       className={cn(
@@ -122,37 +151,12 @@ export function EmailList({
                   Groups
                 </h3>
                 {filteredGroups.map((group) => (
-                  <Button
+                  <GroupItem
                     key={group.id}
-                    variant={
-                      selectedGroupId === group.id ? "secondary" : "ghost"
-                    }
-                    className={`w-full justify-start p-3 h-auto transition-all ${
-                      selectedGroupId === group.id
-                        ? "bg-secondary"
-                        : "hover:bg-secondary/50"
-                    }`}
+                    group={group}
+                    isSelected={selectedGroupId === group.id}
                     onClick={() => handleGroupSelect(group)}
-                  >
-                    <div className="flex items-center gap-3 w-full">
-                      <Avatar className="h-10 w-10 border bg-secondary">
-                        <Users className="h-5 w-5" />
-                        <AvatarFallback>
-                          {group.name.slice(0, 2).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 truncate">
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium truncate">
-                            {group.name}
-                          </span>
-                        </div>
-                        <span className="text-sm text-muted-foreground truncate">
-                          {group.addresses.length} members
-                        </span>
-                      </div>
-                    </div>
-                  </Button>
+                  />
                 ))}
               </div>
             )}

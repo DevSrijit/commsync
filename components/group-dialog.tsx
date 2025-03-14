@@ -49,6 +49,7 @@ export default function GroupDialog({ open, onOpenChange, groupToEdit }: GroupDi
   const [newAddress, setNewAddress] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [isEditing, setIsEditing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Initialize form when editing an existing group
   useEffect(() => {
@@ -122,7 +123,7 @@ export default function GroupDialog({ open, onOpenChange, groupToEdit }: GroupDi
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!groupName.trim()) {
       toast({
         title: "Group name required",
@@ -141,33 +142,43 @@ export default function GroupDialog({ open, onOpenChange, groupToEdit }: GroupDi
       return;
     }
 
-    if (isEditing && groupToEdit) {
-      updateGroup({
-        id: groupToEdit.id,
-        name: groupName,
-        addresses,
-      });
-      toast({
-        title: "Group updated",
-        description: `Group "${groupName}" has been updated`,
-      });
-    } else {
-      addGroup({
-        id: crypto.randomUUID(),
-        name: groupName,
-        addresses,
-      });
-      toast({
-        title: "Group created",
-        description: `Group "${groupName}" has been created`,
-      });
-    }
+    setIsSubmitting(true);
 
-    // Reset form and close dialog
-    setGroupName("");
-    setAddresses([]);
-    setNewAddress("");
-    onOpenChange(false);
+    try {
+      if (isEditing && groupToEdit) {
+        await updateGroup({
+          id: groupToEdit.id,
+          name: groupName,
+          addresses,
+        });
+        toast({
+          title: "Group updated",
+          description: `${groupName} has been updated successfully`,
+        });
+      } else {
+        // For new groups, generate a temporary ID that will be replaced by the server
+        const tempId = `temp-${Date.now()}`;
+        await addGroup({
+          id: tempId,
+          name: groupName,
+          addresses,
+        });
+        toast({
+          title: "Group created",
+          description: `${groupName} has been created successfully`,
+        });
+      }
+      onOpenChange(false);
+    } catch (error) {
+      console.error("Error saving group:", error);
+      toast({
+        title: "Error",
+        description: "Failed to save group. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -260,8 +271,8 @@ export default function GroupDialog({ open, onOpenChange, groupToEdit }: GroupDi
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit}>
-            {isEditing ? "Update Group" : "Create Group"}
+          <Button onClick={handleSubmit} disabled={isSubmitting}>
+            {isSubmitting ? "Saving..." : (isEditing ? "Update Group" : "Create Group")}
           </Button>
         </DialogFooter>
       </DialogContent>

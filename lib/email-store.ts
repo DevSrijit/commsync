@@ -25,6 +25,8 @@ interface EmailStore {
   addGroup: (group: Group) => void;
   updateGroup: (group: Group) => void;
   deleteGroup: (groupId: string) => void;
+  syncGroups: () => Promise<void>;
+  setGroups: (groups: Group[]) => void;
 }
 
 // Helper function to load persisted data
@@ -463,67 +465,180 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
     }
   },
 
-  addGroup: (group) => {
-    set((state) => ({
-      ...state,
-      groups: [...state.groups, group],
-    }));
-
-    // Persist groups
-    if (typeof window !== "undefined") {
-      try {
-        const savedGroups = localStorage.getItem("groups");
-        const groups = savedGroups ? JSON.parse(savedGroups) : [];
-        localStorage.setItem("groups", JSON.stringify([...groups, group]));
-      } catch (e) {
-        console.error("Failed to persist groups to localStorage:", e);
+  syncGroups: async () => {
+    try {
+      const response = await fetch("/api/groups");
+      if (response.ok) {
+        const { groups } = await response.json();
+        if (groups && Array.isArray(groups)) {
+          set((state) => ({ ...state, groups }));
+          
+          // Update local storage
+          if (typeof window !== "undefined") {
+            localStorage.setItem("groups", JSON.stringify(groups));
+            localStorage.setItem("groupsTimestamp", Date.now().toString());
+          }
+        }
+      } else {
+        console.error("Failed to sync groups:", await response.text());
       }
+    } catch (error) {
+      console.error("Error syncing groups:", error);
     }
   },
 
-  updateGroup: (group) => {
-    set((state) => ({
-      ...state,
-      groups: state.groups.map((g) => (g.id === group.id ? group : g)),
-    }));
-
-    // Persist updated groups
+  setGroups: (groups) => {
+    set((state) => ({ ...state, groups }));
+    
+    // Update local storage
     if (typeof window !== "undefined") {
-      try {
-        const savedGroups = localStorage.getItem("groups");
-        const groups = savedGroups ? JSON.parse(savedGroups) : [];
-        const updatedGroups = groups.map((g: Group) =>
-          g.id === group.id ? group : g
-        );
-        localStorage.setItem("groups", JSON.stringify(updatedGroups));
-      } catch (e) {
-        console.error("Failed to persist groups to localStorage:", e);
-      }
+      localStorage.setItem("groups", JSON.stringify(groups));
+      localStorage.setItem("groupsTimestamp", Date.now().toString());
     }
   },
 
-  deleteGroup: (groupId) => {
-    set((state) => ({
-      ...state,
-      groups: state.groups.filter((g) => g.id !== groupId),
-    }));
+  addGroup: async (group) => {
+    try {
+      // First update local state for immediate UI feedback
+      set((state) => ({
+        ...state,
+        groups: [...state.groups, group],
+      }));
 
-    // Update localStorage
-    if (typeof window !== "undefined") {
-      try {
-        const savedGroups = localStorage.getItem("groups");
-        const groups = savedGroups ? JSON.parse(savedGroups) : [];
-        const filteredGroups = groups.filter((g: Group) => g.id !== groupId);
-        localStorage.setItem("groups", JSON.stringify(filteredGroups));
-      } catch (e) {
-        console.error("Failed to persist groups to localStorage:", e);
+      // Then persist to Prisma
+      const response = await fetch("/api/groups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "create", group }),
+      });
+
+      if (response.ok) {
+        const { group: savedGroup } = await response.json();
+        
+        // Update with the server-generated ID and timestamps
+        set((state) => ({
+          ...state,
+          groups: state.groups.map(g => 
+            g.id === group.id ? savedGroup : g
+          ),
+        }));
+        
+        // Update local storage
+        if (typeof window !== "undefined") {
+          const savedGroups = localStorage.getItem("groups");
+          const groups = savedGroups ? JSON.parse(savedGroups) : [];
+          const updatedGroups = groups.map((g:Group) => g.id === group.id ? savedGroup : g);
+          localStorage.setItem("groups", JSON.stringify(updatedGroups));
+          localStorage.setItem("groupsTimestamp", Date.now().toString());
+        }
+      } else {
+        console.error("Failed to save group to server:", await response.text());
+        // Revert the local change if server save failed
+        await get().syncGroups();
       }
+    } catch (error) {
+      console.error("Error saving group:", error);
+      // Revert the local change if there was an error
+      await get().syncGroups();
+    }
+  },
+
+  updateGroup: async (group) => {
+    try {
+      // First update local state for immediate UI feedback
+      set((state) => ({
+        ...state,
+        groups: state.groups.map((g) => (g.id === group.id ? group : g)),
+      }));
+
+      // Then persist to Prisma
+      const response = await fetch("/api/groups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "update", group }),
+      });
+
+      if (!response.ok) {
+        console.error("Failed to update group on server:", await response.text());
+        // Revert the local change if server update failed
+        await get().syncGroups();
+      } else {
+        // Update local storage
+        if (typeof window !== "undefined") {
+          const savedGroups = localStorage.getItem("groups");
+          const groups = savedGroups ? JSON.parse(savedGroups) : [];
+          const updatedGroups = groups.map((g:Group) => g.id === group.id ? group : g);
+          localStorage.setItem("groups", JSON.stringify(updatedGroups));
+          localStorage.setItem("groupsTimestamp", Date.now().toString());
+        }
+      }
+    } catch (error) {
+      console.error("Error updating group:", error);
+      // Revert the local change if there was an error
+      await get().syncGroups();
+    }
+  },
+
+  deleteGroup: async (groupId) => {
+    try {
+      // Find the group to delete
+      const groupToDelete = get().groups.find(g => g.id === groupId);
+      if (!groupToDelete) return;
+      
+      // First update local state for immediate UI feedback
+      set((state) => ({
+        ...state,
+        groups: state.groups.filter((g) => g.id !== groupId),
+      }));
+
+      // Then delete from Prisma
+      const response = await fetch("/api/groups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          action: "delete", 
+          group: { id: groupId } 
+        }),
+      });
+
+      if (!response.ok) {
+        console.error("Failed to delete group from server:", await response.text());
+        // Revert the local change if server delete failed
+        await get().syncGroups();
+      } else {
+        // Update local storage
+        if (typeof window !== "undefined") {
+          const savedGroups = localStorage.getItem("groups");
+          const groups = savedGroups ? JSON.parse(savedGroups) : [];
+          const filteredGroups = groups.filter((g:Group) => g.id !== groupId);
+          localStorage.setItem("groups", JSON.stringify(filteredGroups));
+          localStorage.setItem("groupsTimestamp", Date.now().toString());
+        }
+      }
+    } catch (error) {
+      console.error("Error deleting group:", error);
+      // Revert the local change if there was an error
+      await get().syncGroups();
     }
   },
 }));
 
 // Load persisted data on the client side only
 if (typeof window !== "undefined") {
+  // Initial load from localStorage
   const persistedData = loadPersistedData();
   useEmailStore.setState(persistedData);
+  
+  // Then sync with server data
+  setTimeout(async () => {
+    const store = useEmailStore.getState();
+    await store.syncGroups();
+    await store.syncImapAccounts();
+  }, 100);
+  
+  // Set up periodic sync
+  setInterval(async () => {
+    const store = useEmailStore.getState();
+    await store.syncGroups();
+  }, 5 * 60 * 1000); // Sync every 5 minutes
 }

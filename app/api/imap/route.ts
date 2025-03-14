@@ -207,25 +207,42 @@ export async function POST(req: NextRequest) {
     // Delete account
     if (action === "deleteAccount") {
       const { accountId } = data;
-      const account = await db.imapAccount.findFirst({
-        where: {
-          id: accountId,
-          userId: userId,
-        },
-      });
+      
+      // Check if accountId is a valid MongoDB ObjectId (no hyphens)
+      if (accountId && accountId.includes('-')) {
+        return NextResponse.json({ 
+          success: true,
+          message: "Account removed from local state only" 
+        });
+      }
+      
+      try {
+        const account = await db.imapAccount.findFirst({
+          where: {
+            id: accountId,
+            userId: userId,
+          },
+        });
 
-      if (!account) {
+        if (!account) {
+          return NextResponse.json(
+            { error: "Account not found or unauthorized" },
+            { status: 404 }
+          );
+        }
+
+        await db.imapAccount.delete({
+          where: { id: accountId },
+        });
+
+        return NextResponse.json({ success: true });
+      } catch (error) {
+        console.error("Error deleting IMAP account:", error);
         return NextResponse.json(
-          { error: "Account not found or unauthorized" },
-          { status: 404 }
+          { error: "Failed to delete account", details: error },
+          { status: 500 }
         );
       }
-
-      await db.imapAccount.delete({
-        where: { id: accountId },
-      });
-
-      return NextResponse.json({ success: true });
     }
 
     // Update last sync
