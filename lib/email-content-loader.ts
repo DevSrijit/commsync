@@ -11,7 +11,7 @@ export class EmailContentLoader {
   private loadingEmails = new Set<string>();
   private retryMap = new Map<string, number>();
 
-  private constructor() {}
+  public constructor() {}
 
   static getInstance(): EmailContentLoader {
     if (!EmailContentLoader.instance) {
