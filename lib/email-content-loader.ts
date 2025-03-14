@@ -30,6 +30,11 @@ export class EmailContentLoader {
     const { maxRetries = 3, retryDelay = 2000 } = options;
     const emailKey = this.getEmailKey(email);
 
+    // Skip if email already has content
+    if (this.hasContent(email)) {
+      return email;
+    }
+
     // Prevent duplicate loading requests
     if (this.loadingEmails.has(emailKey)) {
       return null;
@@ -165,6 +170,12 @@ export class EmailContentLoader {
   }
 
   private getEmailKey(email: Email): string {
-    return `${email.accountType || 'gmail'}-${email.accountId || ''}-${email.id}`;
+    // Use a consistent key format that doesn't depend on accountType/accountId
+    // This ensures the same email is recognized regardless of how it was fetched
+    return `${email.id}`;
+  }
+
+  public hasContent(email: Email): boolean {
+    return Boolean(email.body && email.body.trim() !== '');
   }
 }

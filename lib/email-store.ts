@@ -44,14 +44,10 @@ const loadPersistedData = () => {
 };
 
 // Improved email key generation function
-const generateEmailKey = (email: Email) => {
-  // For IMAP emails, use a combination of accountId and id
-  if (email.accountId) {
-    return `imap-${email.accountId}-${email.id}`;
-  }
-  
-  // For Gmail emails, use the id (which is already unique)
-  return `gmail-${email.id}`;
+const generateEmailKey = (email: Email): string => {
+  // Use a consistent key format that doesn't depend on accountType/accountId
+  // This ensures the same email is recognized regardless of how it was fetched
+  return `${email.id}`;
 };
 
 // Filter function to identify valid emails
@@ -72,6 +68,11 @@ const isValidEmail = (email: Email): boolean => {
   }
   
   return true;
+};
+
+const generateContactKey = (accountType: string | undefined, accountId: string | undefined, email: string): string => {
+  // Use email address as the primary key, regardless of account
+  return email.toLowerCase();
 };
 
 export const useEmailStore = create<EmailStore>((set, get) => ({
@@ -134,6 +135,12 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
 
     // Then add or update with new emails
     emails.forEach((email) => {
+      // Skip invalid emails
+      if (!isValidEmail(email)) {
+        console.warn("Skipping invalid email:", email.id);
+        return;
+      }
+
       // Ensure accountType is set for proper handling
       if (email.accountId && !email.accountType) {
         email.accountType = 'imap';
@@ -191,7 +198,8 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
 
       // Add sender as contact (if not the current user)
       if (!email.from.email.includes("me")) {
-        const contactKey = `${email.accountId || 'gmail'}-${email.from.email}`;
+        // Use email address only as the contact key
+        const contactKey = email.from.email.toLowerCase();
         const existingContact = contactsMap.get(contactKey);
         const emailDate = new Date(email.date);
 
@@ -205,7 +213,8 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
             lastMessageDate: email.date,
             lastMessageSubject: email.subject,
             labels: email.labels,
-            accountId: email.accountId, // Add accountId to track which account this contact is from
+            accountId: email.accountId,
+            accountType: email.accountType,
           });
         }
       }
@@ -214,7 +223,8 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
       if (Array.isArray(email.to)) {
         email.to.forEach((recipient) => {
           if (!recipient.email.includes("me")) {
-            const contactKey = `${email.accountId || 'gmail'}-${recipient.email}`;
+            // Use email address only as the contact key
+            const contactKey = recipient.email.toLowerCase();
             const existingContact = contactsMap.get(contactKey);
             const emailDate = new Date(email.date);
 
@@ -228,7 +238,8 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
                 lastMessageDate: email.date,
                 lastMessageSubject: email.subject,
                 labels: email.labels,
-                accountId: email.accountId, // Add accountId to track which account this contact is from
+                accountId: email.accountId,
+                accountType: email.accountType,
               });
             }
           }
@@ -250,6 +261,12 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
   },
 
   addEmail: (email) => {
+    // Skip invalid emails
+    if (!isValidEmail(email)) {
+      console.warn("Skipping invalid email in addEmail:", email.id);
+      return;
+    }
+
     // Ensure accountType is set
     if (email.accountId && !email.accountType) {
       email.accountType = 'imap';
@@ -303,9 +320,9 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
 
     // Handle sender contact update
     if (email.from && email.from.email && !email.from.email.includes("me")) {
-      const contactKey = `${email.accountId || 'gmail'}-${email.from.email}`;
+      const contactKey = generateContactKey(email.accountType, email.accountId, email.from.email);
       const existingContactIndex = contacts.findIndex(
-        (c) => `${c.accountId || 'gmail'}-${c.email}` === contactKey
+        (c) => generateContactKey(c.accountType, c.accountId, c.email) === contactKey
       );
       const emailDate = new Date(email.date);
 
@@ -317,6 +334,7 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
           lastMessageSubject: email.subject,
           labels: email.labels,
           accountId: email.accountId,
+          accountType: email.accountType,
         });
       } else if (
         new Date(contacts[existingContactIndex].lastMessageDate) < emailDate
@@ -327,6 +345,7 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
           lastMessageSubject: email.subject,
           labels: email.labels,
           accountId: email.accountId,
+          accountType: email.accountType,
         };
       }
     }
@@ -335,9 +354,9 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
     if (Array.isArray(email.to)) {
       email.to.forEach((recipient) => {
         if (!recipient.email.includes("me")) {
-          const contactKey = `${email.accountId || 'gmail'}-${recipient.email}`;
+          const contactKey = generateContactKey(email.accountType, email.accountId, recipient.email);
           const existingContactIndex = contacts.findIndex(
-            (c) => `${c.accountId || 'gmail'}-${c.email}` === contactKey
+            (c) => generateContactKey(c.accountType, c.accountId, c.email) === contactKey
           );
           const emailDate = new Date(email.date);
 
@@ -349,6 +368,7 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
               lastMessageSubject: email.subject,
               labels: email.labels,
               accountId: email.accountId,
+              accountType: email.accountType,
             });
           } else if (
             new Date(contacts[existingContactIndex].lastMessageDate) < emailDate
@@ -359,6 +379,7 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
               lastMessageSubject: email.subject,
               labels: email.labels,
               accountId: email.accountId,
+              accountType: email.accountType,
             };
           }
         }

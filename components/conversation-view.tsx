@@ -58,6 +58,8 @@ export function ConversationView({
   const [isSending, setIsSending] = useState(false);
   const [isRefetching, setIsRefetching] = useState(false);
   const { toast } = useToast();
+  const [messageContent, setMessageContent] = useState("");
+  const [attachments, setAttachments] = useState<File[]>([]);
 
   const contact = contacts.find((c) => c.email === contactEmail);
 
@@ -440,7 +442,7 @@ export function ConversationView({
         className="border-t border-border p-4 bg-card/50 backdrop-blur supports-[backdrop-filter]:bg-background/60"
       >
         <MessageInput
-          onSend={async (content, attachments) => {
+          onSend={async (content, uploadedAttachments) => {
             if (!contactEmail || !session?.user?.accessToken) return;
 
             setIsSending(true);
@@ -450,6 +452,7 @@ export function ConversationView({
                 to: contactEmail,
                 subject: `Re: ${contact?.lastMessageSubject || "No subject"}`,
                 body: content,
+                attachments: uploadedAttachments, // Pass the attachments
               });
 
               addEmail(newEmail);

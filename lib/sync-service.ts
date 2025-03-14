@@ -99,8 +99,17 @@ export class SyncService {
   }
 
   private async loadMissingContent(emails: Email[]) {
+    // Create a content loader instance if not already available
+    if (!this.contentLoader) {
+      this.contentLoader = new EmailContentLoader();
+    }
+    
     // Find emails that don't have body content
-    const emailsWithoutContent = emails.filter(email => !email.body || email.body.length === 0);
+    const emailsWithoutContent = emails.filter(email => 
+      !email.body || email.body.trim() === ''
+    );
+    
+    console.log(`Loading content for ${emailsWithoutContent.length} emails without content`);
     
     // Load content for up to 5 emails at a time to avoid overwhelming the server
     const batchSize = 5;

@@ -73,7 +73,7 @@ export const useSendMessage = () => {
             to: messageData.recipients,
             subject: messageData.subject || "No subject",
             body: messageData.content,
-            // Handle attachments if your sendEmail function supports them
+            attachments: messageData.attachments || [], // Pass attachments to sendEmail
           });
 
           break;

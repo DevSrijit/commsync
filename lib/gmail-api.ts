@@ -112,31 +112,99 @@ export async function sendEmail({
   to,
   subject,
   body,
+  attachments = [],
 }: {
   accessToken: string;
   to: string;
   subject: string;
   body: string;
+  attachments?: File[];
 }): Promise<Email> {
-  // Create email in RFC 2822 format with HTML content
-  const emailLines = [
-    `To: ${to}`,
-    `Subject: ${subject}`,
-    'Content-Type: text/html; charset="UTF-8"',
-    "MIME-Version: 1.0",
-    "",
-    body,
-  ];
-
-  const email = emailLines.join("\r\n");
-
-  // Encode the email in base64
-  const encodedEmail = btoa(unescape(encodeURIComponent(email)))
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
-
   try {
+    // Create a proper MIME message
+    const message = new FormData();
+    
+    // Create metadata part
+    const metadata = {
+      to: to,
+      subject: subject,
+    };
+    
+    // Define a type for message parts
+    type MessagePart = {
+      mimeType: string;
+      body: string;
+      filename?: string;
+      headers?: Record<string, string>;
+    };
+
+    // Create message parts array
+    const parts: MessagePart[] = [
+      {
+        mimeType: "text/html",
+        body: body
+      }
+    ];
+    
+    // Add attachments to parts
+    for (const file of attachments) {
+      // Convert file to base64
+      const fileArrayBuffer = await file.arrayBuffer();
+      const fileBase64 = btoa(
+        new Uint8Array(fileArrayBuffer)
+          .reduce((data, byte) => data + String.fromCharCode(byte), '')
+      );
+      
+      parts.push({
+        filename: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        body: fileBase64,
+        headers: {
+          "Content-Disposition": `attachment; filename="${file.name}"`,
+          "Content-Transfer-Encoding": "base64"
+        }
+      });
+    }
+    
+    // Create the request body
+    const requestBody = {
+      raw: btoa(
+        `From: me\r\n` +
+        `To: ${to}\r\n` +
+        `Subject: ${subject}\r\n` +
+        `MIME-Version: 1.0\r\n` +
+        `Content-Type: multipart/mixed; boundary="boundary"\r\n\r\n` +
+        
+        `--boundary\r\n` +
+        `Content-Type: text/html; charset="UTF-8"\r\n\r\n` +
+        `${body}\r\n\r\n` +
+        
+        attachments.map(file => 
+          `--boundary\r\n` +
+          `Content-Type: ${file.type || 'application/octet-stream'}\r\n` +
+          `Content-Disposition: attachment; filename="${file.name}"\r\n` +
+          `Content-Transfer-Encoding: base64\r\n\r\n` +
+          `[ATTACHMENT_DATA_${file.name}]\r\n\r\n`
+        ).join('') +
+        
+        `--boundary--`
+      ).replace(/[+]/g, '-').replace(/[/]/g, '_').replace(/=+$/, '')
+    };
+    
+    // For each attachment, we need to replace the placeholder with actual base64 data
+    for (const file of attachments) {
+      const fileArrayBuffer = await file.arrayBuffer();
+      const fileBase64 = btoa(
+        new Uint8Array(fileArrayBuffer)
+          .reduce((data, byte) => data + String.fromCharCode(byte), '')
+      ).replace(/[+]/g, '-').replace(/[/]/g, '_').replace(/=+$/, '');
+      
+      requestBody.raw = requestBody.raw.replace(
+        `[ATTACHMENT_DATA_${file.name}]`, 
+        fileBase64
+      );
+    }
+
     const response = await fetch(
       "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
       {
@@ -145,13 +213,13 @@ export async function sendEmail({
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          raw: encodedEmail,
-        }),
+        body: JSON.stringify(requestBody),
       }
     );
 
     if (!response.ok) {
+      const errorData = await response.json();
+      console.error("Gmail API error:", errorData);
       throw new Error(`Failed to send email: ${response.statusText}`);
     }
 

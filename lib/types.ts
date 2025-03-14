@@ -41,4 +41,5 @@ export interface Contact {
   lastMessageSubject: string;
   labels: string[]; // Keep this required
   accountId?: string;
+  accountType?: 'gmail' | 'imap';
 }
