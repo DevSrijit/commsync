@@ -6,7 +6,8 @@ import { FeaturesSectionWithBentoGrid } from "@/components/blocks/feature-sectio
 import { TextReveal } from "@/components/magicui/text-reveal";
 import Testimonials from "@/components/hero/marquee";
 import { Pricing } from "@/components/ui/pricing-section-with-comparison"
-
+import PreFooter from "@/components/hero/pre-footer";
+import FooterSection from "@/components/hero/footer";
 
 const Landing = () => {
   return (
@@ -38,6 +39,8 @@ const Landing = () => {
       <div className="w-full">
         <Pricing />
       </div>
+      <PreFooter />
+      <FooterSection />
     </>
   );
 };
