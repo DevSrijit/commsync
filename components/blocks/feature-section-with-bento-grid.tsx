@@ -44,7 +44,11 @@ export function FeaturesSectionWithBentoGrid() {
     <div className="relative z-20 py-10 lg:py-40 max-w-7xl mx-auto">
       <div className="px-8">
         <h1 className="text-3xl lg:text-5xl lg:leading-tight max-w-5xl mx-auto text-center tracking-tight font-medium">
-          CommSync <AuroraText speed={1.5}>offers a lot</AuroraText>
+          CommSync {typeof window !== 'undefined' && !navigator.userAgent.includes('Safari') ? (
+            <AuroraText speed={1.5}>offers a lot</AuroraText>
+          ) : (
+            <span>offers a lot</span>
+          )}
         </h1>
 
         <p className="text-sm lg:text-base max-w-2xl my-4 mx-auto text-neutral-500 text-center font-normal dark:text-neutral-300">

@@ -1,48 +1,16 @@
-"use client";
-import React from "react";
-import { HeroSection } from "@/components/blocks/hero-section-dark";
-import { Marquee } from "@/components/ui/marquee"
-import { FeaturesSectionWithBentoGrid } from "@/components/blocks/feature-section-with-bento-grid";
-import { TextReveal } from "@/components/magicui/text-reveal";
-import Testimonials from "@/components/hero/marquee";
-import { Pricing } from "@/components/ui/pricing-section-with-comparison"
-import PreFooter from "@/components/hero/pre-footer";
-import FooterSection from "@/components/hero/footer";
+import { getServerSession } from "next-auth"
 
-const Landing = () => {
-  return (
-    <>
-      <HeroSection
-        title="Welcome to CommSync"
-        subtitle={{
-          regular: "Sync all of your messages ",
-          gradient: "into grouped conversations",
-        }}
-        description="Tired of switching between apps to keep up with your messages? CommSync brings all of your messages into one place, grouped by the sender."
-        ctaText="Get Started"
-        ctaHref="/login"
-        bottomImage={{
-          light: "/dashboard.png",
-          dark: "/dashboard.png",
-        }}
-      />
-      <div className="space-y-8" suppressHydrationWarning={true}>
-        <Marquee text="Messages made easier" duration={15} suppressHydrationWarning={true} />
-      </div>
-      <div className="min-h-screen w-full">
-        <div className="relative w-full">
-          <FeaturesSectionWithBentoGrid />
-        </div>
-      </div>
-      <TextReveal>We handle the sync. You handle the rest. Deal?</TextReveal>
-      <Testimonials />
-      <div className="w-full">
-        <Pricing />
-      </div>
-      <PreFooter />
-      <FooterSection />
-    </>
-  );
-};
+import { authOptions } from "@/lib/auth"
+import { EmailDashboard } from "@/components/dashboard"
+import Landing from "@/components/hero/landing"
 
-export default Landing;
+export default async function Home() {
+  const session = await getServerSession(authOptions)
+
+  if (!session) {
+    return <Landing />
+  }
+
+  return <EmailDashboard />
+}
+
