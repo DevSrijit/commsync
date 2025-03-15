@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 
 export function LoginForm() {
   return (
-    <Card className="w-[400px]">
+    <Card className="w-[400px] z-20">
       <CardHeader>
         <CardTitle className="text-2xl text-center">CommSync</CardTitle>
         <CardDescription className="text-center">Connect with your Gmail account to get started</CardDescription>
@@ -20,7 +20,7 @@ export function LoginForm() {
         </Button>
       </CardContent>
       <CardFooter className="text-xs text-muted-foreground text-center">
-        Your emails will be stored locally and not on our servers
+        Your conversations will be stored locally and not on our servers.
       </CardFooter>
     </Card>
   )
