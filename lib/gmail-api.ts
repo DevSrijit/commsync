@@ -1,9 +1,31 @@
 import type { Email } from "@/lib/types";
 
+// Helper function to refresh session
+async function refreshSession() {
+  try {
+    // Force a session refresh by calling the NextAuth endpoint
+    const refreshResponse = await fetch("/api/auth/session", {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+    });
+
+    if (!refreshResponse.ok) {
+      throw new Error("Failed to refresh session");
+    }
+
+    const session = await refreshResponse.json();
+    return session?.user?.accessToken;
+  } catch (error) {
+    console.error("Error refreshing session:", error);
+    throw error;
+  }
+}
+
 export async function fetchEmails(accessToken: string): Promise<Email[]> {
   try {
     // Fetch list of messages
-    const response = await fetch(
+    let response = await fetch(
       "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=100",
       {
         headers: {
@@ -11,6 +33,25 @@ export async function fetchEmails(accessToken: string): Promise<Email[]> {
         },
       }
     );
+
+    // If we get a 401 Unauthorized error, try to refresh the token and retry
+    if (response.status === 401) {
+      console.log("Token expired, attempting to refresh...");
+      const newAccessToken = await refreshSession();
+
+      if (newAccessToken) {
+        // Retry the request with the new token
+        response = await fetch(
+          "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=100",
+          {
+            headers: {
+              Authorization: `Bearer ${newAccessToken}`,
+            },
+          }
+        );
+        accessToken = newAccessToken; // Update the token for subsequent requests
+      }
+    }
 
     if (!response.ok) {
       throw new Error(`Failed to fetch message list: ${response.statusText}`);
@@ -23,7 +64,7 @@ export async function fetchEmails(accessToken: string): Promise<Email[]> {
     const emails = await Promise.allSettled(
       messageIds.map(async (id: string) => {
         try {
-          const msgResponse = await fetch(
+          let msgResponse = await fetch(
             `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}`,
             {
               headers: {
@@ -31,6 +72,25 @@ export async function fetchEmails(accessToken: string): Promise<Email[]> {
               },
             }
           );
+
+          // Handle 401 errors for individual message fetches
+          if (msgResponse.status === 401) {
+            console.log(`Token expired while fetching message ${id}, attempting to refresh...`);
+            const newAccessToken = await refreshSession();
+            
+            if (newAccessToken) {
+              // Retry the request with the new token
+              msgResponse = await fetch(
+                `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}`,
+                {
+                  headers: {
+                    Authorization: `Bearer ${newAccessToken}`,
+                  },
+                }
+              );
+              accessToken = newAccessToken; // Update the token for subsequent requests
+            }
+          }
 
           if (!msgResponse.ok) {
             throw new Error(
@@ -69,21 +129,32 @@ export async function fetchEmails(accessToken: string): Promise<Email[]> {
 function syncWithLocalStorage(gmailEmails: Email[]) {
   try {
     // Create a map of fetched emails for quick lookup
-    const gmailEmailMap = new Map(gmailEmails.map(email => [email.id, email]));
-    
+    const gmailEmailMap = new Map(
+      gmailEmails.map((email) => [email.id, email])
+    );
+
     // Get current local storage
-    const localStorageEmails = localStorage.getItem('emails');
-    let currentEmails: Email[] = localStorageEmails ? JSON.parse(localStorageEmails) : [];
-    
+    const localStorageEmails = localStorage.getItem("emails");
+    let currentEmails: Email[] = localStorageEmails
+      ? JSON.parse(localStorageEmails)
+      : [];
+
     // Filter out emails that no longer exist in Gmail
-    currentEmails = currentEmails.filter(email => gmailEmailMap.has(email.id));
-    
+    currentEmails = currentEmails.filter((email) =>
+      gmailEmailMap.has(email.id)
+    );
+
     // Update or add new emails from Gmail
-    gmailEmails.forEach(gmailEmail => {
-      const existingIndex = currentEmails.findIndex(e => e.id === gmailEmail.id);
+    gmailEmails.forEach((gmailEmail) => {
+      const existingIndex = currentEmails.findIndex(
+        (e) => e.id === gmailEmail.id
+      );
       if (existingIndex !== -1) {
         // Update existing email if content is different
-        if (JSON.stringify(currentEmails[existingIndex]) !== JSON.stringify(gmailEmail)) {
+        if (
+          JSON.stringify(currentEmails[existingIndex]) !==
+          JSON.stringify(gmailEmail)
+        ) {
           currentEmails[existingIndex] = gmailEmail;
         }
       } else {
@@ -91,19 +162,21 @@ function syncWithLocalStorage(gmailEmails: Email[]) {
         currentEmails.push(gmailEmail);
       }
     });
-    
+
     // Sort by date (newest first)
-    currentEmails.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    
+    currentEmails.sort(
+      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+
     // Update local storage
-    localStorage.setItem('emails', JSON.stringify(currentEmails));
-    
+    localStorage.setItem("emails", JSON.stringify(currentEmails));
+
     // Update timestamp
-    localStorage.setItem('emailsTimestamp', Date.now().toString());
-    
+    localStorage.setItem("emailsTimestamp", Date.now().toString());
+
     console.log(`Synced ${gmailEmails.length} emails with local storage`);
   } catch (error) {
-    console.error('Error syncing with local storage:', error);
+    console.error("Error syncing with local storage:", error);
   }
 }
 
@@ -123,13 +196,13 @@ export async function sendEmail({
   try {
     // Create a proper MIME message
     const message = new FormData();
-    
+
     // Create metadata part
     const metadata = {
       to: to,
       subject: subject,
     };
-    
+
     // Define a type for message parts
     type MessagePart = {
       mimeType: string;
@@ -142,70 +215,80 @@ export async function sendEmail({
     const parts: MessagePart[] = [
       {
         mimeType: "text/html",
-        body: body
-      }
+        body: body,
+      },
     ];
-    
+
     // Add attachments to parts
     for (const file of attachments) {
       // Convert file to base64
       const fileArrayBuffer = await file.arrayBuffer();
       const fileBase64 = btoa(
-        new Uint8Array(fileArrayBuffer)
-          .reduce((data, byte) => data + String.fromCharCode(byte), '')
+        new Uint8Array(fileArrayBuffer).reduce(
+          (data, byte) => data + String.fromCharCode(byte),
+          ""
+        )
       );
-      
+
       parts.push({
         filename: file.name,
-        mimeType: file.type || 'application/octet-stream',
+        mimeType: file.type || "application/octet-stream",
         body: fileBase64,
         headers: {
           "Content-Disposition": `attachment; filename="${file.name}"`,
-          "Content-Transfer-Encoding": "base64"
-        }
+          "Content-Transfer-Encoding": "base64",
+        },
       });
     }
-    
+
     // Create the request body
     const requestBody = {
       raw: btoa(
         `From: me\r\n` +
-        `To: ${to}\r\n` +
-        `Subject: ${subject}\r\n` +
-        `MIME-Version: 1.0\r\n` +
-        `Content-Type: multipart/mixed; boundary="boundary"\r\n\r\n` +
-        
-        `--boundary\r\n` +
-        `Content-Type: text/html; charset="UTF-8"\r\n\r\n` +
-        `${body}\r\n\r\n` +
-        
-        attachments.map(file => 
+          `To: ${to}\r\n` +
+          `Subject: ${subject}\r\n` +
+          `MIME-Version: 1.0\r\n` +
+          `Content-Type: multipart/mixed; boundary="boundary"\r\n\r\n` +
           `--boundary\r\n` +
-          `Content-Type: ${file.type || 'application/octet-stream'}\r\n` +
-          `Content-Disposition: attachment; filename="${file.name}"\r\n` +
-          `Content-Transfer-Encoding: base64\r\n\r\n` +
-          `[ATTACHMENT_DATA_${file.name}]\r\n\r\n`
-        ).join('') +
-        
-        `--boundary--`
-      ).replace(/[+]/g, '-').replace(/[/]/g, '_').replace(/=+$/, '')
+          `Content-Type: text/html; charset="UTF-8"\r\n\r\n` +
+          `${body}\r\n\r\n` +
+          attachments
+            .map(
+              (file) =>
+                `--boundary\r\n` +
+                `Content-Type: ${file.type || "application/octet-stream"}\r\n` +
+                `Content-Disposition: attachment; filename="${file.name}"\r\n` +
+                `Content-Transfer-Encoding: base64\r\n\r\n` +
+                `[ATTACHMENT_DATA_${file.name}]\r\n\r\n`
+            )
+            .join("") +
+          `--boundary--`
+      )
+        .replace(/[+]/g, "-")
+        .replace(/[/]/g, "_")
+        .replace(/=+$/, ""),
     };
-    
+
     // For each attachment, we need to replace the placeholder with actual base64 data
     for (const file of attachments) {
       const fileArrayBuffer = await file.arrayBuffer();
       const fileBase64 = btoa(
-        new Uint8Array(fileArrayBuffer)
-          .reduce((data, byte) => data + String.fromCharCode(byte), '')
-      ).replace(/[+]/g, '-').replace(/[/]/g, '_').replace(/=+$/, '');
-      
+        new Uint8Array(fileArrayBuffer).reduce(
+          (data, byte) => data + String.fromCharCode(byte),
+          ""
+        )
+      )
+        .replace(/[+]/g, "-")
+        .replace(/[/]/g, "_")
+        .replace(/=+$/, "");
+
       requestBody.raw = requestBody.raw.replace(
-        `[ATTACHMENT_DATA_${file.name}]`, 
+        `[ATTACHMENT_DATA_${file.name}]`,
         fileBase64
       );
     }
 
-    const response = await fetch(
+    let response = await fetch(
       "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
       {
         method: "POST",
@@ -216,6 +299,28 @@ export async function sendEmail({
         body: JSON.stringify(requestBody),
       }
     );
+
+    // If we get a 401 Unauthorized error, try to refresh the token and retry
+    if (response.status === 401) {
+      console.log("Token expired, attempting to refresh...");
+      const newAccessToken = await refreshSession();
+
+      if (newAccessToken) {
+        // Retry the request with the new token
+        response = await fetch(
+          "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${newAccessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(requestBody),
+          }
+        );
+        accessToken = newAccessToken; // Update the token for subsequent requests
+      }
+    }
 
     if (!response.ok) {
       const errorData = await response.json();

@@ -1,16 +1,45 @@
-import { redirect } from "next/navigation"
-import { getServerSession } from "next-auth"
+"use client";
+import React from "react";
+import { HeroSection } from "@/components/blocks/hero-section-dark";
+import { Marquee } from "@/components/ui/marquee"
+import { FeaturesSectionWithBentoGrid } from "@/components/blocks/feature-section-with-bento-grid";
+import { TextReveal } from "@/components/magicui/text-reveal";
+import Testimonials from "@/components/hero/marquee";
+import { Pricing } from "@/components/ui/pricing-section-with-comparison"
 
-import { authOptions } from "@/lib/auth"
-import { EmailDashboard } from "@/components/dashboard"
 
-export default async function Home() {
-  const session = await getServerSession(authOptions)
+const Landing = () => {
+  return (
+    <>
+      <HeroSection
+        title="Welcome to CommSync"
+        subtitle={{
+          regular: "Sync all of your messages ",
+          gradient: "into grouped conversations",
+        }}
+        description="Tired of switching between apps to keep up with your messages? CommSync brings all of your messages into one place, grouped by the sender."
+        ctaText="Get Started"
+        ctaHref="/login"
+        bottomImage={{
+          light: "/dashboard.png",
+          dark: "/dashboard.png",
+        }}
+      />
+      <div className="space-y-8" suppressHydrationWarning={true}>
+        <Marquee text="Messages made easier" duration={15} suppressHydrationWarning={true} />
+      </div>
+      <div className="min-h-screen w-full">
+        <div className="relative w-full">
+          <FeaturesSectionWithBentoGrid />
+        </div>
+      </div>
+      <TextReveal>We handle the sync. You handle the rest. Deal?</TextReveal>
+      <Testimonials />
+      <div className="w-full">
+        <Pricing />
+      </div>
+    </>
+  );
+};
 
-  if (!session) {
-    redirect("/login")
-  }
-
-  return <EmailDashboard />
-}
-
+export default Landing;
