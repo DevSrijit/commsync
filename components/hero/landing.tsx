@@ -8,7 +8,7 @@ import Testimonials from "@/components/hero/marquee";
 import { Pricing } from "@/components/ui/pricing-section-with-comparison"
 import PreFooter from "@/components/hero/pre-footer";
 import FooterSection from "@/components/hero/footer";
-
+import FeatureSection from "@/components/hero/feature";
 const Landing = () => {
   return (
     <>
@@ -34,6 +34,7 @@ const Landing = () => {
           <FeaturesSectionWithBentoGrid />
         </div>
       </div>
+      <FeatureSection />
       <TextReveal>We handle the sync. You handle the rest. Deal?</TextReveal>
       <Testimonials />
       <div className="w-full">
