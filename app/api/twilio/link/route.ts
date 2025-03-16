@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import { db } from '@/lib/db';
-import { encrypt } from '@/lib/encryption';
+import { encryptData } from '@/lib/encryption';
 import { z } from 'zod';
 import { Twilio } from 'twilio';
 
@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
       phoneNumber
     };
     
-    const encryptedCredentials = encrypt(JSON.stringify(credentials));
+    const encryptedCredentials = encryptData(JSON.stringify(credentials));
     
     // Create a new sync account
     const syncAccount = await db.syncAccount.create({

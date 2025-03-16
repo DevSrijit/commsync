@@ -17,7 +17,6 @@ async function refreshGmailTokens() {
     const response = await fetch(`${process.env.NEXTAUTH_URL}/api/auth/refresh-tokens`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
         'Authorization': `Bearer ${process.env.SYNC_API_KEY}`
       }
     });
