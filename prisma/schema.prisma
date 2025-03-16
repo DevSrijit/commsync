@@ -51,6 +51,7 @@ model User {
   Group         Group[]
   syncAccounts  SyncAccount[]
   contacts      Contact[]
+  twilioAccounts TwilioAccount[]
 }
 
 model VerificationToken {
@@ -177,4 +178,39 @@ model Message {
   @@index([conversationId])
   @@index([platform, externalId])
   @@index([syncAccountId])
+}
+
+model TwilioAccount {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId      String   @db.ObjectId
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label       String
+  accountSid  String
+  authToken   String
+  phoneNumber String
+  lastSync    DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  twilioMessages TwilioMessage[]
+
+  @@index([userId])
+}
+
+model TwilioMessage {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  twilioAccountId String      @db.ObjectId
+  twilioAccount   TwilioAccount @relation(fields: [twilioAccountId], references: [id], onDelete: Cascade)
+  messageSid      String      @unique
+  from            String
+  to              String
+  body            String
+  status          String
+  direction       String      // "inbound" or "outbound"
+  conversationId  String?     @db.ObjectId
+  sentAt          DateTime
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([twilioAccountId])
+  @@index([from, to])
 }

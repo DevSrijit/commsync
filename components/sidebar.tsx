@@ -62,6 +62,7 @@ import { JustCallAccountCard } from "./justcall-account-card";
 import { Badge } from "./ui/badge";
 import { ImapAccountCard } from "./imap-account-card";
 import GroupDialog from "./group-dialog";
+import { TwilioAccountDialog } from "./twilio-account-dialog";
 
 export type MessageCategory =
   | "inbox"
@@ -81,8 +82,11 @@ export function Sidebar() {
   const [isJustCallDialogOpen, setIsJustCallDialogOpen] = useState(false);
   const [isImapListOpen, setIsImapListOpen] = useState(false);
   const [isJustCallListOpen, setIsJustCallListOpen] = useState(false);
+  const [isTwilioListOpen, setIsTwilioListOpen] = useState(false);
   const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false);
   const [justCallAccounts, setJustCallAccounts] = useState<any[]>([]);
+  const [twilioAccounts, setTwilioAccounts] = useState<any[]>([]);
+  const [isTwilioDialogOpen, setIsTwilioDialogOpen] = useState(false);
 
   // Fetch JustCall accounts
   useEffect(() => {
@@ -98,8 +102,22 @@ export function Sidebar() {
       }
     };
 
+    // Fetch Twilio accounts
+    const fetchTwilioAccounts = async () => {
+      try {
+        const response = await fetch('/api/twilio/account');
+        if (response.ok) {
+          const data = await response.json();
+          setTwilioAccounts(data);
+        }
+      } catch (error) {
+        console.error('Error fetching Twilio accounts:', error);
+      }
+    };
+
     if (session?.user) {
       fetchJustCallAccounts();
+      fetchTwilioAccounts();
     }
   }, [session?.user]);
 
@@ -270,6 +288,10 @@ export function Sidebar() {
                   <Phone className="h-4 w-4 mr-2" />
                   <span>JustCall Account</span>
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setIsTwilioDialogOpen(true)}>
+                  <Phone className="h-4 w-4 mr-2" />
+                  <span>Twilio Account</span>
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setIsGroupDialogOpen(true)}>
                   <Users className="h-4 w-4 mr-2" />
                   <span>Add Group</span>
@@ -300,6 +322,17 @@ export function Sidebar() {
             <MessageSquare className="h-4 w-4 mr-2" />
             <span className="flex-1 text-left">JustCall Accounts</span>
             <span className="ml-auto">{justCallAccounts.length}</span>
+          </Button>
+
+          <Button
+            variant="ghost"
+            className="w-full justify-start mb-1 px-2"
+            size="sm"
+            onClick={() => setIsTwilioListOpen(true)}
+          >
+            <Phone className="h-4 w-4 mr-2" />
+            <span className="flex-1 text-left">Twilio Accounts</span>
+            <span className="ml-auto">{twilioAccounts.length}</span>
           </Button>
         </div>
       </ScrollArea>
@@ -364,6 +397,66 @@ export function Sidebar() {
         </DialogContent>
       </Dialog>
 
+      {/* Twilio Accounts Dialog */}
+      <Dialog open={isTwilioListOpen} onOpenChange={setIsTwilioListOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Twilio Accounts</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                setIsTwilioListOpen(false);
+                setIsTwilioDialogOpen(true);
+              }}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Twilio Account
+            </Button>
+            <div className="space-y-2">
+              {twilioAccounts.map((account) => (
+                <div key={account.id} className="bg-card rounded-lg border p-4">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <h3 className="font-medium">{account.label}</h3>
+                      <p className="text-sm text-muted-foreground">{account.phoneNumber}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Last sync: {new Date(account.lastSync).toLocaleString()}
+                      </p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={async () => {
+                        if (confirm("Are you sure you want to delete this account?")) {
+                          try {
+                            const response = await fetch(`/api/twilio/account?id=${account.id}`, {
+                              method: "DELETE",
+                            });
+                            if (response.ok) {
+                              setTwilioAccounts(accounts => 
+                                accounts.filter(a => a.id !== account.id)
+                              );
+                            }
+                          } catch (error) {
+                            console.error("Error deleting account:", error);
+                          }
+                        }
+                      }}
+                    >
+                      <Trash className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Message Composer */}
       <MessageComposer
         open={isComposerOpen}
@@ -385,6 +478,12 @@ export function Sidebar() {
       <JustCallAccountDialog
         open={isJustCallDialogOpen}
         onOpenChange={setIsJustCallDialogOpen}
+      />
+
+      {/* Twilio Account Dialog */}
+      <TwilioAccountDialog
+        open={isTwilioDialogOpen}
+        onOpenChange={setIsTwilioDialogOpen}
       />
 
       {/* Add Group Dialog */}

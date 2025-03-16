@@ -5,6 +5,7 @@ import { useEmailStore } from "@/lib/email-store";
 import { EmailContentLoader } from "@/lib/email-content-loader";
 import { db } from '@/lib/db';
 import { JustCallService } from '@/lib/justcall-service';
+import { TwilioService } from '@/lib/twilio-service';
 
 export class SyncService {
   private static instance: SyncService;
@@ -213,17 +214,80 @@ export const syncJustCallAccounts = async (userId?: string): Promise<{ success: 
   }
 };
 
+// Add Twilio sync functionality
+export const syncTwilioAccounts = async (userId?: string): Promise<{ success: number; failed: number; results: any[] }> => {
+  try {
+    // Query for all active Twilio accounts, optionally filtered by userId
+    const query = userId 
+      ? { userId, platform: 'twilio' }
+      : { platform: 'twilio' };
+    
+    const accounts = await db.syncAccount.findMany({
+      where: query,
+    });
+
+    console.log(`Syncing ${accounts.length} Twilio accounts`);
+    
+    const results = await Promise.allSettled(
+      accounts.map(async (account) => {
+        try {
+          const twilioService = new TwilioService(account);
+          
+          // Get messages since last sync
+          const messages = await twilioService.getMessages(account.lastSync);
+          
+          let processedCount = 0;
+          
+          // Process each message
+          for (const message of messages) {
+            // Skip outbound messages as they were likely sent from our system
+            if (message.direction !== 'inbound') {
+              continue;
+            }
+            
+            await twilioService.processIncomingMessage(message);
+            processedCount++;
+          }
+          
+          // Update last sync time
+          await db.syncAccount.update({
+            where: { id: account.id },
+            data: { lastSync: new Date() },
+          });
+          
+          return { accountId: account.id, processed: processedCount };
+        } catch (error) {
+          console.error(`Error syncing Twilio account ${account.id}:`, error);
+          return { accountId: account.id, error: error instanceof Error ? error.message : 'Unknown error' };
+        }
+      })
+    );
+    
+    return {
+      success: results.filter((r: PromiseSettledResult<any>) => r.status === 'fulfilled').length,
+      failed: results.filter((r: PromiseSettledResult<any>) => r.status === 'rejected').length,
+      results
+    };
+  } catch (error) {
+    console.error('Error in syncTwilioAccounts:', error);
+    throw error;
+  }
+};
+
 // Sync all accounts for a user
 export const syncAllAccountsForUser = async (userId: string): Promise<{
   imap: { success: number; failed: number; results: any[] } | null;
   justCall: { success: number; failed: number; results: any[] } | null;
+  twilio: { success: number; failed: number; results: any[] } | null;
 }> => {
   const results: {
     imap: { success: number; failed: number; results: any[] } | null;
     justCall: { success: number; failed: number; results: any[] } | null;
+    twilio: { success: number; failed: number; results: any[] } | null;
   } = {
     imap: null,
-    justCall: null
+    justCall: null,
+    twilio: null
   };
   
   try {
@@ -244,6 +308,18 @@ export const syncAllAccountsForUser = async (userId: string): Promise<{
   } catch (error) {
     console.error('Error syncing JustCall accounts:', error);
     results.justCall = { 
+      success: 0,
+      failed: 1,
+      results: [{ error: error instanceof Error ? error.message : 'Unknown error' }]
+    };
+  }
+  
+  try {
+    // Sync Twilio accounts
+    results.twilio = await syncTwilioAccounts(userId);
+  } catch (error) {
+    console.error('Error syncing Twilio accounts:', error);
+    results.twilio = { 
       success: 0,
       failed: 1,
       results: [{ error: error instanceof Error ? error.message : 'Unknown error' }]

@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import { db } from '@/lib/db';
+import { z } from 'zod';
 
-// Get all JustCall accounts for the current user
+// Get all Twilio accounts for the current user
 export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -14,15 +15,15 @@ export async function GET(req: NextRequest) {
     
     const userId = session.user.id;
     
-    const accounts = await db.syncAccount.findMany({
+    const accounts = await db.twilioAccount.findMany({
       where: {
         userId,
-        platform: 'justcall',
       },
       select: {
         id: true,
-        platform: true,
-        accountIdentifier: true,
+        label: true,
+        phoneNumber: true,
+        accountSid: true,
         lastSync: true,
         createdAt: true,
         updatedAt: true,
@@ -32,12 +33,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(accounts, { status: 200 });
     
   } catch (error) {
-    console.error('Error fetching JustCall accounts:', error);
+    console.error('Error fetching Twilio accounts:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
-// Delete a JustCall account
+// Delete a Twilio account
 export async function DELETE(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -54,58 +55,49 @@ export async function DELETE(req: NextRequest) {
     }
     
     // Verify the account belongs to the user
-    const account = await db.syncAccount.findFirst({
+    const account = await db.twilioAccount.findFirst({
       where: {
         id: accountId,
         userId,
-        platform: 'justcall',
       },
     });
     
     if (!account) {
-      return NextResponse.json({ error: 'Account not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Account not found or unauthorized' }, { status: 404 });
     }
     
-    // Delete all messages from this account
-    const messages = await db.message.findMany({
+    // Delete messages from the main message table
+    const deletedMessages = await db.message.deleteMany({
       where: {
-        syncAccountId: accountId,
-      },
-      select: {
-        id: true,
-        conversationId: true,
+        platform: "twilio",
+        metadata: {
+          equals: { twilioAccountId: accountId },
+        },
       },
     });
-    
-    // Get list of affected conversation IDs
-    const conversationIds = [...new Set(messages.map(m => m.conversationId))];
-    
-    // Delete messages
-    await db.message.deleteMany({
+
+    // Find empty conversations (those with no messages left)
+    const emptyConversations = await db.conversation.findMany({
       where: {
-        syncAccountId: accountId,
+        messages: {
+          none: {},
+        },
       },
     });
-    
-    // Clean up empty conversations
-    for (const conversationId of conversationIds) {
-      const remainingMessages = await db.message.count({
+
+    // Delete empty conversations
+    if (emptyConversations.length > 0) {
+      await db.conversation.deleteMany({
         where: {
-          conversationId,
+          id: {
+            in: emptyConversations.map(conv => conv.id),
+          },
         },
       });
-      
-      if (remainingMessages === 0) {
-        await db.conversation.delete({
-          where: {
-            id: conversationId,
-          },
-        });
-      }
     }
-    
-    // Delete the account
-    await db.syncAccount.delete({
+
+    // Finally, delete the Twilio account
+    await db.twilioAccount.delete({
       where: {
         id: accountId,
       },
@@ -114,7 +106,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ status: 'success' }, { status: 200 });
     
   } catch (error) {
-    console.error('Error deleting JustCall account:', error);
+    console.error('Error deleting Twilio account:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 } 
