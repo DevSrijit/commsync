@@ -17,6 +17,9 @@ import {
   Plus,
   Settings,
   Server,
+  MessageSquare,
+  Phone,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useEmailStore } from "@/lib/email-store";
@@ -31,7 +34,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "./ui/separator";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { MessageComposer } from "./message-composer";
 import {
   Dialog,
@@ -54,9 +57,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ImapAccountDialog } from "./imap-account-dialog";
+import { JustCallAccountDialog } from "./justcall-account-dialog";
+import { JustCallAccountCard } from "./justcall-account-card";
 import { Badge } from "./ui/badge";
 import { ImapAccountCard } from "./imap-account-card";
 import GroupDialog from "./group-dialog";
+
 export type MessageCategory =
   | "inbox"
   | "draft"
@@ -72,8 +78,30 @@ export function Sidebar() {
     useEmailStore();
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [isImapDialogOpen, setIsImapDialogOpen] = useState(false);
+  const [isJustCallDialogOpen, setIsJustCallDialogOpen] = useState(false);
   const [isImapListOpen, setIsImapListOpen] = useState(false);
+  const [isJustCallListOpen, setIsJustCallListOpen] = useState(false);
   const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false);
+  const [justCallAccounts, setJustCallAccounts] = useState<any[]>([]);
+
+  // Fetch JustCall accounts
+  useEffect(() => {
+    const fetchJustCallAccounts = async () => {
+      try {
+        const response = await fetch('/api/justcall/account');
+        if (response.ok) {
+          const data = await response.json();
+          setJustCallAccounts(data);
+        }
+      } catch (error) {
+        console.error('Error fetching JustCall accounts:', error);
+      }
+    };
+
+    if (session?.user) {
+      fetchJustCallAccounts();
+    }
+  }, [session?.user]);
 
   const inboxCount = emails.filter(
     (email) =>
@@ -98,175 +126,180 @@ export function Sidebar() {
   return (
     <div className="w-full border-r border-border bg-card flex flex-col h-full">
       <div className="p-4 flex-shrink-0">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="w-full justify-start">
-              <Avatar className="h-6 w-6 mr-2">
-                <AvatarImage src={session?.user?.image || ""} />
-                <AvatarFallback>
-                  {session?.user?.name?.[0] || "U"}
-                </AvatarFallback>
-              </Avatar>
-              {session?.user?.name || "User"}
-              <ChevronDown className="ml-auto h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56">
-            <DropdownMenuItem onClick={() => setIsImapDialogOpen(true)}>
-              <Server className="mr-2 h-4 w-4" />
-              Add IMAP Account
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => signOut()}>
-              <LogOut className="mr-2 h-4 w-4" />
-              Sign out
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-center gap-2">
+          <Avatar className="h-8 w-8">
+            <AvatarImage src={session?.user?.image || ""} />
+            <AvatarFallback>
+              {session?.user?.name?.[0] || "U"}
+            </AvatarFallback>
+          </Avatar>
+          <div className="flex-1 overflow-hidden">
+            <p className="text-sm font-medium truncate">{session?.user?.name || "User"}</p>
+            <p className="text-xs text-muted-foreground truncate">{session?.user?.email}</p>
+          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <Settings className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => signOut()}>
+                <LogOut className="mr-2 h-4 w-4" />
+                Sign out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        <Button
+          variant="secondary"
+          className="w-full mt-4"
+          size="sm"
+          onClick={() => setIsComposerOpen(true)}
+        >
+          <PenSquare className="h-4 w-4 mr-2" />
+          Compose
+        </Button>
+        
+        <Separator className="my-4" />
       </div>
-
-      <Separator className="mb-5" />
-
-      <ScrollArea className="flex-1 py-2">
-        <nav className="grid gap-1 px-2">
+      
+      <ScrollArea className="flex-1">
+        <div className="px-2 mb-4">
           <Button
             variant="ghost"
             className={cn(
-              "justify-start w-full",
-              activeFilter === "inbox" && "bg-neutral-100 dark:bg-neutral-800"
+              "w-full justify-start mb-1 px-2",
+              activeFilter === "inbox" && "bg-muted"
             )}
+            size="sm"
             onClick={() => setActiveFilter("inbox")}
           >
-            <Inbox className="mr-2 h-4 w-4" />
-            Inbox
-            <span
-              className="ml-auto text-muted-foreground text-sm"
-              suppressHydrationWarning
-            >
-              {inboxCount}
-            </span>
+            <Inbox className="h-4 w-4 mr-2" />
+            <span className="flex-1 text-left">Inbox</span>
+            <span className="ml-auto">{inboxCount}</span>
           </Button>
+          
           <Button
             variant="ghost"
             className={cn(
-              "justify-start w-full",
-              activeFilter === "draft" && "bg-neutral-100 dark:bg-neutral-800"
+              "w-full justify-start mb-1 px-2",
+              activeFilter === "draft" && "bg-muted"
             )}
+            size="sm"
             onClick={() => setActiveFilter("draft")}
           >
-            <Mail className="mr-2 h-4 w-4" />
-            Drafts
-            <span
-              className="ml-auto text-muted-foreground text-sm"
-              suppressHydrationWarning
-            >
-              {draftCount}
-            </span>
+            <PenSquare className="h-4 w-4 mr-2" />
+            <span className="flex-1 text-left">Drafts</span>
+            <span className="ml-auto">{draftCount}</span>
           </Button>
+          
           <Button
             variant="ghost"
             className={cn(
-              "justify-start w-full",
-              activeFilter === "sent" && "bg-neutral-100 dark:bg-neutral-800"
+              "w-full justify-start mb-1 px-2",
+              activeFilter === "sent" && "bg-muted"
             )}
+            size="sm"
             onClick={() => setActiveFilter("sent")}
           >
-            <Send className="mr-2 h-4 w-4" />
-            Sent
-            <span
-              className="ml-auto text-muted-foreground text-sm"
-              suppressHydrationWarning
-            >
-              {sentCount}
-            </span>
+            <Send className="h-4 w-4 mr-2" />
+            <span className="flex-1 text-left">Sent</span>
+            <span className="ml-auto">{sentCount}</span>
           </Button>
+          
           <Button
             variant="ghost"
             className={cn(
-              "justify-start w-full",
-              activeFilter === "starred" && "bg-neutral-100 dark:bg-neutral-800"
+              "w-full justify-start mb-1 px-2",
+              activeFilter === "starred" && "bg-muted"
             )}
+            size="sm"
             onClick={() => setActiveFilter("starred")}
           >
-            <Star className="mr-2 h-4 w-4" />
-            Starred
-            <span
-              className="ml-auto text-muted-foreground text-sm"
-              suppressHydrationWarning
-            >
-              {starredCount}
-            </span>
+            <Star className="h-4 w-4 mr-2" />
+            <span className="flex-1 text-left">Starred</span>
+            <span className="ml-auto">{starredCount}</span>
           </Button>
+          
           <Button
             variant="ghost"
             className={cn(
-              "justify-start w-full",
-              activeFilter === "trash" && "bg-neutral-100 dark:bg-neutral-800"
+              "w-full justify-start mb-1 px-2",
+              activeFilter === "trash" && "bg-muted"
             )}
+            size="sm"
             onClick={() => setActiveFilter("trash")}
           >
-            <Trash className="mr-2 h-4 w-4" />
-            Trash
-            <span
-              className="ml-auto text-muted-foreground text-sm"
-              suppressHydrationWarning
-            >
-              {trashCount}
-            </span>
+            <Trash className="h-4 w-4 mr-2" />
+            <span className="flex-1 text-left">Trash</span>
+            <span className="ml-auto">{trashCount}</span>
           </Button>
+          
           <Button
             variant="ghost"
             className={cn(
-              "justify-start w-full",
-              activeFilter === "archive" && "bg-neutral-100 dark:bg-neutral-800"
+              "w-full justify-start mb-1 px-2",
+              activeFilter === "archive" && "bg-muted"
             )}
+            size="sm"
             onClick={() => setActiveFilter("archive")}
           >
-            <Archive className="mr-2 h-4 w-4" />
-            Archive
-            <span
-              className="ml-auto text-muted-foreground text-sm"
-              suppressHydrationWarning
-            >
-              {archiveCount}
-            </span>
+            <Archive className="h-4 w-4 mr-2" />
+            <span className="flex-1 text-left">Archive</span>
+            <span className="ml-auto">{archiveCount}</span>
           </Button>
-        </nav>
+        </div>
 
-        <Separator className="my-5" />
-
-        {/* Account Management Buttons */}
-        <div className="px-2 space-y-2">
+        <div className="px-4 pt-2 pb-1">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Accounts</h2>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-6 w-6">
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setIsImapDialogOpen(true)}>
+                  <Mail className="h-4 w-4 mr-2" />
+                  <span>Email Account</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setIsJustCallDialogOpen(true)}>
+                  <Phone className="h-4 w-4 mr-2" />
+                  <span>JustCall Account</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setIsGroupDialogOpen(true)}>
+                  <Users className="h-4 w-4 mr-2" />
+                  <span>Add Group</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+        
+        <div className="px-2">
           <Button
-            variant="outline"
-            className="w-full flex items-center gap-2"
+            variant="ghost"
+            className="w-full justify-start mb-1 px-2"
+            size="sm"
             onClick={() => setIsImapListOpen(true)}
           >
-            <Server className="h-4 w-4" />
-            <span>IMAP Accounts</span>
-            <Badge
-              variant="secondary"
-              className="ml-auto"
-              suppressHydrationWarning
-            >
-              {imapAccounts.length}
-            </Badge>
+            <Mail className="h-4 w-4 mr-2" />
+            <span className="flex-1 text-left">Email Accounts</span>
+            <span className="ml-auto">{imapAccounts.length}</span>
           </Button>
+
           <Button
-            variant="outline"
-            className="w-full flex items-center gap-2"
-            onClick={() => setIsGroupDialogOpen(true)}
+            variant="ghost"
+            className="w-full justify-start mb-1 px-2"
+            size="sm"
+            onClick={() => setIsJustCallListOpen(true)}
           >
-            <MessageSquarePlus className="h-4 w-4" />
-            <span>Email Groups</span>
-          </Button>
-          <Button
-            variant="default"
-            className="w-full flex items-center gap-2 bg-neutral-400"
-            onClick={() => setIsComposerOpen(true)}
-          >
-            <PenSquare className="h-4 w-4" />
-            <span>New Message</span>
+            <MessageSquare className="h-4 w-4 mr-2" />
+            <span className="flex-1 text-left">JustCall Accounts</span>
+            <span className="ml-auto">{justCallAccounts.length}</span>
           </Button>
         </div>
       </ScrollArea>
@@ -275,7 +308,7 @@ export function Sidebar() {
       <Dialog open={isImapListOpen} onOpenChange={setIsImapListOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>IMAP Accounts</DialogTitle>
+            <DialogTitle>Email Accounts</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <Button
@@ -287,7 +320,7 @@ export function Sidebar() {
               }}
             >
               <Plus className="h-4 w-4 mr-2" />
-              Add Account
+              Add Email Account
             </Button>
             <div className="space-y-2">
               {imapAccounts.map((account) => (
@@ -298,7 +331,40 @@ export function Sidebar() {
         </DialogContent>
       </Dialog>
 
-      {/* Existing Message Composer and IMAP Account Dialog */}
+      {/* JustCall Accounts Dialog */}
+      <Dialog open={isJustCallListOpen} onOpenChange={setIsJustCallListOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>JustCall Accounts</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                setIsJustCallListOpen(false);
+                setIsJustCallDialogOpen(true);
+              }}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add JustCall Account
+            </Button>
+            <div className="space-y-2">
+              {justCallAccounts.map((account) => (
+                <JustCallAccountCard 
+                  key={account.id} 
+                  id={account.id}
+                  phoneNumber={account.accountIdentifier}
+                  label={account.platform}
+                  lastSync={account.lastSync}
+                />
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Message Composer */}
       <MessageComposer
         open={isComposerOpen}
         onOpenChange={setIsComposerOpen}
@@ -313,6 +379,12 @@ export function Sidebar() {
       <ImapAccountDialog
         open={isImapDialogOpen}
         onOpenChange={setIsImapDialogOpen}
+      />
+
+      {/* JustCall Account Dialog */}
+      <JustCallAccountDialog
+        open={isJustCallDialogOpen}
+        onOpenChange={setIsJustCallDialogOpen}
       />
 
       {/* Add Group Dialog */}

@@ -49,6 +49,8 @@ model User {
   sessions      Session[]
   imapAccounts  ImapAccount[]
   Group         Group[]
+  syncAccounts  SyncAccount[]
+  contacts      Contact[]
 }
 
 model VerificationToken {
@@ -95,4 +97,84 @@ model Group {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model SyncAccount {
+  id               String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId           String    @db.ObjectId
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform         String    // Platform type (e.g., "justcall", "email", "whatsapp")
+  credentials      String    // Encrypted credentials
+  accountIdentifier String   // Username or account identifier for the platform
+  lastSync         DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  messages         Message[]
+
+  @@index([userId])
+  @@index([platform])
+}
+
+model Contact {
+  id           String        @id @default(auto()) @map("_id") @db.ObjectId
+  userId       String        @db.ObjectId
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  email        String?
+  phone        String?
+  avatar       String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  senders      Sender[]
+  conversations Conversation[]
+
+  @@index([userId])
+}
+
+model Sender {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  contactId    String   @db.ObjectId
+  contact      Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  platform     String   // Platform type (e.g., "justcall", "email", "whatsapp")
+  identifier   String   // Email address, phone number, or account identifier
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([contactId])
+  @@index([platform, identifier])
+}
+
+model Conversation {
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
+  contactId    String    @db.ObjectId
+  contact      Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  title        String?
+  lastActivity DateTime  @default(now())
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  messages     Message[]
+
+  @@index([contactId])
+}
+
+model Message {
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  conversationId String       @db.ObjectId
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  syncAccountId  String?      @db.ObjectId
+  syncAccount    SyncAccount? @relation(fields: [syncAccountId], references: [id])
+  platform       String       // Platform type (e.g., "justcall", "email", "whatsapp")
+  externalId     String?      // ID from the external platform
+  direction      String       // "inbound" or "outbound"
+  content        String
+  contentType    String       // "text", "html", etc.
+  metadata       Json?        // Additional platform-specific metadata
+  attachments    Json?        // Information about attachments
+  sentAt         DateTime
+  receivedAt     DateTime     @default(now())
+  isRead         Boolean      @default(false)
+
+  @@index([conversationId])
+  @@index([platform, externalId])
+  @@index([syncAccountId])
 }

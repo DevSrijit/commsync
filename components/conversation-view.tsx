@@ -10,7 +10,7 @@ import { useSession } from "next-auth/react";
 import { sendEmail } from "@/lib/gmail-api";
 import { useToast } from "@/hooks/use-toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Paperclip, Image, FileText, File, Users } from "lucide-react";
+import { Paperclip, Image, FileText, File, Users, Mail, Phone, MessageSquare } from "lucide-react";
 import DOMPurify from "isomorphic-dompurify";
 import {
   ResizableHandle,
@@ -18,8 +18,10 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { fetchEmails } from "@/lib/gmail-api";
-import { AlertTriangle, MessageSquare } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { Email } from "@/lib/types";
+import { cn } from "@/lib/utils";
+import React from "react";
 
 interface ConversationViewProps {
   contactEmail: string | null;
@@ -48,7 +50,32 @@ const formatFileSize = (bytes: number): string => {
   const sizes = ["Bytes", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
 
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+};
+
+const getPlatformIcon = (platform: string | undefined) => {
+  switch (platform?.toLowerCase()) {
+    case 'gmail':
+    case 'imap':
+      return <Mail className="h-3 w-3" />;
+    case 'justcall':
+      return <Phone className="h-3 w-3" />;
+    default:
+      return <MessageSquare className="h-3 w-3" />;
+  }
+};
+
+const getPlatformColor = (platform: string | undefined) => {
+  switch (platform?.toLowerCase()) {
+    case 'gmail':
+      return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300";
+    case 'imap':
+      return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300";
+    case 'justcall':
+      return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300";
+    default:
+      return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300";
+  }
 };
 
 export function ConversationView({
@@ -383,7 +410,6 @@ export function ConversationView({
               </div>
             ) : conversation.length > 0 ? (
               conversation.map((email) => {
-                // Fixed isFromMe logic:
                 // For Gmail: check against session.user.email
                 // For IMAP: check if this is the account owner's email
                 const isFromMe =
@@ -418,14 +444,35 @@ export function ConversationView({
                     >
                       <div className="flex flex-col gap-1">
                         <div className="flex justify-between items-baseline gap-4">
-                          <span className="font-medium text-sm">
-                            {email.subject}
-                          </span>
-                          <span className="text-xs opacity-70">
-                            {formatDistanceToNow(new Date(email.date), {
-                              addSuffix: true,
-                            })}
-                          </span>
+                          <div className="flex items-start space-x-2">
+                            <Avatar className="h-8 w-8">
+                              <AvatarImage
+                                src={getGravatarUrl(email.from.email)}
+                                alt={email.from.name || ""}
+                              />
+                              <AvatarFallback>
+                                {(email.from.name?.charAt(0) || "U").toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1 space-y-1">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-2">
+                                  <p className="font-medium">
+                                    {email.from.name || email.from.email}
+                                  </p>
+                                  <div className={`px-1.5 py-0.5 rounded-full text-xs inline-flex items-center mx-2 ${getPlatformColor(email.accountType || email.platform)}`}>
+                                    {getPlatformIcon(email.accountType || email.platform)}
+                                    <span className="ml-1">{email.accountType || email.platform || "Email"}</span>
+                                  </div>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                  {formatDistanceToNow(new Date(email.date), {
+                                    addSuffix: true,
+                                  })}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                         <div
                           className="prose prose-sm dark:prose-invert max-w-none overflow-hidden"
