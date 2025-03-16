@@ -1,5 +1,4 @@
 import { getServerSession } from "next-auth"
-
 import { authOptions } from "@/lib/auth"
 import { EmailDashboard } from "@/components/dashboard"
 import Landing from "@/components/hero/landing"
