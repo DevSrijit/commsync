@@ -15,8 +15,8 @@ import {
   Trash2,
   RefreshCw,
   MessageSquare,
-  Phone,
 } from "lucide-react";
+import { SiTwilio } from "@icons-pack/react-simple-icons";
 
 type TwilioAccount = {
   id: string;
@@ -141,13 +141,16 @@ export function TwilioAccounts() {
   return (
     <div className="container mx-auto py-6">
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold">Twilio Accounts</h2>
+        <div className="flex items-center gap-2">
+          <SiTwilio className="h-6 w-6" />
+          <h2 className="text-2xl font-bold">Twilio Accounts</h2>
+        </div>
         <Button onClick={() => setDialogOpen(true)}>Add Account</Button>
       </div>
 
       {accounts.length === 0 ? (
         <div className="bg-muted p-8 rounded-lg text-center">
-          <Phone className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+          <SiTwilio className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
           <h3 className="text-lg font-medium mb-2">No Twilio Accounts</h3>
           <p className="text-muted-foreground mb-4">
             Link your Twilio account to start sending and receiving SMS messages.
@@ -159,10 +162,13 @@ export function TwilioAccounts() {
           {accounts.map((account) => (
             <Card key={account.id}>
               <CardHeader>
-                <CardTitle>{account.label}</CardTitle>
+                <div className="flex items-center gap-2">
+                  <SiTwilio className="h-4 w-4" />
+                  <CardTitle>{account.label}</CardTitle>
+                </div>
                 <CardDescription>
                   <span className="flex items-center gap-1">
-                    <Phone className="h-3 w-3" /> {account.phoneNumber}
+                    <MessageSquare className="h-3 w-3" /> {account.phoneNumber}
                   </span>
                 </CardDescription>
               </CardHeader>

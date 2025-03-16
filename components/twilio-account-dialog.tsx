@@ -23,6 +23,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { LoadingSpinner } from "./loading-spinner";
+import { SiTwilio } from "@icons-pack/react-simple-icons";
 
 const twilioAccountSchema = z.object({
   label: z.string().min(1, "Label is required"),
@@ -97,7 +98,10 @@ export function TwilioAccountDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Link Twilio Account</DialogTitle>
+          <div className="flex items-center gap-2">
+            <SiTwilio className="h-6 w-6" />
+            <DialogTitle>Link Twilio Account</DialogTitle>
+          </div>
           <DialogDescription>
             Connect your Twilio account to sync your messages
           </DialogDescription>

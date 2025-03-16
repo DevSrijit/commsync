@@ -21,6 +21,7 @@ import {
   Phone,
   Users,
 } from "lucide-react";
+import { SiTwilio } from "@icons-pack/react-simple-icons";
 import { Button } from "@/components/ui/button";
 import { useEmailStore } from "@/lib/email-store";
 import {
@@ -289,7 +290,7 @@ export function Sidebar() {
                   <span>JustCall Account</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setIsTwilioDialogOpen(true)}>
-                  <Phone className="h-4 w-4 mr-2" />
+                  <SiTwilio className="h-4 w-4 mr-2" />
                   <span>Twilio Account</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setIsGroupDialogOpen(true)}>
@@ -330,7 +331,7 @@ export function Sidebar() {
             size="sm"
             onClick={() => setIsTwilioListOpen(true)}
           >
-            <Phone className="h-4 w-4 mr-2" />
+            <SiTwilio className="h-4 w-4 mr-2" />
             <span className="flex-1 text-left">Twilio Accounts</span>
             <span className="ml-auto">{twilioAccounts.length}</span>
           </Button>
