@@ -30,7 +30,7 @@ export interface Email {
   labels: string[]; // Keep this required
   attachments?: EmailAttachment[];
   accountId?: string;
-  accountType?: 'gmail' | 'imap' | 'justcall';
+  accountType?: 'gmail' | 'imap' | 'justcall' | 'twilio';
   read?: boolean;
   platform?: string; // Added for platform indication
 }
@@ -43,7 +43,7 @@ export interface Contact {
   lastMessageSubject: string;
   labels: string[]; // Keep this required
   accountId?: string;
-  accountType?: 'gmail' | 'imap' | 'justcall';
+  accountType?: 'gmail' | 'imap' | 'justcall' | 'twilio';
 }
 
 export interface Group {

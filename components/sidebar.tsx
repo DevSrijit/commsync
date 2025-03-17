@@ -72,6 +72,7 @@ export type MessageCategory =
   | "starred"
   | "trash"
   | "archive"
+  | "sms"
   | "all";
 
 export function Sidebar() {
@@ -88,6 +89,7 @@ export function Sidebar() {
   const [justCallAccounts, setJustCallAccounts] = useState<any[]>([]);
   const [twilioAccounts, setTwilioAccounts] = useState<any[]>([]);
   const [isTwilioDialogOpen, setIsTwilioDialogOpen] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Fetch JustCall accounts
   useEffect(() => {
@@ -268,6 +270,54 @@ export function Sidebar() {
             <Archive className="h-4 w-4 mr-2" />
             <span className="flex-1 text-left">Archive</span>
             <span className="ml-auto">{archiveCount}</span>
+          </Button>
+          
+          <Button
+            variant="ghost"
+            className={cn(
+              "w-full justify-start mb-1 px-2",
+              activeFilter === "sms" && "bg-muted"
+            )}
+            size="sm"
+            onClick={() => setActiveFilter("sms")}
+          >
+            <MessageSquare className="h-4 w-4 mr-2" />
+            <span className="flex-1 text-left">SMS</span>
+            <span className="ml-auto">
+              {emails.filter(email => 
+                email.accountType === 'twilio' || 
+                email.accountType === 'justcall' || 
+                (email.labels && email.labels.includes('SMS'))
+              ).length}
+            </span>
+          </Button>
+          
+          <Button
+            variant="ghost"
+            className="w-full justify-start mb-1 px-2"
+            size="sm"
+            disabled={isSyncing}
+            onClick={async () => {
+              try {
+                setIsSyncing(true);
+                await Promise.all([
+                  useEmailStore.getState().syncTwilioAccounts(),
+                  useEmailStore.getState().syncJustcallAccounts()
+                ]);
+              } catch (error) {
+                console.error("Error syncing SMS messages:", error);
+              } finally {
+                setIsSyncing(false);
+              }
+            }}
+          >
+            <div className="flex items-center w-full">
+              <MessageSquare className="h-4 w-4 mr-2" />
+              <span className="flex-1 text-left">Sync SMS</span>
+              {isSyncing && (
+                <span className="ml-2 animate-spin">⟳</span>
+              )}
+            </div>
           </Button>
         </div>
 

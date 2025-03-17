@@ -12,6 +12,8 @@ interface EmailStore {
   activeFilter: MessageCategory;
   activeGroup: string | null;
   imapAccounts: ImapAccount[];
+  twilioAccounts: any[];
+  justcallAccounts: any[];
   groups: Group[];
   setEmails: (emails: Email[]) => void;
   setActiveFilter: (filter: MessageCategory) => void;
@@ -21,7 +23,11 @@ interface EmailStore {
   getImapAccount: (id: string) => ImapAccount | undefined;
   syncEmails: (gmailToken: string | null) => Promise<void>;
   syncImapAccounts: () => Promise<void>;
+  syncTwilioAccounts: () => Promise<void>;
+  syncJustcallAccounts: () => Promise<void>;
   setImapAccounts: (accounts: ImapAccount[]) => void;
+  setTwilioAccounts: (accounts: any[]) => void;
+  setJustcallAccounts: (accounts: any[]) => void;
   addGroup: (group: Group) => void;
   updateGroup: (group: Group) => void;
   deleteGroup: (groupId: string) => void;
@@ -33,22 +39,32 @@ interface EmailStore {
 const loadPersistedData = () => {
   // Always return empty arrays during server-side rendering
   if (typeof window === "undefined") {
-    return { emails: [], imapAccounts: [], groups: [] };
+    return { 
+      emails: [], 
+      imapAccounts: [], 
+      twilioAccounts: [],
+      justcallAccounts: [],
+      groups: [] 
+    };
   }
 
   try {
     const savedEmails = localStorage.getItem("emails");
     const savedAccounts = localStorage.getItem("imapAccounts");
+    const savedTwilioAccounts = localStorage.getItem("twilioAccounts");
+    const savedJustcallAccounts = localStorage.getItem("justcallAccounts");
     const savedGroups = localStorage.getItem("groups");
 
     return {
       emails: savedEmails ? JSON.parse(savedEmails) : [],
       imapAccounts: savedAccounts ? JSON.parse(savedAccounts) : [],
+      twilioAccounts: savedTwilioAccounts ? JSON.parse(savedTwilioAccounts) : [],
+      justcallAccounts: savedJustcallAccounts ? JSON.parse(savedJustcallAccounts) : [],
       groups: savedGroups ? JSON.parse(savedGroups) : [],
     };
   } catch (e) {
     console.error("Failed to load persisted data:", e);
-    return { emails: [], imapAccounts: [], groups: [] };
+    return { emails: [], imapAccounts: [], twilioAccounts: [], justcallAccounts: [], groups: [] };
   }
 };
 
@@ -61,14 +77,34 @@ const generateEmailKey = (email: Email): string => {
 
 // Filter function to identify valid emails
 const isValidEmail = (email: Email): boolean => {
-  // Check if email has basic required properties
-  if (!email.id || !email.from || !email.from.email || !email.subject) {
+  // Check if email has ID
+  if (!email.id) {
     return false;
   }
 
-  // Skip emails with empty body
-  if (!email.body || email.body.trim() === "") {
-    return false;
+  // SMS messages might have different validation requirements
+  const isSMS = email.accountType === 'twilio' || 
+                email.accountType === 'justcall' || 
+                (email.labels && email.labels.includes('SMS'));
+  
+  if (isSMS) {
+    // For SMS, we just need the basic fields
+    if (!email.from || !email.from.email) {
+      return false;
+    }
+    
+    // SMS may sometimes have empty bodies, but that's okay
+    return true;
+  } else {
+    // For regular emails, require more fields
+    if (!email.from || !email.from.email || !email.subject) {
+      return false;
+    }
+
+    // Skip emails with empty body
+    if (!email.body || email.body.trim() === "") {
+      return false;
+    }
   }
 
   // Ensure required fields are present
@@ -96,7 +132,7 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
 
   syncImapAccounts: async () => {
     try {
-      const response = await fetch("/api/imap?action=getAccounts");
+      const response = await fetch("/api/imap/accounts");
       if (response.ok) {
         const { accounts } = await response.json();
         if (accounts && accounts.length > 0) {
@@ -121,10 +157,164 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
     }
   },
 
+  syncTwilioAccounts: async () => {
+    try {
+      console.log("Starting Twilio accounts sync");
+      // Fetch all Twilio accounts for the user
+      const response = await fetch("/api/sync/accounts?platform=twilio");
+      if (response.ok) {
+        const { accounts } = await response.json();
+        console.log(`Found ${accounts?.length || 0} Twilio accounts`);
+        if (accounts && accounts.length > 0) {
+          set((state) => ({ ...state, twilioAccounts: accounts }));
+          
+          // Sync messages for each account
+          const syncResult = await fetch("/api/sync/messages", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              platform: "twilio",
+            }),
+          });
+          
+          if (syncResult.ok) {
+            // After syncing, get all the messages to update the store
+            const currentEmails = get().emails;
+            console.log(`Current email count before Twilio sync: ${currentEmails.length}`);
+            const messagesResponse = await fetch("/api/messages?platform=twilio");
+            if (messagesResponse.ok) {
+              const { messages } = await messagesResponse.json();
+              console.log(`Retrieved ${messages?.length || 0} Twilio messages`);
+              if (messages && messages.length > 0) {
+                // Convert Twilio messages to Email format
+                const twilioEmails = messages.map((msg: any) => ({
+                  id: msg.id || msg.sid,
+                  from: {
+                    name: msg.from || 'Unknown',
+                    email: msg.from || msg.contact_number || '',
+                  },
+                  to: [{
+                    name: msg.to || 'You',
+                    email: msg.to || msg.number || '',
+                  }],
+                  subject: 'SMS Message',
+                  body: msg.body || '',
+                  date: msg.created_at || msg.date_created || new Date().toISOString(),
+                  labels: ['SMS'],
+                  accountType: 'twilio',
+                  accountId: msg.accountId,
+                  platform: 'twilio',
+                }));
+                
+                console.log(`Converted ${twilioEmails.length} Twilio messages to Email format`);
+                // Merge with existing emails
+                const mergedEmails = [...currentEmails, ...twilioEmails];
+                get().setEmails(mergedEmails);
+                console.log(`Updated email store with Twilio messages. New count: ${mergedEmails.length}`);
+                localStorage.setItem("emails", JSON.stringify(mergedEmails));
+              }
+            } else {
+              console.error("Failed to fetch Twilio messages:", await messagesResponse.text());
+            }
+          } else {
+            console.error("Failed to sync Twilio messages:", await syncResult.text());
+          }
+        }
+      } else {
+        console.error("Failed to fetch Twilio accounts:", await response.text());
+      }
+    } catch (error) {
+      console.error("Error syncing Twilio accounts:", error);
+    }
+  },
+
+  syncJustcallAccounts: async () => {
+    try {
+      console.log("Starting JustCall accounts sync");
+      // Fetch all JustCall accounts for the user
+      const response = await fetch("/api/sync/accounts?platform=justcall");
+      if (response.ok) {
+        const { accounts } = await response.json();
+        console.log(`Found ${accounts?.length || 0} JustCall accounts`);
+        if (accounts && accounts.length > 0) {
+          set((state) => ({ ...state, justcallAccounts: accounts }));
+          
+          // Sync messages for each account
+          const syncResult = await fetch("/api/sync/messages", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              platform: "justcall",
+            }),
+          });
+          
+          if (syncResult.ok) {
+            // After syncing, get all the messages to update the store
+            const currentEmails = get().emails;
+            console.log(`Current email count before JustCall sync: ${currentEmails.length}`);
+            const messagesResponse = await fetch("/api/messages?platform=justcall");
+            if (messagesResponse.ok) {
+              const { messages } = await messagesResponse.json();
+              console.log(`Retrieved ${messages?.length || 0} JustCall messages`);
+              if (messages && messages.length > 0) {
+                // Convert JustCall messages to Email format
+                const justcallEmails = messages.map((msg: any) => ({
+                  id: msg.id,
+                  from: {
+                    name: msg.contact_name || msg.contact_number || 'Unknown',
+                    email: msg.contact_number || '',
+                  },
+                  to: [{
+                    name: 'You',
+                    email: msg.number || '',
+                  }],
+                  subject: 'SMS Message',
+                  body: msg.body || '',
+                  date: msg.created_at || new Date().toISOString(),
+                  labels: ['SMS'],
+                  accountType: 'justcall',
+                  accountId: msg.accountId,
+                  platform: 'justcall',
+                }));
+                
+                console.log(`Converted ${justcallEmails.length} JustCall messages to Email format`);
+                // Merge with existing emails
+                const mergedEmails = [...currentEmails, ...justcallEmails];
+                get().setEmails(mergedEmails);
+                console.log(`Updated email store with JustCall messages. New count: ${mergedEmails.length}`);
+                localStorage.setItem("emails", JSON.stringify(mergedEmails));
+              }
+            } else {
+              console.error("Failed to fetch JustCall messages:", await messagesResponse.text());
+            }
+          } else {
+            console.error("Failed to sync JustCall messages:", await syncResult.text());
+          }
+        }
+      } else {
+        console.error("Failed to fetch JustCall accounts:", await response.text());
+      }
+    } catch (error) {
+      console.error("Error syncing JustCall accounts:", error);
+    }
+  },
+
+  setTwilioAccounts: (accounts) => {
+    set((state) => ({ ...state, twilioAccounts: accounts }));
+    localStorage.setItem("twilioAccounts", JSON.stringify(accounts));
+  },
+
+  setJustcallAccounts: (accounts) => {
+    set((state) => ({ ...state, justcallAccounts: accounts }));
+    localStorage.setItem("justcallAccounts", JSON.stringify(accounts));
+  },
+
   // Initialize with empty arrays first
   emails: [],
   contacts: [],
   imapAccounts: [],
+  twilioAccounts: [],
+  justcallAccounts: [],
   activeFilter: "inbox",
   activeGroup: null,
   groups: [],
@@ -216,6 +406,11 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
         return;
       }
 
+      // Check if this is an SMS message
+      const isSMS = email.accountType === 'twilio' || 
+                    email.accountType === 'justcall' || 
+                    (email.labels && email.labels.includes('SMS'));
+      
       // Add sender as contact (if not the current user)
       if (!email.from.email.includes("me")) {
         // Use email address only as the contact key
@@ -228,11 +423,11 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
           new Date(existingContact.lastMessageDate) < emailDate
         ) {
           contactsMap.set(contactKey, {
-            name: email.from.name,
+            name: email.from.name || (isSMS ? `Phone: ${email.from.email}` : email.from.email),
             email: email.from.email,
             lastMessageDate: email.date,
-            lastMessageSubject: email.subject,
-            labels: email.labels,
+            lastMessageSubject: isSMS ? 'SMS Message' : email.subject,
+            labels: isSMS ? ['SMS', ...(email.labels || [])] : email.labels,
             accountId: email.accountId,
             accountType: email.accountType,
           });
@@ -253,11 +448,11 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
               new Date(existingContact.lastMessageDate) < emailDate
             ) {
               contactsMap.set(contactKey, {
-                name: recipient.name,
+                name: recipient.name || (isSMS ? `Phone: ${recipient.email}` : recipient.email),
                 email: recipient.email,
                 lastMessageDate: email.date,
-                lastMessageSubject: email.subject,
-                labels: email.labels,
+                lastMessageSubject: isSMS ? 'SMS Message' : email.subject,
+                labels: isSMS ? ['SMS', ...(email.labels || [])] : email.labels,
                 accountId: email.accountId,
                 accountType: email.accountType,
               });
@@ -634,11 +829,15 @@ if (typeof window !== "undefined") {
     const store = useEmailStore.getState();
     await store.syncGroups();
     await store.syncImapAccounts();
+    await store.syncTwilioAccounts();
+    await store.syncJustcallAccounts();
   }, 100);
   
   // Set up periodic sync
   setInterval(async () => {
     const store = useEmailStore.getState();
     await store.syncGroups();
+    await store.syncTwilioAccounts();
+    await store.syncJustcallAccounts();
   }, 5 * 60 * 1000); // Sync every 5 minutes
 }
