@@ -111,7 +111,7 @@ export class JustCallService {
           agent_id: message.agent_id?.toString() || '',
           contact_id: message.contact_id?.toString() || '',
           contact_name: message.contact_name || '',
-          media: message.mms || [], 
+          media: message.mms || [],
         };
       }).filter(Boolean); // Remove null messages
     } catch (error) {

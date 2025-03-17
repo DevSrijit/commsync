@@ -43,7 +43,7 @@ model User {
   email         String?       @unique
   emailVerified DateTime?
   image         String?
-  createdAt     DateTime      @default(now())
+  createdAt     DateTime      @default(now())  //or set as null 
   updatedAt     DateTime      @updatedAt
   accounts      Account[]
   sessions      Session[]
@@ -109,7 +109,7 @@ model SyncAccount {
   accountIdentifier String   // Username or account identifier for the platform
   lastSync         DateTime  @default(now())
   createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  updatedAt        DateTime  @updatedAt 
   messages         Message[]
 
   @@index([userId])
