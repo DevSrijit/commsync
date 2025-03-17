@@ -123,14 +123,19 @@ export interface JustCallMessage {
   created_at: string;
   updated_at: string;
   status: string;
-  agent_id?: string;
-  contact_id?: string;
-  contact_name?: string;
-  media?: {
-    url: string;
-    type: string;
-    name: string;
-  }[];
+  agent_id: string;
+  contact_id: string;
+  contact_name: string;
+  media: any[];
+  // New fields for JustCall V2 API
+  sms_info?: {
+    body: string;
+    is_mms: string;
+    mms: any[];
+  };
+  justcall_number?: string;
+  justcall_line_name?: string;
+  delivery_status?: string;
 }
 
 export interface JustCallWebhookPayload {

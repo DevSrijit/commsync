@@ -269,7 +269,8 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
                     email: msg.number || '',
                   }],
                   subject: 'SMS Message',
-                  body: msg.body || '',
+                  // Access body from sms_info object for V2 API
+                  body: msg.sms_info?.body || msg.body || '',
                   date: msg.created_at || new Date().toISOString(),
                   labels: ['SMS'],
                   accountType: 'justcall',
