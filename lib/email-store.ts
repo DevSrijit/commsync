@@ -274,13 +274,21 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
                 // Convert JustCall messages to Email format
                 const justcallEmails = messages.map((msg: any) => ({
                   id: msg.id,
+                  threadId: msg.threadId, // Use the threadId for grouping
                   from: {
-                    name: msg.contact_name || msg.contact_number || 'Unknown',
-                    email: msg.contact_number || '',
+                    name: msg.direction === 'inbound' ? 
+                      (msg.contact_name || msg.contact_number || 'Unknown') : 
+                      'You',
+                    email: msg.direction === 'inbound' ? 
+                      msg.contact_number : 
+                      msg.number,
                   },
                   to: [{
-                    name: 'You',
-                    email: msg.number || '',
+                    name: msg.direction === 'inbound' ? 'You' : 
+                      (msg.contact_name || msg.contact_number || 'Unknown'),
+                    email: msg.direction === 'inbound' ? 
+                      msg.number : 
+                      msg.contact_number,
                   }],
                   subject: 'SMS Message',
                   // Access body from sms_info object for V2 API

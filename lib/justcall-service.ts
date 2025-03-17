@@ -90,11 +90,27 @@ export class JustCallService {
         return [];
       }
       
-      // Map the API response to our expected JustCallMessage format
+      // Create a map to group messages by conversation
+      const conversationMap = new Map<string, JustCallMessage[]>();
+      
+      // First pass: group messages by conversation
+      messages.forEach((message: any) => {
+        // Create a unique thread ID using both numbers
+        const threadId = [message.contact_number, message.justcall_number].sort().join('-');
+        if (!conversationMap.has(threadId)) {
+          conversationMap.set(threadId, []);
+        }
+        conversationMap.get(threadId)?.push(message);
+      });
+      
+      // Second pass: map messages and add threadId
       return messages.map((message: any): JustCallMessage => {
         if (!message) {
           throw new Error('Received null message from JustCall API');
         }
+        
+        // Get the thread ID for this message
+        const threadId = [message.contact_number, message.justcall_number].sort().join('-');
         
         // Handle potential format differences between v1 and v2.1
         return {
@@ -112,6 +128,12 @@ export class JustCallService {
           contact_id: message.contact_id?.toString() || '',
           contact_name: message.contact_name || '',
           media: message.sms_info?.mms || message.mms || [],
+          threadId, // Add the threadId to group messages
+          // New fields for JustCall V2 API
+          sms_info: message.sms_info,
+          justcall_number: message.justcall_number,
+          justcall_line_name: message.justcall_line_name,
+          delivery_status: message.delivery_status,
         };
       }).filter(Boolean); // Remove null messages
     } catch (error) {

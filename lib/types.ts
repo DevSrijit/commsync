@@ -127,6 +127,7 @@ export interface JustCallMessage {
   contact_id: string;
   contact_name: string;
   media: any[];
+  threadId?: string;
   // New fields for JustCall V2 API
   sms_info?: {
     body: string;
