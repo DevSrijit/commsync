@@ -174,19 +174,29 @@ export const syncJustCallAccounts = async (userId?: string): Promise<{ success: 
           const justCallService = new JustCallService(account);
           
           // Get messages since last sync
+          console.log(`Fetching messages for account ${account.id} since ${account.lastSync}`);
           const messages = await justCallService.getMessages(undefined, account.lastSync);
+          console.log(`Retrieved ${messages.length} messages for account ${account.id}`);
           
           let processedCount = 0;
+          let skippedCount = 0;
           
           // Process each message
           for (const message of messages) {
-            // Skip outbound messages as they were likely sent from our system
-            if (message.direction === 'outbound') {
-              continue;
-            }
+            try {
+              // Skip outbound messages as they were likely sent from our system
+              if (!message || message.direction === 'outbound') {
+                skippedCount++;
+                continue;
+              }
             
-            await justCallService.processIncomingMessage(message);
-            processedCount++;
+              await justCallService.processIncomingMessage(message);
+              processedCount++;
+            } catch (messageError) {
+              console.error(`Error processing message in JustCall account ${account.id}:`, 
+                messageError, 'Message:', JSON.stringify(message));
+              skippedCount++;
+            }
           }
           
           // Update last sync time
@@ -195,10 +205,10 @@ export const syncJustCallAccounts = async (userId?: string): Promise<{ success: 
             data: { lastSync: new Date() },
           });
           
-          return { accountId: account.id, processed: processedCount };
+          return { accountId: account.id, processed: processedCount, skipped: skippedCount };
         } catch (error) {
           console.error(`Error syncing JustCall account ${account.id}:`, error);
-          return { accountId: account.id, error: error instanceof Error ? error.message : 'Unknown error' };
+          throw error;
         }
       })
     );
@@ -234,19 +244,30 @@ export const syncTwilioAccounts = async (userId?: string): Promise<{ success: nu
           const twilioService = new TwilioService(account);
           
           // Get messages since last sync
+          console.log(`Fetching Twilio messages for account ${account.id} since ${account.lastSync}`);
           const messages = await twilioService.getMessages(account.lastSync);
+          console.log(`Retrieved ${messages.length} Twilio messages for account ${account.id}`);
           
           let processedCount = 0;
+          let skippedCount = 0;
           
           // Process each message
           for (const message of messages) {
-            // Skip outbound messages as they were likely sent from our system
-            if (message.direction !== 'inbound') {
-              continue;
+            try {
+              // Skip outbound messages as they were likely sent from our system
+              if (!message || message.direction !== 'inbound') {
+                console.log(`Skipping outbound or null Twilio message: ${message?.sid || 'N/A'}`);
+                skippedCount++;
+                continue;
+              }
+              
+              await twilioService.processIncomingMessage(message);
+              processedCount++;
+            } catch (messageError) {
+              console.error(`Error processing message in Twilio account ${account.id}:`, 
+                messageError, 'Message:', JSON.stringify(message));
+              skippedCount++;
             }
-            
-            await twilioService.processIncomingMessage(message);
-            processedCount++;
           }
           
           // Update last sync time
@@ -255,10 +276,10 @@ export const syncTwilioAccounts = async (userId?: string): Promise<{ success: nu
             data: { lastSync: new Date() },
           });
           
-          return { accountId: account.id, processed: processedCount };
+          return { accountId: account.id, processed: processedCount, skipped: skippedCount };
         } catch (error) {
           console.error(`Error syncing Twilio account ${account.id}:`, error);
-          return { accountId: account.id, error: error instanceof Error ? error.message : 'Unknown error' };
+          throw error;
         }
       })
     );

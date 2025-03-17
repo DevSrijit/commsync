@@ -29,11 +29,42 @@ export class TwilioService {
   private accountId: string;
 
   constructor(syncAccount: SyncAccountModel) {
-    const credentials = decryptData(syncAccount.accountIdentifier);
-    this.accountSid = credentials.accountSid;
-    this.authToken = credentials.authToken;
-    this.phoneNumber = credentials.phoneNumber;
-    this.accountId = syncAccount.id;
+    try {
+      let credentials;
+      
+      // Try to get credentials from both possible fields
+      if (syncAccount.credentials) {
+        // Primary location - credentials field
+        credentials = decryptData(syncAccount.credentials);
+      } else if (syncAccount.accountIdentifier) {
+        // Legacy location - accountIdentifier field
+        credentials = decryptData(syncAccount.accountIdentifier);
+      } else {
+        throw new Error('No credentials found for Twilio account');
+      }
+      
+      // Handle string format (JSON string)
+      if (typeof credentials === 'string') {
+        try {
+          credentials = JSON.parse(credentials);
+        } catch (e) {
+          console.error('Failed to parse Twilio credentials JSON:', e);
+          throw new Error('Invalid Twilio credentials format');
+        }
+      }
+      
+      this.accountSid = credentials.accountSid;
+      this.authToken = credentials.authToken;
+      this.phoneNumber = credentials.phoneNumber;
+      this.accountId = syncAccount.id;
+      
+      if (!this.accountSid || !this.authToken || !this.phoneNumber) {
+        throw new Error('Invalid Twilio credentials: missing required fields');
+      }
+    } catch (error) {
+      console.error('Error initializing Twilio service:', error);
+      throw new Error('Failed to initialize Twilio service: Invalid credentials');
+    }
   }
 
   private getAuthHeader() {
@@ -106,7 +137,19 @@ export class TwilioService {
   }
 
   // Process a new message from Twilio webhook
-  async processIncomingMessage(message: TwilioMessage): Promise<void> {
+  async processIncomingMessage(message: TwilioMessage | null): Promise<void> {
+    // Skip processing if message is null
+    if (!message) {
+      console.log('Skipping null Twilio message');
+      return;
+    }
+    
+    // Validate required fields
+    if (!message.sid || !message.from) {
+      console.error('Invalid Twilio message format - missing required fields:', message);
+      return;
+    }
+    
     try {
       // Get the syncAccount
       const syncAccount = await db.syncAccount.findFirst({

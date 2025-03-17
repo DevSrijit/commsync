@@ -62,6 +62,7 @@ export interface SyncAccountModel {
   lastSync: Date;
   createdAt: Date;
   updatedAt: Date;
+  credentials: string;
 }
 
 export interface ContactModel {
