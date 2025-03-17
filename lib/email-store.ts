@@ -132,25 +132,39 @@ export const useEmailStore = create<EmailStore>((set, get) => ({
 
   syncImapAccounts: async () => {
     try {
-      const response = await fetch("/api/imap/accounts");
+      console.log("Starting IMAP accounts sync");
+      // The endpoint was changed to /api/imap?action=getAccounts but the code is still using /api/imap/accounts
+      const response = await fetch("/api/imap?action=getAccounts");
       if (response.ok) {
         const { accounts } = await response.json();
+        console.log(`Found ${accounts?.length || 0} IMAP accounts`);
         if (accounts && accounts.length > 0) {
           set((state) => ({ ...state, imapAccounts: accounts }));
+          
+          // Store IMAP accounts in local storage
+          localStorage.setItem("imapAccounts", JSON.stringify(accounts));
 
           // Sync emails for each account
           for (const account of accounts) {
-            await fetch("/api/imap", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                action: "syncEmails",
-                account,
-                data: { limit: 50 },
-              }),
-            });
+            try {
+              await fetch("/api/imap", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  action: "fetchEmails",
+                  account,
+                  data: { limit: 50 },
+                }),
+              });
+            } catch (accountError) {
+              console.error(`Error syncing IMAP account ${account.label}:`, accountError);
+            }
           }
+        } else {
+          console.log("No IMAP accounts found");
         }
+      } else {
+        console.error("Failed to fetch IMAP accounts:", await response.text());
       }
     } catch (error) {
       console.error("Error syncing IMAP accounts:", error);
@@ -838,6 +852,7 @@ if (typeof window !== "undefined") {
   setInterval(async () => {
     const store = useEmailStore.getState();
     await store.syncGroups();
+    await store.syncImapAccounts();
     await store.syncTwilioAccounts();
     await store.syncJustcallAccounts();
   }, 5 * 60 * 1000); // Sync every 5 minutes

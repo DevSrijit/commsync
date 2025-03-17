@@ -89,7 +89,8 @@ export function Sidebar() {
   const [justCallAccounts, setJustCallAccounts] = useState<any[]>([]);
   const [twilioAccounts, setTwilioAccounts] = useState<any[]>([]);
   const [isTwilioDialogOpen, setIsTwilioDialogOpen] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
+  const [isSyncingSMS, setIsSyncingSMS] = useState(false);
+  const [isSyncingEmail, setIsSyncingEmail] = useState(false);
 
   // Fetch JustCall accounts
   useEffect(() => {
@@ -123,6 +124,14 @@ export function Sidebar() {
       fetchTwilioAccounts();
     }
   }, [session?.user]);
+
+  // Log IMAP accounts when they change
+  useEffect(() => {
+    console.log(`Sidebar: IMAP accounts updated - ${imapAccounts.length} accounts found`);
+    if (imapAccounts.length > 0) {
+      console.log('IMAP account labels:', imapAccounts.map(acc => acc.label));
+    }
+  }, [imapAccounts]);
 
   const inboxCount = emails.filter(
     (email) =>
@@ -182,7 +191,7 @@ export function Sidebar() {
           <PenSquare className="h-4 w-4 mr-2" />
           Compose
         </Button>
-        
+
         <Separator className="my-4" />
       </div>
       
@@ -191,99 +200,92 @@ export function Sidebar() {
           <Button
             variant="ghost"
             className={cn(
-              "w-full justify-start mb-1 px-2",
-              activeFilter === "inbox" && "bg-muted"
+              "w-full justify-start mb-1 px-3 py-2 text-sm font-medium",
+              activeFilter === "inbox" && "bg-accent text-accent-foreground"
             )}
-            size="sm"
             onClick={() => setActiveFilter("inbox")}
           >
             <Inbox className="h-4 w-4 mr-2" />
             <span className="flex-1 text-left">Inbox</span>
-            <span className="ml-auto">{inboxCount}</span>
+            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{inboxCount}</span>
           </Button>
           
           <Button
             variant="ghost"
             className={cn(
-              "w-full justify-start mb-1 px-2",
-              activeFilter === "draft" && "bg-muted"
+              "w-full justify-start mb-1 px-3 py-2 text-sm font-medium",
+              activeFilter === "draft" && "bg-accent text-accent-foreground"
             )}
-            size="sm"
             onClick={() => setActiveFilter("draft")}
           >
             <PenSquare className="h-4 w-4 mr-2" />
             <span className="flex-1 text-left">Drafts</span>
-            <span className="ml-auto">{draftCount}</span>
+            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{draftCount}</span>
           </Button>
           
           <Button
             variant="ghost"
             className={cn(
-              "w-full justify-start mb-1 px-2",
-              activeFilter === "sent" && "bg-muted"
+              "w-full justify-start mb-1 px-3 py-2 text-sm font-medium",
+              activeFilter === "sent" && "bg-accent text-accent-foreground"
             )}
-            size="sm"
             onClick={() => setActiveFilter("sent")}
           >
             <Send className="h-4 w-4 mr-2" />
             <span className="flex-1 text-left">Sent</span>
-            <span className="ml-auto">{sentCount}</span>
+            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{sentCount}</span>
           </Button>
           
           <Button
             variant="ghost"
             className={cn(
-              "w-full justify-start mb-1 px-2",
-              activeFilter === "starred" && "bg-muted"
+              "w-full justify-start mb-1 px-3 py-2 text-sm font-medium",
+              activeFilter === "starred" && "bg-accent text-accent-foreground"
             )}
-            size="sm"
             onClick={() => setActiveFilter("starred")}
           >
             <Star className="h-4 w-4 mr-2" />
             <span className="flex-1 text-left">Starred</span>
-            <span className="ml-auto">{starredCount}</span>
+            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{starredCount}</span>
           </Button>
           
           <Button
             variant="ghost"
             className={cn(
-              "w-full justify-start mb-1 px-2",
-              activeFilter === "trash" && "bg-muted"
+              "w-full justify-start mb-1 px-3 py-2 text-sm font-medium",
+              activeFilter === "trash" && "bg-accent text-accent-foreground"
             )}
-            size="sm"
             onClick={() => setActiveFilter("trash")}
           >
             <Trash className="h-4 w-4 mr-2" />
             <span className="flex-1 text-left">Trash</span>
-            <span className="ml-auto">{trashCount}</span>
+            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{trashCount}</span>
           </Button>
           
           <Button
             variant="ghost"
             className={cn(
-              "w-full justify-start mb-1 px-2",
-              activeFilter === "archive" && "bg-muted"
+              "w-full justify-start mb-1 px-3 py-2 text-sm font-medium",
+              activeFilter === "archive" && "bg-accent text-accent-foreground"
             )}
-            size="sm"
             onClick={() => setActiveFilter("archive")}
           >
             <Archive className="h-4 w-4 mr-2" />
             <span className="flex-1 text-left">Archive</span>
-            <span className="ml-auto">{archiveCount}</span>
+            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{archiveCount}</span>
           </Button>
           
           <Button
             variant="ghost"
             className={cn(
-              "w-full justify-start mb-1 px-2",
-              activeFilter === "sms" && "bg-muted"
+              "w-full justify-start mb-1 px-3 py-2 text-sm font-medium",
+              activeFilter === "sms" && "bg-accent text-accent-foreground"
             )}
-            size="sm"
             onClick={() => setActiveFilter("sms")}
           >
             <MessageSquare className="h-4 w-4 mr-2" />
             <span className="flex-1 text-left">SMS</span>
-            <span className="ml-auto">
+            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">
               {emails.filter(email => 
                 email.accountType === 'twilio' || 
                 email.accountType === 'justcall' || 
@@ -294,12 +296,11 @@ export function Sidebar() {
           
           <Button
             variant="ghost"
-            className="w-full justify-start mb-1 px-2"
-            size="sm"
-            disabled={isSyncing}
+            className="w-full justify-start mb-1 px-3 py-2 text-sm font-medium"
+            disabled={isSyncingSMS}
             onClick={async () => {
               try {
-                setIsSyncing(true);
+                setIsSyncingSMS(true);
                 await Promise.all([
                   useEmailStore.getState().syncTwilioAccounts(),
                   useEmailStore.getState().syncJustcallAccounts()
@@ -307,14 +308,14 @@ export function Sidebar() {
               } catch (error) {
                 console.error("Error syncing SMS messages:", error);
               } finally {
-                setIsSyncing(false);
+                setIsSyncingSMS(false);
               }
             }}
           >
             <div className="flex items-center w-full">
               <MessageSquare className="h-4 w-4 mr-2" />
               <span className="flex-1 text-left">Sync SMS</span>
-              {isSyncing && (
+              {isSyncingSMS && (
                 <span className="ml-2 animate-spin">⟳</span>
               )}
             </div>
@@ -355,35 +356,56 @@ export function Sidebar() {
         <div className="px-2">
           <Button
             variant="ghost"
-            className="w-full justify-start mb-1 px-2"
-            size="sm"
+            className="w-full justify-start mb-1 px-3 py-2 text-sm font-medium"
             onClick={() => setIsImapListOpen(true)}
           >
             <Mail className="h-4 w-4 mr-2" />
             <span className="flex-1 text-left">Email Accounts</span>
-            <span className="ml-auto">{imapAccounts.length}</span>
+            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{imapAccounts.length}</span>
           </Button>
 
           <Button
             variant="ghost"
-            className="w-full justify-start mb-1 px-2"
-            size="sm"
+            className="w-full justify-start mb-1 px-3 py-2 text-sm font-medium"
+            disabled={isSyncingEmail}
+            onClick={async () => {
+              try {
+                setIsSyncingEmail(true);
+                await useEmailStore.getState().syncImapAccounts();
+              } catch (error) {
+                console.error("Error syncing IMAP accounts:", error);
+              } finally {
+                setIsSyncingEmail(false);
+              }
+            }}
+          >
+            <div className="flex items-center w-full">
+              <Mail className="h-4 w-4 mr-2" />
+              <span className="flex-1 text-left">Sync Email</span>
+              {isSyncingEmail && (
+                <span className="ml-2 animate-spin">⟳</span>
+              )}
+            </div>
+          </Button>
+
+          <Button
+            variant="ghost"
+            className="w-full justify-start mb-1 px-3 py-2 text-sm font-medium"
             onClick={() => setIsJustCallListOpen(true)}
           >
             <MessageSquare className="h-4 w-4 mr-2" />
             <span className="flex-1 text-left">JustCall Accounts</span>
-            <span className="ml-auto">{justCallAccounts.length}</span>
+            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{justCallAccounts.length}</span>
           </Button>
 
           <Button
             variant="ghost"
-            className="w-full justify-start mb-1 px-2"
-            size="sm"
+            className="w-full justify-start mb-1 px-3 py-2 text-sm font-medium"
             onClick={() => setIsTwilioListOpen(true)}
           >
             <SiTwilio className="h-4 w-4 mr-2" />
             <span className="flex-1 text-left">Twilio Accounts</span>
-            <span className="ml-auto">{twilioAccounts.length}</span>
+            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{twilioAccounts.length}</span>
           </Button>
         </div>
       </ScrollArea>
