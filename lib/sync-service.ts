@@ -218,6 +218,17 @@ export const syncJustCallAccounts = async (
           
           // Get messages since last sync for the specific phone number
           console.log(`Fetching messages for account ${account.id} with phone ${phoneNumber}, date filter: ${dateToUse?.toISOString() || 'none'}, sort: ${options?.sortDirection || 'desc'}`);
+          
+          // First, let's run a debug call to see all texts for this account
+          try {
+            console.log(`[DEBUG] Running diagnostic test for JustCall account ${account.id}`);
+            await justCallService.getAllTextsDebug(100);
+            console.log(`[DEBUG] Diagnostic test complete for JustCall account ${account.id}`);
+          } catch (debugError) {
+            console.error(`[DEBUG] Error running diagnostic test: ${debugError}`);
+          }
+          
+          // Now proceed with the normal filtered request
           const messages = await justCallService.getMessages(
             phoneNumber, 
             dateToUse,

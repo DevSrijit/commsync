@@ -6,6 +6,7 @@ export class JustCallService {
   private apiKey: string;
   private apiSecret: string;
   private accountId: string;
+  private phoneNumber: string;
   private baseUrl = 'https://api.justcall.io/v2.1'; // Updated to v2.1 API
 
   constructor(syncAccount: SyncAccountModel) {
@@ -18,9 +19,16 @@ export class JustCallService {
       this.apiKey = credentials.apiKey;
       this.apiSecret = credentials.apiSecret;
       this.accountId = syncAccount.id;
+      this.phoneNumber = credentials.phoneNumber || syncAccount.accountIdentifier || '';
       
       if (!this.apiKey || !this.apiSecret) {
         throw new Error('Invalid JustCall credentials: API key or secret is missing');
+      }
+      
+      if (!this.phoneNumber) {
+        console.warn(`No phone number found for JustCall account ${this.accountId}, some functionality may be limited`);
+      } else {
+        console.log(`JustCall service initialized for phone number: ${this.phoneNumber}`);
       }
     } catch (error) {
       console.error('Error initializing JustCall service:', error);
@@ -44,21 +52,39 @@ export class JustCallService {
       
       queryParams.append('per_page', limit.toString());
       queryParams.append('page', page.toString());
-      queryParams.append('sort', sortDirection); // Sort by date ascending for older messages or descending for newer
       
-      if (phoneNumber) {
-        queryParams.append('contact_number', phoneNumber);
+      // The 'sort' parameter should be 'id' or 'datetime', not the direction
+      queryParams.append('sort', 'datetime');
+      
+      // The direction should be in an 'order' parameter
+      queryParams.append('order', sortDirection);
+      
+      // Use the provided phone number or fall back to the one from credentials
+      const justcallNumber = phoneNumber || this.phoneNumber;
+      
+      if (justcallNumber) {
+        // This should be the number assigned to your JustCall account
+        queryParams.append('justcall_number', justcallNumber);
+        console.log(`Filtering messages for JustCall number: ${justcallNumber}`);
+      } else {
+        console.warn('No JustCall phone number provided for filtering messages');
       }
       
       if (fromDate) {
-        // When loading older messages (sortDirection=asc), use to_datetime
-        // When loading newer messages (sortDirection=desc), use from_datetime
-        const dateParam = sortDirection === 'asc' ? 'to_datetime' : 'from_datetime';
-        queryParams.append(dateParam, fromDate.toISOString());
+        // Both from_datetime and to_datetime can be used together
+        // When loading older messages (order=asc), we want messages older than fromDate
+        // When loading newer messages (order=desc), we want messages newer than fromDate
+        if (sortDirection === 'asc') {
+          // For ascending order (oldest first), use to_datetime as upper bound
+          queryParams.append('to_datetime', fromDate.toISOString());
+        } else {
+          // For descending order (newest first), use from_datetime as lower bound
+          queryParams.append('from_datetime', fromDate.toISOString());
+        }
       }
 
       url = `${url}?${queryParams.toString()}`;
-      console.log(`JustCall fetch URL with sort=${sortDirection}:`, url);
+      console.log(`JustCall fetch URL with order=${sortDirection}:`, url);
 
       const response = await fetch(url, {
         method: 'GET',
@@ -399,6 +425,54 @@ export class JustCallService {
     } catch (error) {
       console.error('Failed to fetch JustCall users:', error);
       throw error;
+    }
+  }
+
+  // Debug method to fetch all texts without filters to help troubleshoot
+  async getAllTextsDebug(limit = 100): Promise<any> {
+    try {
+      // Using the V2 SMS endpoints as per the documentation
+      let url = `${this.baseUrl}/texts?per_page=${limit}`;
+      
+      console.log(`[DEBUG] Fetching all texts without filters from: ${url}`);
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: this.getAuthHeaders(),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        const statusCode = response.status;
+        console.error(`[DEBUG] JustCall API error: ${statusCode}`, errorData);
+        return { error: errorData, status: statusCode };
+      }
+
+      const data = await response.json();
+      console.log(`[DEBUG] JustCall API response: Found ${data?.data?.length || 0} texts`);
+      
+      // Log the first few texts to see what's coming back
+      if (data?.data?.length > 0) {
+        const sampleTexts = data.data.slice(0, 3);
+        console.log(`[DEBUG] Sample texts: ${JSON.stringify(sampleTexts, null, 2)}`);
+        
+        // Extract unique phone numbers to help with debugging
+        const justcallNumbers = new Set();
+        const contactNumbers = new Set();
+        
+        data.data.forEach((text: any) => {
+          if (text.justcall_number) justcallNumbers.add(text.justcall_number);
+          if (text.contact_number) contactNumbers.add(text.contact_number);
+        });
+        
+        console.log(`[DEBUG] JustCall numbers in texts: ${Array.from(justcallNumbers).join(', ')}`);
+        console.log(`[DEBUG] Contact numbers in texts: ${Array.from(contactNumbers).join(', ')}`);
+      }
+      
+      return data;
+    } catch (error) {
+      console.error('[DEBUG] Failed to fetch all JustCall texts:', error);
+      return { error };
     }
   }
 } 
