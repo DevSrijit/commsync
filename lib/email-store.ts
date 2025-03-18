@@ -241,10 +241,11 @@ export const useEmailStore = create<EmailStore>((set, get) => {
             // Store IMAP accounts in local storage
             localStorage.setItem("imapAccounts", JSON.stringify(accounts));
 
+            let newEmailsFound = false;
             // Sync emails for each account
             for (const account of accounts) {
               try {
-                await fetch("/api/imap", {
+                const fetchResponse = await fetch("/api/imap", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
@@ -256,13 +257,25 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                     },
                   }),
                 });
+                
+                if (fetchResponse.ok) {
+                  const result = await fetchResponse.json();
+                  if (result.success && result.emailsCount > 0) {
+                    newEmailsFound = true;
+                  }
+                }
               } catch (accountError) {
                 console.error(`Error syncing IMAP account ${account.label}:`, accountError);
               }
             }
             
-            // Increment the page counter for next time
-            set((state) => ({ ...state, currentImapPage: currentPage + 1 }));
+            // Only increment the page counter if new emails were found or it's the first page
+            if (newEmailsFound || currentPage === 1) {
+              set((state) => ({ ...state, currentImapPage: currentPage + 1 }));
+              console.log(`Incremented IMAP page to ${currentPage + 1}`);
+            } else {
+              console.log(`No new IMAP emails on page ${currentPage}, not incrementing page counter`);
+            }
           } else {
             console.log("No IMAP accounts found");
           }
@@ -330,14 +343,40 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                   }));
                   
                   console.log(`Converted ${twilioEmails.length} Twilio messages to Email format`);
-                  // Merge with existing emails
-                  const mergedEmails = [...currentEmails, ...twilioEmails];
-                  get().setEmails(mergedEmails);
-                  console.log(`Updated email store with Twilio messages. New count: ${mergedEmails.length}`);
-                  localStorage.setItem("emails", JSON.stringify(mergedEmails));
                   
-                  // Increment the page counter for next time
-                  set((state) => ({ ...state, currentTwilioPage: currentPage + 1 }));
+                  // Check for duplicates before merging - use both ID and date for SMS messages
+                  // This ensures we don't filter out messages from the same thread
+                  const existingIds = new Map();
+                  currentEmails.forEach(email => {
+                    existingIds.set(email.id, email);
+                  });
+                  
+                  // Filter out exact duplicates but keep newer messages from the same thread
+                  const newEmails = twilioEmails.filter(email => {
+                    const existing = existingIds.get(email.id);
+                    if (!existing) return true; // Not a duplicate
+                    
+                    // If this is a newer message, keep it
+                    const newDate = new Date(email.date);
+                    const existingDate = new Date(existing.date);
+                    return newDate > existingDate;
+                  });
+                  
+                  if (newEmails.length > 0) {
+                    // Merge with existing emails
+                    const mergedEmails = [...currentEmails, ...newEmails];
+                    get().setEmails(mergedEmails);
+                    console.log(`Updated email store with ${newEmails.length} new Twilio messages. New count: ${mergedEmails.length}`);
+                    localStorage.setItem("emails", JSON.stringify(mergedEmails));
+                    
+                    // Increment the page counter only if we found new emails
+                    set((state) => ({ ...state, currentTwilioPage: currentPage + 1 }));
+                    console.log(`Incremented Twilio page to ${currentPage + 1}`);
+                  } else {
+                    console.log(`No new Twilio messages on page ${currentPage}, not incrementing page counter`);
+                  }
+                } else {
+                  console.log(`No Twilio messages for page ${currentPage}`);
                 }
               } else {
                 console.error("Failed to fetch Twilio messages:", await messagesResponse.text());
@@ -369,70 +408,118 @@ export const useEmailStore = create<EmailStore>((set, get) => {
           if (accounts && accounts.length > 0) {
             set((state) => ({ ...state, justcallAccounts: accounts }));
             
-            // Sync messages for each account
-            const syncResult = await fetch("/api/sync/messages", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                platform: "justcall",
-                page: currentPage,
-                pageSize: 100
-              }),
-            });
-            
-            if (syncResult.ok) {
-              // After syncing, get all the messages to update the store
-              const currentEmails = get().emails;
-              console.log(`Current email count before JustCall sync: ${currentEmails.length}`);
-              const messagesResponse = await fetch(`/api/messages?platform=justcall&page=${currentPage}&pageSize=100`);
-              if (messagesResponse.ok) {
-                const { messages } = await messagesResponse.json();
-                console.log(`Retrieved ${messages?.length || 0} JustCall messages for page ${currentPage}`);
-                if (messages && messages.length > 0) {
-                  // Convert JustCall messages to Email format
-                  const justcallEmails = messages.map((msg: any) => ({
-                    id: msg.id,
-                    threadId: msg.threadId, // Use the threadId for grouping
-                    from: {
-                      name: msg.direction === 'inbound' ? 
-                        (msg.contact_name || msg.contact_number || 'Unknown') : 
-                        'You',
-                      email: msg.direction === 'inbound' ? 
-                        msg.contact_number : 
-                        msg.number,
-                    },
-                    to: [{
-                      name: msg.direction === 'inbound' ? 'You' : 
-                        (msg.contact_name || msg.contact_number || 'Unknown'),
-                      email: msg.direction === 'inbound' ? 
-                        msg.number : 
-                        msg.contact_number,
-                    }],
-                    subject: 'SMS Message',
-                    // Access body from sms_info object for V2 API
-                    body: msg.sms_info?.body || msg.body || '',
-                    date: msg.created_at || new Date().toISOString(),
-                    labels: ['SMS'],
-                    accountType: 'justcall',
-                    accountId: msg.accountId,
-                    platform: 'justcall',
-                  }));
+            // Process each account separately to ensure phone number filtering
+            for (const account of accounts) {
+              // Make sure we have the accountIdentifier (phone number)
+              if (!account.accountIdentifier) {
+                console.warn(`JustCall account ${account.id} has no accountIdentifier (phone number), skipping`);
+                continue;
+              }
+              
+              console.log(`Syncing JustCall account ${account.id} for phone number: ${account.accountIdentifier}`);
+              
+              // Sync messages for this specific account/phone number
+              const syncResult = await fetch("/api/sync/messages", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  platform: "justcall",
+                  page: currentPage,
+                  pageSize: 100,
+                  phoneNumber: account.accountIdentifier, // Filter by this specific phone number
+                  accountId: account.id
+                }),
+              });
+              
+              if (syncResult.ok) {
+                // After syncing, get messages for this specific phone number
+                const currentEmails = get().emails;
+                console.log(`Current email count before JustCall sync: ${currentEmails.length}`);
+                const messagesResponse = await fetch(`/api/messages?platform=justcall&page=${currentPage}&pageSize=100&phoneNumber=${encodeURIComponent(account.accountIdentifier)}&accountId=${account.id}`);
+                
+                if (messagesResponse.ok) {
+                  const { messages } = await messagesResponse.json();
+                  console.log(`Retrieved ${messages?.length || 0} JustCall messages for phone ${account.accountIdentifier} on page ${currentPage}`);
                   
-                  console.log(`Converted ${justcallEmails.length} JustCall messages to Email format`);
-                  // Merge with existing emails
-                  const mergedEmails = [...currentEmails, ...justcallEmails];
-                  get().setEmails(mergedEmails);
-                  console.log(`Updated email store with JustCall messages. New count: ${mergedEmails.length}`);
-                  localStorage.setItem("emails", JSON.stringify(mergedEmails));
-                  
-                  // Increment the page counter for next time
-                  set((state) => ({ ...state, currentJustcallPage: currentPage + 1 }));
+                  if (messages && messages.length > 0) {
+                    // Convert JustCall messages to Email format
+                    const justcallEmails = messages.map((msg: any) => ({
+                      id: msg.id,
+                      threadId: msg.threadId, // Use the threadId for grouping
+                      from: {
+                        name: msg.direction === 'inbound' ? 
+                          (msg.contact_name || msg.contact_number || 'Unknown') : 
+                          'You',
+                        email: msg.direction === 'inbound' ? 
+                          msg.contact_number : 
+                          msg.number,
+                      },
+                      to: [{
+                        name: msg.direction === 'inbound' ? 'You' : 
+                          (msg.contact_name || msg.contact_number || 'Unknown'),
+                        email: msg.direction === 'inbound' ? 
+                          msg.number : 
+                          msg.contact_number,
+                      }],
+                      subject: 'SMS Message',
+                      // Access body from sms_info object for V2 API
+                      body: msg.sms_info?.body || msg.body || '',
+                      date: msg.created_at || new Date().toISOString(),
+                      labels: ['SMS'],
+                      accountType: 'justcall',
+                      accountId: account.id,
+                      platform: 'justcall',
+                      phoneNumber: account.accountIdentifier // Store the phone number for reference
+                    }));
+                    
+                    console.log(`Converted ${justcallEmails.length} JustCall messages to Email format`);
+                    
+                    // Check for duplicates before merging - use both ID and date for SMS messages
+                    // This ensures we don't filter out messages from the same thread
+                    const existingIds = new Map();
+                    currentEmails.forEach(email => {
+                      existingIds.set(email.id, email);
+                    });
+                    
+                    // Filter out exact duplicates but keep newer messages from the same thread
+                    const newEmails = justcallEmails.filter(email => {
+                      const existing = existingIds.get(email.id);
+                      if (!existing) return true; // Not a duplicate
+                      
+                      // If we have a thread ID, compare dates to keep the newest message
+                      if (email.threadId && existing.threadId === email.threadId) {
+                        const newDate = new Date(email.date);
+                        const existingDate = new Date(existing.date);
+                        return newDate > existingDate;
+                      }
+                      
+                      return false; // It's a duplicate
+                    });
+                    
+                    if (newEmails.length > 0) {
+                      // Merge with existing emails
+                      const mergedEmails = [...currentEmails, ...newEmails];
+                      get().setEmails(mergedEmails);
+                      console.log(`Updated email store with ${newEmails.length} new JustCall messages for phone ${account.accountIdentifier}. New count: ${mergedEmails.length}`);
+                      localStorage.setItem("emails", JSON.stringify(mergedEmails));
+                      
+                      // Increment the page counter only if we found new emails (per account)
+                      if (account === accounts[accounts.length - 1]) { // Only increment after processing the last account
+                        set((state) => ({ ...state, currentJustcallPage: currentPage + 1 }));
+                        console.log(`Incremented JustCall page to ${currentPage + 1}`);
+                      }
+                    } else {
+                      console.log(`No new JustCall messages for phone ${account.accountIdentifier} on page ${currentPage}`);
+                    }
+                  } else {
+                    console.log(`No JustCall messages for phone ${account.accountIdentifier} on page ${currentPage}`);
+                  }
+                } else {
+                  console.error(`Failed to fetch JustCall messages for phone ${account.accountIdentifier}:`, await messagesResponse.text());
                 }
               } else {
-                console.error("Failed to fetch JustCall messages:", await messagesResponse.text());
+                console.error(`Failed to sync JustCall messages for phone ${account.accountIdentifier}:`, await syncResult.text());
               }
-            } else {
-              console.error("Failed to sync JustCall messages:", await syncResult.text());
             }
           }
         } else {

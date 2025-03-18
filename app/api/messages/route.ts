@@ -17,17 +17,28 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const platform = searchParams.get('platform');
     const limit = parseInt(searchParams.get('limit') || '100');
+    const page = parseInt(searchParams.get('page') || '1');
+    const pageSize = parseInt(searchParams.get('pageSize') || '100');
+    const phoneNumber = searchParams.get('phoneNumber');
+    const accountId = searchParams.get('accountId');
     
     if (!platform) {
       return NextResponse.json({ error: 'Platform parameter is required' }, { status: 400 });
     }
 
     // Get accounts for the specified platform
+    const accountsQuery: any = {
+      userId: session.user.id,
+      platform: platform.toLowerCase(),
+    };
+    
+    // If accountId is specified, filter to just that account
+    if (accountId) {
+      accountsQuery.id = accountId;
+    }
+    
     const accounts = await db.syncAccount.findMany({
-      where: {
-        userId: session.user.id,
-        platform: platform.toLowerCase(),
-      },
+      where: accountsQuery,
     });
 
     if (!accounts || accounts.length === 0) {
@@ -46,7 +57,24 @@ export async function GET(request: Request) {
           messages = await twilioService.getMessages(undefined, limit);
         } else if (platform.toLowerCase() === 'justcall') {
           const justcallService = new JustCallService(account);
-          messages = await justcallService.getMessages(undefined, undefined, limit);
+          
+          // For JustCall, use the phoneNumber from query params or the accountIdentifier
+          const phoneToUse = phoneNumber || account.accountIdentifier;
+          
+          if (!phoneToUse) {
+            console.warn(`No phone number specified for JustCall account ${account.id}, skipping`);
+            continue;
+          }
+          
+          console.log(`Fetching messages for JustCall account ${account.id} with phone ${phoneToUse}, page ${page}`);
+          // Pass the page and pageSize parameters to the getMessages function
+          messages = await justcallService.getMessages(
+            phoneToUse, 
+            undefined, 
+            pageSize,
+            page
+          );
+          console.log(`Retrieved ${messages.length} messages from JustCall for page ${page}`);
         }
         
         // Add account ID to each message for reference
@@ -62,7 +90,18 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.json({ messages: allMessages });
+    // Apply pagination to the results
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const paginatedMessages = allMessages.slice(startIndex, endIndex);
+
+    return NextResponse.json({ 
+      messages: paginatedMessages,
+      total: allMessages.length,
+      page,
+      pageSize,
+      totalPages: Math.ceil(allMessages.length / pageSize)
+    });
   } catch (error) {
     console.error('Error fetching messages:', error);
     return NextResponse.json(

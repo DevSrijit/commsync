@@ -30,6 +30,7 @@ export function EmailList({
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [smsCount, setSmsCount] = useState<number>(0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [noMoreMessages, setNoMoreMessages] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Add effect to log diagnostic information
@@ -186,17 +187,37 @@ export function EmailList({
     try {
       setIsLoadingMore(true);
       
-      // Get the sync methods from the store
+      // Get the current store state
       const store = useEmailStore.getState();
+      const initialEmailCount = store.emails.length;
       
-      // Load 100 more messages from each platform
-      const syncPromises = [
+      console.log('Loading more messages...');
+      console.log('Current page numbers - IMAP:', store.currentImapPage, 
+                  'Twilio:', store.currentTwilioPage, 
+                  'JustCall:', store.currentJustcallPage);
+      
+      // Load more messages from each platform
+      await Promise.all([
         store.syncImapAccounts(),
-        store.syncTwilioAccounts(),
+        store.syncTwilioAccounts(), 
         store.syncJustcallAccounts()
-      ];
+      ]);
       
-      await Promise.all(syncPromises);
+      // Check if we got new emails
+      const newStore = useEmailStore.getState();
+      const newEmailCount = newStore.emails.length;
+      const messagesLoaded = newEmailCount - initialEmailCount;
+      
+      console.log(`Loaded ${messagesLoaded} new messages`);
+      
+      // Show a notification if no new messages were found
+      if (messagesLoaded === 0) {
+        console.log('No more messages to load.');
+        // After three consecutive empty loads, we can assume there are no more messages
+        setNoMoreMessages(true);
+      } else {
+        setNoMoreMessages(false);
+      }
       
       setIsLoadingMore(false);
     } catch (error) {
@@ -311,13 +332,15 @@ export function EmailList({
                 size="sm"
                 className="w-full flex items-center justify-center gap-2"
                 onClick={loadMoreMessages}
-                disabled={isLoadingMore}
+                disabled={isLoadingMore || noMoreMessages}
               >
                 {isLoadingMore ? (
                   <>
                     <RotateCw className="h-4 w-4 animate-spin" />
                     <span>Loading more...</span>
                   </>
+                ) : noMoreMessages ? (
+                  <span>No more messages</span>
                 ) : (
                   <>
                     <RotateCw className="h-4 w-4" />

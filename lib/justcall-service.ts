@@ -36,13 +36,14 @@ export class JustCallService {
     };
   }
 
-  async getMessages(phoneNumber?: string, fromDate?: Date, limit = 100): Promise<JustCallMessage[]> {
+  async getMessages(phoneNumber?: string, fromDate?: Date, limit = 100, page = 1): Promise<JustCallMessage[]> {
     try {
       // Using the V2 SMS endpoints as per the documentation
       let url = `${this.baseUrl}/texts`;
       const queryParams = new URLSearchParams();
       
       queryParams.append('per_page', limit.toString());
+      queryParams.append('page', page.toString());
       
       if (phoneNumber) {
         queryParams.append('contact_number', phoneNumber);

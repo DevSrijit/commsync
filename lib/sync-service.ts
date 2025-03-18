@@ -157,12 +157,26 @@ export const syncImapAccounts = async (userId?: string): Promise<{ success: numb
 };
 
 // Add JustCall sync functionality to the existing sync service
-export const syncJustCallAccounts = async (userId?: string): Promise<{ success: number; failed: number; results: any[] }> => {
+export const syncJustCallAccounts = async (
+  userId?: string,
+  options?: { 
+    phoneNumber?: string; 
+    accountId?: string;
+    page?: number;
+    pageSize?: number;
+  }
+): Promise<{ success: number; failed: number; results: any[] }> => {
   try {
-    // Query for all active JustCall accounts, optionally filtered by userId
-    const query = userId 
-      ? { userId, platform: 'justcall' }
-      : { platform: 'justcall' };
+    // Query for all active JustCall accounts, optionally filtered by userId and accountId
+    let query: any = { platform: 'justcall' };
+    
+    if (userId) {
+      query.userId = userId;
+    }
+    
+    if (options?.accountId) {
+      query.id = options.accountId;
+    }
     
     const accounts = await db.syncAccount.findMany({
       where: query,
@@ -175,10 +189,25 @@ export const syncJustCallAccounts = async (userId?: string): Promise<{ success: 
         try {
           const justCallService = new JustCallService(account);
           
-          // Get messages since last sync
-          console.log(`Fetching messages for account ${account.id} since ${account.lastSync}`);
-          const messages = await justCallService.getMessages(undefined, account.lastSync);
-          console.log(`Retrieved ${messages.length} messages for account ${account.id}`);
+          // Get the phone number from either the options or the accountIdentifier field
+          const phoneNumber = options?.phoneNumber || account.accountIdentifier;
+          
+          if (!phoneNumber) {
+            console.warn(`No phone number specified for JustCall account ${account.id}, skipping`);
+            return { accountId: account.id, processed: 0, skipped: 0, error: 'No phone number specified' };
+          }
+          
+          console.log(`Syncing messages for JustCall account ${account.id} with phone number: ${phoneNumber}`);
+          
+          // Get messages since last sync for the specific phone number
+          console.log(`Fetching messages for account ${account.id} with phone ${phoneNumber} since ${account.lastSync}`);
+          const messages = await justCallService.getMessages(
+            phoneNumber, 
+            account.lastSync,
+            options?.pageSize || 100,
+            options?.page || 1
+          );
+          console.log(`Retrieved ${messages.length} messages for account ${account.id} with phone ${phoneNumber}`);
           
           let processedCount = 0;
           let skippedCount = 0;

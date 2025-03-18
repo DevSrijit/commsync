@@ -11,8 +11,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get the platform from request body
-    const { platform } = await request.json();
+    // Get the platform and other parameters from request body
+    const { platform, phoneNumber, accountId, page, pageSize } = await request.json();
 
     if (!platform) {
       return NextResponse.json({ error: 'Platform parameter is required' }, { status: 400 });
@@ -23,10 +23,17 @@ export async function POST(request: Request) {
     // Sync messages based on platform
     switch (platform.toLowerCase()) {
       case 'twilio':
+        // For Twilio, we might want to add phoneNumber filtering in the future
         result = await syncTwilioAccounts(session.user.id);
         break;
       case 'justcall':
-        result = await syncJustCallAccounts(session.user.id);
+        // Pass the userId, phoneNumber, and accountId to the sync function
+        result = await syncJustCallAccounts(session.user.id, { 
+          phoneNumber, 
+          accountId,
+          page,
+          pageSize
+        });
         break;
       default:
         return NextResponse.json({ error: 'Unsupported platform' }, { status: 400 });
