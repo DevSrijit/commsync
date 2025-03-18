@@ -22,11 +22,29 @@ async function refreshSession() {
   }
 }
 
-export async function fetchEmails(accessToken: string): Promise<Email[]> {
+export async function fetchEmails(
+  accessToken: string, 
+  page: number = 1, 
+  pageSize: number = 100
+): Promise<Email[]> {
   try {
+    // Calculate pageToken if needed (for pages beyond the first)
+    let pageTokenParam = '';
+    if (page > 1) {
+      // Try to get pageToken from localStorage
+      const tokensString = localStorage.getItem('gmail_page_tokens');
+      const tokens = tokensString ? JSON.parse(tokensString) : {};
+      
+      if (tokens[`page_${page - 1}`]) {
+        pageTokenParam = `&pageToken=${tokens[`page_${page - 1}`]}`;
+      } else {
+        console.warn(`No pageToken found for page ${page - 1}, fetching first page instead`);
+      }
+    }
+    
     // Fetch list of messages
     let response = await fetch(
-      "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=100",
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${pageSize}${pageTokenParam}`,
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -42,30 +60,39 @@ export async function fetchEmails(accessToken: string): Promise<Email[]> {
       if (newAccessToken) {
         // Retry the request with the new token
         response = await fetch(
-          "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=100",
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${pageSize}${pageTokenParam}`,
           {
             headers: {
               Authorization: `Bearer ${newAccessToken}`,
             },
           }
         );
-        accessToken = newAccessToken; // Update the token for subsequent requests
       }
     }
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch message list: ${response.statusText}`);
+      throw new Error(`Failed to fetch emails: ${response.statusText}`);
     }
 
     const data = await response.json();
-    const messageIds = data.messages?.map((msg: any) => msg.id) || [];
+    
+    // Store the nextPageToken in localStorage if available
+    if (data.nextPageToken) {
+      const tokensString = localStorage.getItem('gmail_page_tokens');
+      const tokens = tokensString ? JSON.parse(tokensString) : {};
+      tokens[`page_${page}`] = data.nextPageToken;
+      localStorage.setItem('gmail_page_tokens', JSON.stringify(tokens));
+    }
+
+    const messages = data.messages || [];
+    console.log(`Fetched ${messages.length} Gmail messages for page ${page}`);
 
     // Fetch full details for each message
     const emails = await Promise.allSettled(
-      messageIds.map(async (id: string) => {
+      messages.map(async (message: any) => {
         try {
           let msgResponse = await fetch(
-            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}`,
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${message.id}`,
             {
               headers: {
                 Authorization: `Bearer ${accessToken}`,
@@ -75,33 +102,32 @@ export async function fetchEmails(accessToken: string): Promise<Email[]> {
 
           // Handle 401 errors for individual message fetches
           if (msgResponse.status === 401) {
-            console.log(`Token expired while fetching message ${id}, attempting to refresh...`);
+            console.log(`Token expired while fetching message ${message.id}, attempting to refresh...`);
             const newAccessToken = await refreshSession();
             
             if (newAccessToken) {
               // Retry the request with the new token
               msgResponse = await fetch(
-                `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}`,
+                `https://gmail.googleapis.com/gmail/v1/users/me/messages/${message.id}`,
                 {
                   headers: {
                     Authorization: `Bearer ${newAccessToken}`,
                   },
                 }
               );
-              accessToken = newAccessToken; // Update the token for subsequent requests
             }
           }
 
           if (!msgResponse.ok) {
             throw new Error(
-              `Failed to fetch message ${id}: ${msgResponse.statusText}`
+              `Failed to fetch message ${message.id}: ${msgResponse.statusText}`
             );
           }
 
           const msgData = await msgResponse.json();
           return parseGmailMessage(msgData);
         } catch (error) {
-          console.warn(`Failed to fetch message ${id}:`, error);
+          console.warn(`Failed to fetch message ${message.id}:`, error);
           return null;
         }
       })
@@ -318,7 +344,6 @@ export async function sendEmail({
             body: JSON.stringify(requestBody),
           }
         );
-        accessToken = newAccessToken; // Update the token for subsequent requests
       }
     }
 

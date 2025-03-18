@@ -23,7 +23,9 @@ export class SyncService {
 
   async syncAllEmails(
     gmailToken: string | null,
-    imapAccounts: ImapAccount[]
+    imapAccounts: ImapAccount[],
+    page: number = 1,
+    pageSize: number = 100
   ): Promise<void> {
     if (this.syncInProgress) {
       console.log("Sync already in progress");
@@ -37,7 +39,7 @@ export class SyncService {
 
       // Add Gmail sync if token is available
       if (gmailToken) {
-        syncPromises.push(fetchGmailEmails(gmailToken));
+        syncPromises.push(fetchGmailEmails(gmailToken, page, pageSize));
       }
 
       // Add IMAP sync for each account
@@ -52,11 +54,11 @@ export class SyncService {
               action: "fetchEmails",
               account,
               data: {
-                page: 1,
-                pageSize: 50,
+                page: page,
+                pageSize: pageSize
               },
             }),
-          }).then((res) => res.json().then((data) => data.emails))
+          }).then((response) => response.json().then((data) => data.emails))
         );
       });
 

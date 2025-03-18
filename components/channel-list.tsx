@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Search, Users } from "lucide-react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { Search, Users, RotateCw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useEmailStore } from "@/lib/email-store";
 import { ContactItem } from "@/components/contact-item";
@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { MessageCategory } from "@/components/sidebar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Group, Email } from "@/lib/types";
+import { Button } from "@/components/ui/button";
 
 interface EmailListProps {
   isLoading: boolean;
@@ -28,6 +29,8 @@ export function EmailList({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [smsCount, setSmsCount] = useState<number>(0);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Add effect to log diagnostic information
   useEffect(() => {
@@ -178,6 +181,30 @@ export function EmailList({
     );
   };
 
+  // Function to load more messages
+  const loadMoreMessages = useCallback(async () => {
+    try {
+      setIsLoadingMore(true);
+      
+      // Get the sync methods from the store
+      const store = useEmailStore.getState();
+      
+      // Load 100 more messages from each platform
+      const syncPromises = [
+        store.syncImapAccounts(),
+        store.syncTwilioAccounts(),
+        store.syncJustcallAccounts()
+      ];
+      
+      await Promise.all(syncPromises);
+      
+      setIsLoadingMore(false);
+    } catch (error) {
+      console.error("Error loading more messages:", error);
+      setIsLoadingMore(false);
+    }
+  }, []);
+
   if (isLoading) {
     return (
       <div className={cn("flex flex-col h-full p-4", className)}>
@@ -213,6 +240,7 @@ export function EmailList({
         "flex flex-col h-full overflow-y-auto",
         className
       )}
+      ref={containerRef}
     >
       <div className="sticky top-0 z-10 px-2 py-4 bg-background">
         <div className="relative">
@@ -275,6 +303,29 @@ export function EmailList({
                 </div>
               </div>
             )}
+            
+            {/* Load More button */}
+            <div className="p-4 flex justify-center">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full flex items-center justify-center gap-2"
+                onClick={loadMoreMessages}
+                disabled={isLoadingMore}
+              >
+                {isLoadingMore ? (
+                  <>
+                    <RotateCw className="h-4 w-4 animate-spin" />
+                    <span>Loading more...</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCw className="h-4 w-4" />
+                    <span>Load more messages</span>
+                  </>
+                )}
+              </Button>
+            </div>
           </>
         )}
       </div>

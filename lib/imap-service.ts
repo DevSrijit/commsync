@@ -18,6 +18,7 @@ export interface ImapAccount {
 interface FetchOptions {
   page?: number;
   pageSize?: number;
+  lastMessageId?: string | null;
   filter?: {
     since?: Date;
     before?: Date;
@@ -81,7 +82,7 @@ export async function fetchImapEmails(
   account: ImapAccount,
   options: FetchOptions = {}
 ): Promise<ImapFetchResult> {
-  const { page = 1, pageSize = 20, filter = {} } = options;
+  const { page = 1, pageSize = 20, filter = {}, lastMessageId = null } = options;
   // Handle either username or user field
   const username = account.username || account.user || "";
 
@@ -98,142 +99,176 @@ export async function fetchImapEmails(
       },
     });
 
-    imap.once("ready", () => {
-      imap.openBox("INBOX", true, (err, box) => {
-        if (err) {
-          imap.end();
-          return reject(err);
-        }
+    function handleError(err: Error) {
+      console.error("Error in fetchImapEmails:", err);
+      imap.end();
+      reject(err);
+    }
 
-        // Build search criteria based on provided filters
-        const searchCriteria: any[] = [];
-        if (filter.since) searchCriteria.push(["SINCE", filter.since]);
-        if (filter.before) searchCriteria.push(["BEFORE", filter.before]);
-        if (filter.from) searchCriteria.push(["FROM", filter.from]);
-        if (filter.to) searchCriteria.push(["TO", filter.to]);
-        if (filter.subject) searchCriteria.push(["SUBJECT", filter.subject]);
+    imap.once("ready", async () => {
+      try {
+        // Open inbox
+        await new Promise<void>((resolveOpen, rejectOpen) => {
+          imap.openBox("INBOX", false, (err, box) => {
+            if (err) rejectOpen(err);
+            else resolveOpen();
+          });
+        });
+
+        // Build search criteria
+        const criteria: any[] = [];
+
+        // Add filter criteria
+        if (filter.from) criteria.push(["FROM", filter.from]);
+        if (filter.to) criteria.push(["TO", filter.to]);
+        if (filter.subject) criteria.push(["SUBJECT", filter.subject]);
         if (filter.seen !== undefined) {
-          searchCriteria.push(filter.seen ? "SEEN" : "UNSEEN");
+          criteria.push(filter.seen ? "SEEN" : "UNSEEN");
         }
         if (filter.flagged !== undefined) {
-          searchCriteria.push(filter.flagged ? "FLAGGED" : "UNFLAGGED");
+          criteria.push(filter.flagged ? "FLAGGED" : "UNFLAGGED");
         }
-        const criteria = searchCriteria.length > 0 ? searchCriteria : ["ALL"];
+        if (filter.since) {
+          criteria.push(["SINCE", filter.since.toISOString()]);
+        }
 
-        imap.search(criteria, (err, results) => {
-          if (err) {
-            imap.end();
-            return reject(err);
+        // For cursor-based pagination, if we have a lastMessageId, adjust the search
+        // This simulates "older than" logic for IMAP which doesn't have direct cursor support
+        if (lastMessageId) {
+          // Note: This assumes messageId is a UID, which might not be correct for all IMAP implementations
+          // A more robust approach would be to store and use sequence numbers instead
+          try {
+            // Try to convert lastMessageId to a number (UID)
+            const lastUID = parseInt(lastMessageId, 10);
+            if (!isNaN(lastUID)) {
+              // Use UID SEARCH criteria to find messages with UID less than lastUID
+              criteria.push(["UID", "1:" + (lastUID - 1).toString()]);
+            }
+          } catch (e) {
+            console.warn("Failed to parse lastMessageId as UID:", e);
           }
+        }
 
-          if (!results || results.length === 0) {
-            imap.end();
-            return resolve({ messages: [], total: 0 });
-          }
+        // Search for messages
+        const searchCriteria = criteria.length > 0 ? criteria : ["ALL"];
+        
+        const uids = await new Promise<number[]>((resolveSearch, rejectSearch) => {
+          imap.search(searchCriteria, (err, results) => {
+            if (err) rejectSearch(err);
+            else resolveSearch(results);
+          });
+        });
 
-          // Pagination: results are in ascending order (oldest first)
-          // Slice from the end to get the most recent messages.
-          const startIndex = Math.max(0, results.length - page * pageSize);
-          const endIndex = results.length - (page - 1) * pageSize;
-          const paginatedResults = results.slice(startIndex, endIndex);
+        const total = uids.length;
+        
+        // Sort UIDs in descending order (newest first)
+        uids.sort((a, b) => b - a);
+        
+        // Apply pagination
+        const start = (page - 1) * pageSize;
+        const paginatedUids = uids.slice(start, start + pageSize);
+        
+        if (paginatedUids.length === 0) {
+          imap.end();
+          resolve({ messages: [], total });
+          return;
+        }
 
-          if (paginatedResults.length === 0) {
-            imap.end();
-            return resolve({ messages: [], total: results.length });
-          }
+        // Fetch message details
+        const messages: any[] = [];
 
-          // Fetch the entire raw message so we can parse it with simpleParser.
-          const fetch = imap.fetch(paginatedResults, {
-            bodies: "",
-            struct: true,
+        const fetch = imap.fetch(paginatedUids, {
+          bodies: "",
+          struct: true,
+        });
+
+        const messagePromises: Promise<any>[] = [];
+
+        fetch.on("message", (msg, seqno) => {
+          let buffer = "";
+          let attributes: any = null;
+
+          msg.on("body", (stream, info) => {
+            stream.on("data", (chunk: Buffer) => {
+              buffer += chunk.toString("utf8");
+            });
           });
 
-          const messagePromises: Promise<any>[] = [];
+          msg.once("attributes", (attrs) => {
+            attributes = attrs;
+          });
 
-          fetch.on("message", (msg, seqno) => {
-            let buffer = "";
-            let attributes: any = null;
+          const msgPromise = new Promise((resolveMsg) => {
+            msg.once("end", () => {
+              simpleParser(buffer).then((parsed) => {
+                // Transform from field
+                const from = parsed.from
+                  ? {
+                      name: parsed.from.value[0]?.name || "",
+                      email: parsed.from.value[0]?.address || "",
+                    }
+                  : { name: "", email: "" };
 
-            msg.on("body", (stream, info) => {
-              stream.on("data", (chunk: Buffer) => {
-                buffer += chunk.toString("utf8");
-              });
-            });
+                // Transform to field
+                const to = parsed.to
+                  ? parsed.to.value.map(
+                      (recipient: { name?: string; address?: string }) => ({
+                        name: recipient.name || "",
+                        email: recipient.address || "",
+                      })
+                    )
+                  : [];
 
-            msg.once("attributes", (attrs) => {
-              attributes = attrs;
-            });
+                // Format the body - prefer HTML content, fallback to text with <br> for newlines
+                let bodyContent = "";
+                if (parsed.html) {
+                  bodyContent = parsed.html;
+                } else if (parsed.text) {
+                  bodyContent = parsed.text.replace(/\n/g, "<br>");
+                }
 
-            const msgPromise = new Promise((resolveMsg) => {
-              msg.once("end", () => {
-                simpleParser(buffer).then((parsed) => {
-                  // Transform from field
-                  const from = parsed.from
-                    ? {
-                        name: parsed.from.value[0]?.name || "",
-                        email: parsed.from.value[0]?.address || "",
-                      }
-                    : { name: "", email: "" };
-
-                  // Transform to field
-                  const to = parsed.to
-                    ? parsed.to.value.map(
-                        (recipient: { name?: string; address?: string }) => ({
-                          name: recipient.name || "",
-                          email: recipient.address || "",
-                        })
+                resolveMsg({
+                  id: seqno.toString(),
+                  threadId: attributes.uid?.toString() || seqno.toString(),
+                  from,
+                  to,
+                  subject: parsed.subject || "(No Subject)",
+                  body: bodyContent,
+                  attachments: parsed.attachments,
+                  date: parsed.date
+                    ? parsed.date.toISOString()
+                    : new Date().toISOString(),
+                  labels: attributes.flags
+                    ? attributes.flags.map((flag: string) =>
+                        flag.replace(/\\/g, "")
                       )
-                    : [];
-
-                  // Format the body - prefer HTML content, fallback to text with <br> for newlines
-                  let bodyContent = "";
-                  if (parsed.html) {
-                    bodyContent = parsed.html;
-                  } else if (parsed.text) {
-                    bodyContent = parsed.text.replace(/\n/g, "<br>");
-                  }
-
-                  resolveMsg({
-                    id: seqno.toString(),
-                    threadId: attributes.uid?.toString() || seqno.toString(),
-                    from,
-                    to,
-                    subject: parsed.subject || "(No Subject)",
-                    body: bodyContent,
-                    attachments: parsed.attachments,
-                    date: parsed.date
-                      ? parsed.date.toISOString()
-                      : new Date().toISOString(),
-                    labels: attributes.flags
-                      ? attributes.flags.map((flag: string) =>
-                          flag.replace(/\\/g, "")
-                        )
-                      : [],
-                  });
+                    : [],
                 });
               });
             });
-
-            messagePromises.push(msgPromise);
           });
 
-          fetch.once("error", (err: Error) => {
-            imap.end();
-            return reject(err);
-          });
-
-          fetch.once("end", async () => {
-            try {
-              const messages = await Promise.all(messagePromises);
-              imap.end();
-              resolve({ messages, total: results.length });
-            } catch (err) {
-              imap.end();
-              reject(err);
-            }
-          });
+          messagePromises.push(msgPromise);
         });
-      });
+
+        fetch.once("error", (err: Error) => {
+          imap.end();
+          return reject(err);
+        });
+
+        fetch.once("end", async () => {
+          try {
+            const messages = await Promise.all(messagePromises);
+            imap.end();
+            resolve({ messages, total });
+          } catch (err) {
+            imap.end();
+            reject(err);
+          }
+        });
+      } catch (err) {
+        handleError(err as Error);
+      }
     });
 
     imap.once("error", (err: Error) => {
