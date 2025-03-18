@@ -164,6 +164,8 @@ export const syncJustCallAccounts = async (
     accountId?: string;
     page?: number;
     pageSize?: number;
+    oldestDate?: string;
+    sortDirection?: 'asc' | 'desc';
   }
 ): Promise<{ success: number; failed: number; results: any[] }> => {
   try {
@@ -198,14 +200,30 @@ export const syncJustCallAccounts = async (
           }
           
           console.log(`Syncing messages for JustCall account ${account.id} with phone number: ${phoneNumber}`);
+
+          // Parse oldest date if provided
+          let oldestDate: Date | undefined = undefined;
+          if (options?.oldestDate) {
+            try {
+              oldestDate = new Date(options.oldestDate);
+              console.log(`Using oldest date filter: ${oldestDate.toISOString()}`);
+            } catch (e) {
+              console.error(`Invalid oldestDate parameter: ${options.oldestDate}`, e);
+            }
+          }
+          
+          // Default to using lastSync date if no oldestDate is provided and we're fetching newer messages (desc)
+          // For older messages (asc), we should use oldestDate as the upper bound, not lastSync
+          const dateToUse = options?.sortDirection === 'asc' ? oldestDate : account.lastSync;
           
           // Get messages since last sync for the specific phone number
-          console.log(`Fetching messages for account ${account.id} with phone ${phoneNumber} since ${account.lastSync}`);
+          console.log(`Fetching messages for account ${account.id} with phone ${phoneNumber}, date filter: ${dateToUse?.toISOString() || 'none'}, sort: ${options?.sortDirection || 'desc'}`);
           const messages = await justCallService.getMessages(
             phoneNumber, 
-            account.lastSync,
+            dateToUse,
             options?.pageSize || 100,
-            options?.page || 1
+            options?.page || 1,
+            options?.sortDirection || 'desc'
           );
           console.log(`Retrieved ${messages.length} messages for account ${account.id} with phone ${phoneNumber}`);
           
@@ -230,11 +248,14 @@ export const syncJustCallAccounts = async (
             }
           }
           
-          // Update last sync time
-          await db.syncAccount.update({
-            where: { id: account.id },
-            data: { lastSync: new Date() },
-          });
+          // Only update last sync time if we're fetching newer messages (desc sort)
+          // When fetching older messages (asc sort), we don't want to update the lastSync
+          if (!options?.sortDirection || options.sortDirection === 'desc') {
+            await db.syncAccount.update({
+              where: { id: account.id },
+              data: { lastSync: new Date() },
+            });
+          }
           
           return { accountId: account.id, processed: processedCount, skipped: skippedCount };
         } catch (error) {

@@ -36,7 +36,7 @@ export class JustCallService {
     };
   }
 
-  async getMessages(phoneNumber?: string, fromDate?: Date, limit = 100, page = 1): Promise<JustCallMessage[]> {
+  async getMessages(phoneNumber?: string, fromDate?: Date, limit = 100, page = 1, sortDirection: 'asc' | 'desc' = 'desc'): Promise<JustCallMessage[]> {
     try {
       // Using the V2 SMS endpoints as per the documentation
       let url = `${this.baseUrl}/texts`;
@@ -44,17 +44,21 @@ export class JustCallService {
       
       queryParams.append('per_page', limit.toString());
       queryParams.append('page', page.toString());
+      queryParams.append('sort', sortDirection); // Sort by date ascending for older messages or descending for newer
       
       if (phoneNumber) {
         queryParams.append('contact_number', phoneNumber);
       }
       
       if (fromDate) {
-        queryParams.append('from_datetime', fromDate.toISOString());
+        // When loading older messages (sortDirection=asc), use to_datetime
+        // When loading newer messages (sortDirection=desc), use from_datetime
+        const dateParam = sortDirection === 'asc' ? 'to_datetime' : 'from_datetime';
+        queryParams.append(dateParam, fromDate.toISOString());
       }
 
       url = `${url}?${queryParams.toString()}`;
-      console.log('JustCall fetch URL:', url);
+      console.log(`JustCall fetch URL with sort=${sortDirection}:`, url);
 
       const response = await fetch(url, {
         method: 'GET',

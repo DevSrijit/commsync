@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     }
 
     // Get the platform and other parameters from request body
-    const { platform, phoneNumber, accountId, page, pageSize } = await request.json();
+    const { platform, phoneNumber, accountId, page, pageSize, oldestDate, sortDirection } = await request.json();
 
     if (!platform) {
       return NextResponse.json({ error: 'Platform parameter is required' }, { status: 400 });
@@ -32,7 +32,9 @@ export async function POST(request: Request) {
           phoneNumber, 
           accountId,
           page,
-          pageSize
+          pageSize,
+          oldestDate,
+          sortDirection
         });
         break;
       default:

@@ -294,6 +294,19 @@ export const useEmailStore = create<EmailStore>((set, get) => {
         const currentPage = get().currentTwilioPage;
         console.log(`Fetching Twilio accounts, page ${currentPage}`);
         
+        // For loading older messages, we need to track the oldest message date
+        // Get all current emails to find the oldest date
+        const currentEmails = get().emails;
+        const twilioEmails = currentEmails.filter(email => email.accountType === 'twilio');
+        
+        // Find the oldest twilio message date if we have any
+        let oldestDate: Date | undefined = undefined;
+        if (twilioEmails.length > 0) {
+          const dates = twilioEmails.map((email: Email) => new Date(email.date));
+          oldestDate = new Date(Math.min(...dates.map(d => d.getTime())));
+          console.log(`Oldest Twilio message date: ${oldestDate.toISOString()}`);
+        }
+        
         // Fetch all Twilio accounts for the user
         const response = await fetch("/api/sync/accounts?platform=twilio");
         if (response.ok) {
@@ -309,18 +322,19 @@ export const useEmailStore = create<EmailStore>((set, get) => {
               body: JSON.stringify({
                 platform: "twilio",
                 page: currentPage,
-                pageSize: 100
+                pageSize: 100,
+                oldestDate: oldestDate ? oldestDate.toISOString() : undefined,
+                sortDirection: 'asc' // Important: Load older messages, not newer
               }),
             });
             
             if (syncResult.ok) {
               // After syncing, get all the messages to update the store
-              const currentEmails = get().emails;
               console.log(`Current email count before Twilio sync: ${currentEmails.length}`);
-              const messagesResponse = await fetch(`/api/messages?platform=twilio&page=${currentPage}&pageSize=100`);
+              const messagesResponse = await fetch(`/api/messages?platform=twilio&page=${currentPage}&pageSize=100&sortDirection=asc&oldestDate=${oldestDate ? encodeURIComponent(oldestDate.toISOString()) : ''}`);
               if (messagesResponse.ok) {
                 const { messages } = await messagesResponse.json();
-                console.log(`Retrieved ${messages?.length || 0} Twilio messages for page ${currentPage}`);
+                console.log(`Retrieved ${messages?.length || 0} older Twilio messages for page ${currentPage}`);
                 if (messages && messages.length > 0) {
                   // Convert Twilio messages to Email format
                   const twilioEmails = messages.map((msg: any) => ({
@@ -344,29 +358,20 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                   
                   console.log(`Converted ${twilioEmails.length} Twilio messages to Email format`);
                   
-                  // Check for duplicates before merging - use both ID and date for SMS messages
-                  // This ensures we don't filter out messages from the same thread
-                  const existingIds = new Map();
-                  currentEmails.forEach(email => {
-                    existingIds.set(email.id, email);
-                  });
-                  
-                  // Filter out exact duplicates but keep newer messages from the same thread
-                  const newEmails = twilioEmails.filter(email => {
-                    const existing = existingIds.get(email.id);
-                    if (!existing) return true; // Not a duplicate
-                    
-                    // If this is a newer message, keep it
-                    const newDate = new Date(email.date);
-                    const existingDate = new Date(existing.date);
-                    return newDate > existingDate;
-                  });
+                  // When loading older messages, we shouldn't have duplicates by ID
+                  // But check anyway for safety
+                  const existingIds = new Set(currentEmails.map(email => email.id));
+                  const newEmails = twilioEmails.filter((email: Email) => !existingIds.has(email.id));
                   
                   if (newEmails.length > 0) {
                     // Merge with existing emails
                     const mergedEmails = [...currentEmails, ...newEmails];
+                    
+                    // Sort by date descending (newest first) after merging
+                    mergedEmails.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                    
                     get().setEmails(mergedEmails);
-                    console.log(`Updated email store with ${newEmails.length} new Twilio messages. New count: ${mergedEmails.length}`);
+                    console.log(`Updated email store with ${newEmails.length} older Twilio messages. New count: ${mergedEmails.length}`);
                     localStorage.setItem("emails", JSON.stringify(mergedEmails));
                     
                     // Increment the page counter only if we found new emails
@@ -399,6 +404,19 @@ export const useEmailStore = create<EmailStore>((set, get) => {
         // Get current page
         const currentPage = get().currentJustcallPage;
         console.log(`Fetching JustCall accounts, page ${currentPage}`);
+
+        // For loading older messages, we need to track the oldest message date
+        // Get all current emails to find the oldest date
+        const currentEmails = get().emails;
+        const justcallEmails = currentEmails.filter(email => email.accountType === 'justcall');
+        
+        // Find the oldest justcall message date if we have any
+        let oldestDate: Date | undefined = undefined;
+        if (justcallEmails.length > 0) {
+          const dates = justcallEmails.map((email: Email) => new Date(email.date));
+          oldestDate = new Date(Math.min(...dates.map(d => d.getTime())));
+          console.log(`Oldest JustCall message date: ${oldestDate.toISOString()}`);
+        }
         
         // Fetch all JustCall accounts for the user
         const response = await fetch("/api/sync/accounts?platform=justcall");
@@ -426,20 +444,21 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                   platform: "justcall",
                   page: currentPage,
                   pageSize: 100,
-                  phoneNumber: account.accountIdentifier, // Filter by this specific phone number
-                  accountId: account.id
+                  phoneNumber: account.accountIdentifier,
+                  accountId: account.id,
+                  oldestDate: oldestDate ? oldestDate.toISOString() : undefined,
+                  sortDirection: 'asc' // Important: Load older messages, not newer
                 }),
               });
               
               if (syncResult.ok) {
                 // After syncing, get messages for this specific phone number
-                const currentEmails = get().emails;
                 console.log(`Current email count before JustCall sync: ${currentEmails.length}`);
-                const messagesResponse = await fetch(`/api/messages?platform=justcall&page=${currentPage}&pageSize=100&phoneNumber=${encodeURIComponent(account.accountIdentifier)}&accountId=${account.id}`);
+                const messagesResponse = await fetch(`/api/messages?platform=justcall&page=${currentPage}&pageSize=100&phoneNumber=${encodeURIComponent(account.accountIdentifier)}&accountId=${account.id}&oldestDate=${oldestDate ? encodeURIComponent(oldestDate.toISOString()) : ''}&sortDirection=asc`);
                 
                 if (messagesResponse.ok) {
                   const { messages } = await messagesResponse.json();
-                  console.log(`Retrieved ${messages?.length || 0} JustCall messages for phone ${account.accountIdentifier} on page ${currentPage}`);
+                  console.log(`Retrieved ${messages?.length || 0} older JustCall messages for phone ${account.accountIdentifier} on page ${currentPage}`);
                   
                   if (messages && messages.length > 0) {
                     // Convert JustCall messages to Email format
@@ -474,33 +493,20 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                     
                     console.log(`Converted ${justcallEmails.length} JustCall messages to Email format`);
                     
-                    // Check for duplicates before merging - use both ID and date for SMS messages
-                    // This ensures we don't filter out messages from the same thread
-                    const existingIds = new Map();
-                    currentEmails.forEach(email => {
-                      existingIds.set(email.id, email);
-                    });
-                    
-                    // Filter out exact duplicates but keep newer messages from the same thread
-                    const newEmails = justcallEmails.filter(email => {
-                      const existing = existingIds.get(email.id);
-                      if (!existing) return true; // Not a duplicate
-                      
-                      // If we have a thread ID, compare dates to keep the newest message
-                      if (email.threadId && existing.threadId === email.threadId) {
-                        const newDate = new Date(email.date);
-                        const existingDate = new Date(existing.date);
-                        return newDate > existingDate;
-                      }
-                      
-                      return false; // It's a duplicate
-                    });
+                    // When loading older messages, we shouldn't have duplicates by ID
+                    // But check anyway for safety
+                    const existingIds = new Set(currentEmails.map(email => email.id));
+                    const newEmails = justcallEmails.filter((email: Email) => !existingIds.has(email.id));
                     
                     if (newEmails.length > 0) {
                       // Merge with existing emails
                       const mergedEmails = [...currentEmails, ...newEmails];
+                      
+                      // Sort by date descending (newest first) after merging
+                      mergedEmails.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                      
                       get().setEmails(mergedEmails);
-                      console.log(`Updated email store with ${newEmails.length} new JustCall messages for phone ${account.accountIdentifier}. New count: ${mergedEmails.length}`);
+                      console.log(`Updated email store with ${newEmails.length} older JustCall messages for phone ${account.accountIdentifier}. New count: ${mergedEmails.length}`);
                       localStorage.setItem("emails", JSON.stringify(mergedEmails));
                       
                       // Increment the page counter only if we found new emails (per account)

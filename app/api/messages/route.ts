@@ -21,6 +21,8 @@ export async function GET(request: Request) {
     const pageSize = parseInt(searchParams.get('pageSize') || '100');
     const phoneNumber = searchParams.get('phoneNumber');
     const accountId = searchParams.get('accountId');
+    const sortDirection = searchParams.get('sortDirection') as 'asc' | 'desc' || 'desc';
+    const oldestDate = searchParams.get('oldestDate');
     
     if (!platform) {
       return NextResponse.json({ error: 'Platform parameter is required' }, { status: 400 });
@@ -66,15 +68,27 @@ export async function GET(request: Request) {
             continue;
           }
           
-          console.log(`Fetching messages for JustCall account ${account.id} with phone ${phoneToUse}, page ${page}`);
-          // Pass the page and pageSize parameters to the getMessages function
+          // Create a Date object from the oldestDate string if provided
+          let oldestDateObj: Date | undefined = undefined;
+          if (oldestDate) {
+            try {
+              oldestDateObj = new Date(oldestDate);
+              console.log(`Using oldest date filter: ${oldestDateObj.toISOString()}`);
+            } catch (e) {
+              console.error(`Invalid oldestDate parameter: ${oldestDate}`, e);
+            }
+          }
+          
+          console.log(`Fetching messages for JustCall account ${account.id} with phone ${phoneToUse}, page ${page}, sort=${sortDirection}`);
+          // Pass the page, pageSize, and sortDirection parameters to the getMessages function
           messages = await justcallService.getMessages(
             phoneToUse, 
-            undefined, 
+            oldestDateObj,
             pageSize,
-            page
+            page,
+            sortDirection as 'asc' | 'desc'
           );
-          console.log(`Retrieved ${messages.length} messages from JustCall for page ${page}`);
+          console.log(`Retrieved ${messages.length} messages from JustCall for page ${page} with sort=${sortDirection}`);
         }
         
         // Add account ID to each message for reference
