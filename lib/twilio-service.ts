@@ -3,6 +3,7 @@ import { decryptData } from '@/lib/encryption';
 import { db } from '@/lib/db';
 
 interface TwilioMessage {
+  accountId: string;
   sid: string;
   body: string;
   direction: 'inbound' | 'outbound-api' | 'outbound-reply';

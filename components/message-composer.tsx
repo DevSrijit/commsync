@@ -50,7 +50,6 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
         setAttachments(uploadedAttachments);
     };
 
-    // Update handleSubmit to return a promise that resolves to boolean
     const handleSubmit = async (currentContent?: string, currentAttachments?: File[]): Promise<boolean> => {
         if (!recipients.trim()) {
             toast({
@@ -146,7 +145,6 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
                         />
                     </div>
                 );
-            // Add cases for other platforms
             default:
                 return (
                     <div className="flex items-center gap-2">

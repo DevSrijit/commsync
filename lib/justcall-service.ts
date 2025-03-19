@@ -244,10 +244,7 @@ export class JustCallService {
         direction: message.direction,
         created_at: message.created_at
       }));
-      
-      // You could store the message in your database here
-      // For now, we'll just log it and ensure it's properly mapped
-      
+            
       // Ensure the message has all required properties
       const contactNumber = message.contact_number || '';
       const messageBody = message.sms_info?.body || message.body || '';

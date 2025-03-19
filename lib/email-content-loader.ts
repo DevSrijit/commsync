@@ -127,7 +127,7 @@ export class EmailContentLoader {
   }
 
   private async loadGmailEmailContent(email: Email): Promise<Email | null> {
-    // Get access token from localStorage or wherever it's stored
+    // Get access token from localStorage 
     const accessToken = localStorage.getItem("gmailAccessToken");
     if (!accessToken) return null;
 
@@ -144,8 +144,6 @@ export class EmailContentLoader {
     const data = await response.json();
     
     // Parse the Gmail message format into our Email type
-    // This would need to match your existing Gmail parsing logic
-    // Simplified example:
     const parsedEmail = {
       ...email,
       body: this.extractBodyFromGmailMessage(data),
@@ -156,21 +154,16 @@ export class EmailContentLoader {
   }
 
   private extractBodyFromGmailMessage(message: any): string {
-    // Implementation depends on your Gmail message parsing logic
-    // This is a placeholder
     return message.payload?.body?.data 
       ? atob(message.payload.body.data.replace(/-/g, '+').replace(/_/g, '/'))
       : '';
   }
 
   private extractAttachmentsFromGmailMessage(message: any): any[] {
-    // Implementation depends on your Gmail message parsing logic
-    // This is a placeholder
     return message.payload?.parts?.filter((part: any) => part.filename && part.filename.length > 0) || [];
   }
 
   private getEmailKey(email: Email): string {
-    // Use a consistent key format that doesn't depend on accountType/accountId
     // This ensures the same email is recognized regardless of how it was fetched
     return `${email.id}`;
   }

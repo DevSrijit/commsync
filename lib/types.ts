@@ -137,6 +137,7 @@ export interface JustCallMessage {
   justcall_number?: string;
   justcall_line_name?: string;
   delivery_status?: string;
+  accountId?: string;
 }
 
 export interface JustCallWebhookPayload {

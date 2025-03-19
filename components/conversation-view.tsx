@@ -383,7 +383,6 @@ export function ConversationView({
               </div>
             ) : conversation.length > 0 ? (
               conversation.map((email) => {
-                // Fixed isFromMe logic:
                 // For Gmail: check against session.user.email
                 // For IMAP: check if this is the account owner's email
                 const isFromMe =
