@@ -193,7 +193,7 @@ export function EmailDashboard() {
       // For interval syncs, always use background mode
       setIsBackgroundSync(true);
       loadEmails();
-    }, 0.5 * 60 * 1000);
+    }, 5 * 60 * 1000);
     
     return () => clearInterval(intervalId);
   }, [session, setEmails, syncTwilioAccounts, syncJustcallAccounts]);
