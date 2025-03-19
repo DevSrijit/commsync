@@ -1,4 +1,7 @@
+"use client";
+
 import type { Email } from "@/lib/types";
+import { getCacheValue, setCacheValue } from './client-cache-browser';
 
 // Helper function to refresh session
 async function refreshSession() {
@@ -23,31 +26,31 @@ async function refreshSession() {
 }
 
 export async function fetchEmails(
-  accessToken: string, 
-  page: number = 1, 
-  pageSize: number = 100
+  token: string,
+  page: number = 1,
+  pageSize: number = 100000, // Increased from default value
+  query: string = ""
 ): Promise<Email[]> {
   try {
-    // Calculate pageToken if needed (for pages beyond the first)
-    let pageTokenParam = '';
-    if (page > 1) {
-      // Try to get pageToken from localStorage
-      const tokensString = localStorage.getItem('gmail_page_tokens');
-      const tokens = tokensString ? JSON.parse(tokensString) : {};
-      
-      if (tokens[`page_${page - 1}`]) {
-        pageTokenParam = `&pageToken=${tokens[`page_${page - 1}`]}`;
-      } else {
-        console.warn(`No pageToken found for page ${page - 1}, fetching first page instead`);
-      }
-    }
+    // Calculate pagination parameters
+    const maxResults = pageSize;
+    
+    // Remove any pagination limits for Gmail API
+    const params = new URLSearchParams({
+      maxResults: maxResults.toString(),
+      q: query,
+      includeSpamTrash: "false",
+    });
+
+    // If we want all emails, don't use pageToken
+    const url = `https://www.googleapis.com/gmail/v1/users/me/messages?${params}`;
     
     // Fetch list of messages
     let response = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${pageSize}${pageTokenParam}`,
+      url,
       {
         headers: {
-          Authorization: `Bearer ${accessToken}`,
+          Authorization: `Bearer ${token}`,
         },
       }
     );
@@ -60,7 +63,7 @@ export async function fetchEmails(
       if (newAccessToken) {
         // Retry the request with the new token
         response = await fetch(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${pageSize}${pageTokenParam}`,
+          url,
           {
             headers: {
               Authorization: `Bearer ${newAccessToken}`,
@@ -76,12 +79,12 @@ export async function fetchEmails(
 
     const data = await response.json();
     
-    // Store the nextPageToken in localStorage if available
+    // Store the nextPageToken in the database if available
     if (data.nextPageToken) {
-      const tokensString = localStorage.getItem('gmail_page_tokens');
+      const tokensString = await getCacheValue<string>('gmail_page_tokens');
       const tokens = tokensString ? JSON.parse(tokensString) : {};
       tokens[`page_${page}`] = data.nextPageToken;
-      localStorage.setItem('gmail_page_tokens', JSON.stringify(tokens));
+      await setCacheValue('gmail_page_tokens', JSON.stringify(tokens));
     }
 
     const messages = data.messages || [];
@@ -95,7 +98,7 @@ export async function fetchEmails(
             `https://gmail.googleapis.com/gmail/v1/users/me/messages/${message.id}`,
             {
               headers: {
-                Authorization: `Bearer ${accessToken}`,
+                Authorization: `Bearer ${token}`,
               },
             }
           );
@@ -141,8 +144,8 @@ export async function fetchEmails(
       )
       .map((result) => result.value);
 
-    // Sync with local storage
-    syncWithLocalStorage(fetchedEmails);
+    // Sync with database instead of local storage
+    await syncWithDatabase(fetchedEmails);
 
     return fetchedEmails;
   } catch (error) {
@@ -151,58 +154,62 @@ export async function fetchEmails(
   }
 }
 
-// Add new sync function
-function syncWithLocalStorage(gmailEmails: Email[]) {
+// Update sync function to use database
+async function syncWithDatabase(gmailEmails: Email[]) {
   try {
     // Create a map of fetched emails for quick lookup
     const gmailEmailMap = new Map(
       gmailEmails.map((email) => [email.id, email])
     );
 
-    // Get current local storage
-    const localStorageEmails = localStorage.getItem("emails");
-    let currentEmails: Email[] = localStorageEmails
-      ? JSON.parse(localStorageEmails)
-      : [];
+    // Get current emails from database
+    const currentEmails = await getCacheValue<Email[]>("emails") || [];
 
     // Filter out emails that no longer exist in Gmail
-    currentEmails = currentEmails.filter((email) =>
+    const filteredEmails = currentEmails.filter((email) =>
       gmailEmailMap.has(email.id)
     );
 
-    // Update or add new emails from Gmail
-    gmailEmails.forEach((gmailEmail) => {
-      const existingIndex = currentEmails.findIndex(
-        (e) => e.id === gmailEmail.id
-      );
-      if (existingIndex !== -1) {
-        // Update existing email if content is different
-        if (
-          JSON.stringify(currentEmails[existingIndex]) !==
-          JSON.stringify(gmailEmail)
-        ) {
-          currentEmails[existingIndex] = gmailEmail;
-        }
+    // Create new map that combines existing emails and new emails
+    const emailMap = new Map();
+    
+    // First add all existing emails
+    filteredEmails.forEach((email) => {
+      emailMap.set(email.id, email);
+    });
+    
+    // Then add or update with new Gmail emails
+    gmailEmails.forEach((email) => {
+      const existingEmail = emailMap.get(email.id);
+      
+      if (!existingEmail) {
+        emailMap.set(email.id, email);
       } else {
-        // Add new email
-        currentEmails.push(gmailEmail);
+        // Merge the emails, keeping important fields from existing entry
+        emailMap.set(email.id, {
+          ...existingEmail,
+          ...email,
+          // Keep existing read status
+          read: existingEmail.read !== undefined ? existingEmail.read : false,
+        });
       }
     });
-
-    // Sort by date (newest first)
-    currentEmails.sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    
+    // Convert back to array
+    const mergedEmails = Array.from(emailMap.values());
+    
+    // Sort by date, newest first
+    mergedEmails.sort((a, b) => 
+      new Date(b.date).getTime() - new Date(a.date).getTime()
     );
-
-    // Update local storage
-    localStorage.setItem("emails", JSON.stringify(currentEmails));
-
-    // Update timestamp
-    localStorage.setItem("emailsTimestamp", Date.now().toString());
-
-    console.log(`Synced ${gmailEmails.length} emails with local storage`);
+    
+    // Store in database
+    await setCacheValue("emails", mergedEmails);
+    await setCacheValue("emailsTimestamp", Date.now().toString());
+    
+    console.log(`Synced ${mergedEmails.length} emails with database`);
   } catch (error) {
-    console.error("Error syncing with local storage:", error);
+    console.error("Error syncing emails with database:", error);
   }
 }
 

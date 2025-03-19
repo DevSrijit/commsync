@@ -52,6 +52,7 @@ model User {
   syncAccounts  SyncAccount[]
   contacts      Contact[]
   twilioAccounts TwilioAccount[]
+  clientCache   ClientCache[]
 }
 
 model VerificationToken {
@@ -213,4 +214,17 @@ model TwilioMessage {
 
   @@index([twilioAccountId])
   @@index([from, to])
+}
+
+model ClientCache {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String   @db.ObjectId
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key        String   // Cache key (e.g., "emails", "gmail_page_tokens", "sidebar:state", etc.)
+  value      String   // JSON stringified data
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, key])
+  @@index([userId])
 }

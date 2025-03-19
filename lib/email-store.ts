@@ -5,6 +5,7 @@ import type { Email, Contact, Group } from "@/lib/types";
 import { MessageCategory } from "@/components/sidebar";
 import { ImapAccount } from "@/lib/imap-service";
 import { SyncService } from "./sync-service";
+import { getCacheValue, getMultipleCacheValues, setCacheValue, removeCacheValue } from './client-cache-browser';
 
 interface EmailStore {
   emails: Email[];
@@ -36,10 +37,11 @@ interface EmailStore {
   deleteGroup: (groupId: string) => void;
   syncGroups: () => Promise<void>;
   setGroups: (groups: Group[]) => void;
+  updateContacts: (emails: Email[]) => void;
 }
 
 // Helper function to load persisted data
-const loadPersistedData = () => {
+const loadPersistedData = async () => {
   // Always return empty arrays during server-side rendering
   if (typeof window === "undefined") {
     return { 
@@ -52,18 +54,21 @@ const loadPersistedData = () => {
   }
 
   try {
-    const savedEmails = localStorage.getItem("emails");
-    const savedAccounts = localStorage.getItem("imapAccounts");
-    const savedTwilioAccounts = localStorage.getItem("twilioAccounts");
-    const savedJustcallAccounts = localStorage.getItem("justcallAccounts");
-    const savedGroups = localStorage.getItem("groups");
+    // Use the browser cache client to get multiple values at once
+    const cacheData = await getMultipleCacheValues([
+      "emails", 
+      "imapAccounts", 
+      "twilioAccounts", 
+      "justcallAccounts", 
+      "groups"
+    ]);
 
     return {
-      emails: savedEmails ? JSON.parse(savedEmails) : [],
-      imapAccounts: savedAccounts ? JSON.parse(savedAccounts) : [],
-      twilioAccounts: savedTwilioAccounts ? JSON.parse(savedTwilioAccounts) : [],
-      justcallAccounts: savedJustcallAccounts ? JSON.parse(savedJustcallAccounts) : [],
-      groups: savedGroups ? JSON.parse(savedGroups) : [],
+      emails: cacheData.emails || [],
+      imapAccounts: cacheData.imapAccounts || [],
+      twilioAccounts: cacheData.twilioAccounts || [],
+      justcallAccounts: cacheData.justcallAccounts || [],
+      groups: cacheData.groups || [],
     };
   } catch (e) {
     console.error("Failed to load persisted data:", e);
@@ -202,82 +207,130 @@ const generateContactsFromEmails = (emails: Email[]): Contact[] => {
 };
 
 export const useEmailStore = create<EmailStore>((set, get) => {
-  // Load persisted data on the client side only
-  const persistedData = typeof window !== "undefined" ? loadPersistedData() : { emails: [], imapAccounts: [], twilioAccounts: [], justcallAccounts: [], groups: [] };
+  // Initialize with empty data, we'll load asynchronously
+  const initialData = { emails: [], imapAccounts: [], twilioAccounts: [], justcallAccounts: [], groups: [] };
+
+  // Load data asynchronously after initialization
+  if (typeof window !== "undefined") {
+    // Need to use void to tell TypeScript this is intentionally not being awaited
+    void (async () => {
+      try {
+        const persistedData = await loadPersistedData();
+        set({
+          emails: persistedData.emails,
+          contacts: generateContactsFromEmails(persistedData.emails),
+          imapAccounts: persistedData.imapAccounts,
+          twilioAccounts: persistedData.twilioAccounts,
+          justcallAccounts: persistedData.justcallAccounts,
+          groups: persistedData.groups
+        });
+      } catch (error) {
+        console.error("Error loading persisted data:", error);
+      }
+    })();
+  }
 
   return {
-    emails: persistedData.emails,
-    contacts: generateContactsFromEmails(persistedData.emails),
+    emails: initialData.emails,
+    contacts: [],
     activeFilter: "inbox" as MessageCategory,
     activeGroup: null,
-    imapAccounts: persistedData.imapAccounts,
-    twilioAccounts: persistedData.twilioAccounts,
-    justcallAccounts: persistedData.justcallAccounts,
-    groups: persistedData.groups,
+    imapAccounts: initialData.imapAccounts,
+    twilioAccounts: initialData.twilioAccounts,
+    justcallAccounts: initialData.justcallAccounts,
+    groups: initialData.groups,
     currentImapPage: 1,
     currentTwilioPage: 1,
     currentJustcallPage: 1,
 
     syncEmails: async (gmailToken: string | null) => {
       const { imapAccounts } = get();
-      await SyncService.getInstance().syncAllEmails(gmailToken, imapAccounts);
+      // Set very large page size to fetch all emails
+      await SyncService.getInstance().syncAllEmails(gmailToken, imapAccounts, 1, 100000);
     },
 
     syncImapAccounts: async () => {
       try {
-        console.log("Starting IMAP accounts sync");
-        // Get current page
-        const currentPage = get().currentImapPage;
-        console.log(`Fetching IMAP accounts, page ${currentPage}`);
-        
-        // The endpoint was changed to /api/imap?action=getAccounts but the code is still using /api/imap/accounts
-        const response = await fetch("/api/imap?action=getAccounts");
+        console.log("Starting IMAP accounts sync - fetching ALL emails");
+        // Set fetchAll flag to true
+        const response = await fetch("/api/sync/accounts?platform=imap&fetchAll=true");
         if (response.ok) {
           const { accounts } = await response.json();
           console.log(`Found ${accounts?.length || 0} IMAP accounts`);
           if (accounts && accounts.length > 0) {
             set((state) => ({ ...state, imapAccounts: accounts }));
             
-            // Store IMAP accounts in local storage
-            localStorage.setItem("imapAccounts", JSON.stringify(accounts));
-
-            let newEmailsFound = false;
-            // Sync emails for each account
-            for (const account of accounts) {
-              try {
-                const fetchResponse = await fetch("/api/imap", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    action: "fetchEmails",
-                    account,
-                    data: { 
-                      limit: 100,
-                      page: currentPage
-                    },
-                  }),
-                });
-                
-                if (fetchResponse.ok) {
-                  const result = await fetchResponse.json();
-                  if (result.success && result.emailsCount > 0) {
-                    newEmailsFound = true;
-                  }
-                }
-              } catch (accountError) {
-                console.error(`Error syncing IMAP account ${account.label}:`, accountError);
-              }
-            }
+            // Sync ALL emails for each account
+            const syncResult = await fetch("/api/imap/sync", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                fetchAll: true,
+                pageSize: 100000
+              }),
+            });
             
-            // Only increment the page counter if new emails were found or it's the first page
-            if (newEmailsFound || currentPage === 1) {
-              set((state) => ({ ...state, currentImapPage: currentPage + 1 }));
-              console.log(`Incremented IMAP page to ${currentPage + 1}`);
+            if (syncResult.ok) {
+              // After syncing, get all the messages to update the store
+              console.log(`Current email count before IMAP sync: ${get().emails.length}`);
+              const messagesResponse = await fetch(`/api/messages?platform=imap&fetchAll=true`);
+              if (messagesResponse.ok) {
+                const { messages } = await messagesResponse.json();
+                console.log(`Retrieved ${messages?.length || 0} IMAP messages`);
+                if (messages && messages.length > 0) {
+                  // Convert IMAP messages to Email format
+                  const imapEmails = messages.map((msg: any) => ({
+                    id: msg.id,
+                    from: {
+                      name: msg.from.name || 'Unknown',
+                      email: msg.from.email || '',
+                    },
+                    to: [{
+                      name: msg.to.name || 'You',
+                      email: msg.to.email || '',
+                    }],
+                    subject: msg.subject || '',
+                    body: msg.body || '',
+                    date: msg.date || new Date().toISOString(),
+                    labels: msg.labels || [],
+                    accountType: 'imap',
+                    accountId: msg.accountId,
+                    platform: 'imap',
+                  }));
+                  
+                  console.log(`Converted ${imapEmails.length} IMAP messages to Email format`);
+                  
+                  // When loading older messages, we shouldn't have duplicates by ID
+                  // But check anyway for safety
+                  const existingIds = new Set(get().emails.map(email => email.id));
+                  const newEmails = imapEmails.filter((email: Email) => !existingIds.has(email.id));
+                  
+                  if (newEmails.length > 0) {
+                    // Merge with existing emails
+                    const mergedEmails = [...get().emails, ...newEmails];
+                    
+                    // Sort by date descending (newest first) after merging
+                    mergedEmails.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                    
+                    get().setEmails(mergedEmails);
+                    console.log(`Updated email store with ${newEmails.length} IMAP messages. New count: ${mergedEmails.length}`);
+                    setCacheValue("emails", mergedEmails);
+                    
+                    // Increment the page counter only if we found new emails
+                    set((state) => ({ ...state, currentImapPage: 1 }));
+                    console.log(`Reset IMAP page to 1`);
+                  } else {
+                    console.log(`No new IMAP messages found`);
+                  }
+                } else {
+                  console.log(`No IMAP messages found`);
+                }
+              } else {
+                console.error("Failed to fetch IMAP messages:", await messagesResponse.text());
+              }
             } else {
-              console.log(`No new IMAP emails on page ${currentPage}, not incrementing page counter`);
+              console.error("Failed to sync IMAP messages:", await syncResult.text());
             }
-          } else {
-            console.log("No IMAP accounts found");
           }
         } else {
           console.error("Failed to fetch IMAP accounts:", await response.text());
@@ -372,7 +425,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                     
                     get().setEmails(mergedEmails);
                     console.log(`Updated email store with ${newEmails.length} older Twilio messages. New count: ${mergedEmails.length}`);
-                    localStorage.setItem("emails", JSON.stringify(mergedEmails));
+                    setCacheValue("emails", mergedEmails);
                     
                     // Increment the page counter only if we found new emails
                     set((state) => ({ ...state, currentTwilioPage: currentPage + 1 }));
@@ -507,7 +560,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                       
                       get().setEmails(mergedEmails);
                       console.log(`Updated email store with ${newEmails.length} older JustCall messages for phone ${account.accountIdentifier}. New count: ${mergedEmails.length}`);
-                      localStorage.setItem("emails", JSON.stringify(mergedEmails));
+                      setCacheValue("emails", mergedEmails);
                       
                       // Increment the page counter only if we found new emails (per account)
                       if (account === accounts[accounts.length - 1]) { // Only increment after processing the last account
@@ -538,12 +591,12 @@ export const useEmailStore = create<EmailStore>((set, get) => {
 
     setTwilioAccounts: (accounts) => {
       set((state) => ({ ...state, twilioAccounts: accounts }));
-      localStorage.setItem("twilioAccounts", JSON.stringify(accounts));
+      setCacheValue("twilioAccounts", accounts);
     },
 
     setJustcallAccounts: (accounts) => {
       set((state) => ({ ...state, justcallAccounts: accounts }));
-      localStorage.setItem("justcallAccounts", JSON.stringify(accounts));
+      setCacheValue("justcallAccounts", accounts);
     },
 
     setActiveFilter: (filter) => set({ activeFilter: filter }),
@@ -614,92 +667,12 @@ export const useEmailStore = create<EmailStore>((set, get) => {
 
       set({ emails: uniqueEmails });
 
-      // Persist emails
-      if (typeof window !== "undefined") {
-        try {
-          localStorage.setItem("emails", JSON.stringify(uniqueEmails));
-        } catch (e) {
-          console.error("Failed to persist emails to localStorage:", e);
-        }
-      }
-
-      // Extract unique contacts from emails
-      const contactsMap = new Map<string, Contact>();
-
-      uniqueEmails.forEach((email) => {
-        // Skip processing if email doesn't have proper structure
-        if (!email.from || !email.from.email) {
-          console.warn("Email missing from field:", email.id);
-          return;
-        }
-
-        // Check if this is an SMS message
-        const isSMS = email.accountType === 'twilio' || 
-                      email.accountType === 'justcall' || 
-                      (email.labels && email.labels.includes('SMS'));
-        
-        // Add sender as contact (if not the current user)
-        if (!email.from.email.includes("me")) {
-          // Use email address only as the contact key
-          const contactKey = email.from.email.toLowerCase();
-          const existingContact = contactsMap.get(contactKey);
-          const emailDate = new Date(email.date);
-
-          if (
-            !existingContact ||
-            new Date(existingContact.lastMessageDate) < emailDate
-          ) {
-            contactsMap.set(contactKey, {
-              name: email.from.name || (isSMS ? `Phone: ${email.from.email}` : email.from.email),
-              email: email.from.email,
-              lastMessageDate: email.date,
-              lastMessageSubject: isSMS ? 'SMS Message' : email.subject,
-              labels: isSMS ? ['SMS', ...(email.labels || [])] : email.labels,
-              accountId: email.accountId,
-              accountType: email.accountType,
-            });
-          }
-        }
-
-        // Add recipients as contacts
-        if (Array.isArray(email.to)) {
-          email.to.forEach((recipient) => {
-            if (!recipient.email.includes("me")) {
-              // Use email address only as the contact key
-              const contactKey = recipient.email.toLowerCase();
-              const existingContact = contactsMap.get(contactKey);
-              const emailDate = new Date(email.date);
-
-              if (
-                !existingContact ||
-                new Date(existingContact.lastMessageDate) < emailDate
-              ) {
-                contactsMap.set(contactKey, {
-                  name: recipient.name || (isSMS ? `Phone: ${recipient.email}` : recipient.email),
-                  email: recipient.email,
-                  lastMessageDate: email.date,
-                  lastMessageSubject: isSMS ? 'SMS Message' : email.subject,
-                  labels: isSMS ? ['SMS', ...(email.labels || [])] : email.labels,
-                  accountId: email.accountId,
-                  accountType: email.accountType,
-                });
-              }
-            }
-          });
-        }
-      });
-
-      // Sort contacts by most recent message
-      const contacts = Array.from(contactsMap.values()).sort(
-        (a, b) =>
-          new Date(b.lastMessageDate).getTime() -
-          new Date(a.lastMessageDate).getTime()
-      );
-
-      // Debug log
-      console.log(`Contact store update: ${contacts.length} unique contacts`);
-
-      set({ contacts });
+      // Persist emails to the database
+      setCacheValue("emails", uniqueEmails);
+      
+      // Update contacts from the emails
+      const generatedContacts = generateContactsFromEmails(uniqueEmails);
+      set({ contacts: generatedContacts });
     },
 
     addEmail: (email) => {
@@ -717,138 +690,19 @@ export const useEmailStore = create<EmailStore>((set, get) => {
       }
 
       const { emails } = get();
-      const key = generateEmailKey(email);
-
-      // Check if email already exists
-      const existingEmailIndex = emails.findIndex(
-        (e) => generateEmailKey(e) === key
-      );
-
-      let updatedEmails;
-      if (existingEmailIndex === -1) {
-        updatedEmails = [...emails, email];
-      } else {
-        // Merge the emails, keeping content if available
-        const existingEmail = emails[existingEmailIndex];
-        const mergedEmail = {
-          ...existingEmail,
-          ...email,
-          // Keep existing body content if new email doesn't have it
-          body: email.body || existingEmail.body,
-          // Keep existing attachments if new email doesn't have them
-          attachments: email.attachments || existingEmail.attachments,
-          // Use the newer date
-          date:
-            new Date(email.date) > new Date(existingEmail.date)
-              ? email.date
-              : existingEmail.date,
-        };
-
-        updatedEmails = [...emails];
-        updatedEmails[existingEmailIndex] = mergedEmail;
-      }
-
+      const updatedEmails = [...emails, email];
+      
+      // Sort emails by date descending after adding
+      updatedEmails.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      
       set({ emails: updatedEmails });
-
-      // Persist updated emails
-      if (typeof window !== "undefined") {
-        try {
-          localStorage.setItem("emails", JSON.stringify(updatedEmails));
-        } catch (e) {
-          console.error("Failed to persist emails to localStorage:", e);
-        }
-      }
-
+      
+      // Persist to the database
+      setCacheValue("emails", updatedEmails);
+      
       // Update contacts
-      const { contacts } = get();
-      const updatedContacts = [...contacts];
-
-      // Handle sender contact update
-      if (email.from && email.from.email && !email.from.email.includes("me")) {
-        const contactKey = generateContactKey(
-          email.accountType,
-          email.accountId,
-          email.from.email
-        );
-        const existingContactIndex = contacts.findIndex(
-          (c) =>
-            generateContactKey(c.accountType, c.accountId, c.email) === contactKey
-        );
-        const emailDate = new Date(email.date);
-
-        if (existingContactIndex === -1) {
-          updatedContacts.push({
-            name: email.from.name,
-            email: email.from.email,
-            lastMessageDate: email.date,
-            lastMessageSubject: email.subject,
-            labels: email.labels,
-            accountId: email.accountId,
-            accountType: email.accountType,
-          });
-        } else if (
-          new Date(contacts[existingContactIndex].lastMessageDate) < emailDate
-        ) {
-          updatedContacts[existingContactIndex] = {
-            ...contacts[existingContactIndex],
-            lastMessageDate: email.date,
-            lastMessageSubject: email.subject,
-            labels: email.labels,
-            accountId: email.accountId,
-            accountType: email.accountType,
-          };
-        }
-      }
-
-      // Handle recipient contact update
-      if (Array.isArray(email.to)) {
-        email.to.forEach((recipient) => {
-          if (!recipient.email.includes("me")) {
-            const contactKey = generateContactKey(
-              email.accountType,
-              email.accountId,
-              recipient.email
-            );
-            const existingContactIndex = contacts.findIndex(
-              (c) =>
-                generateContactKey(c.accountType, c.accountId, c.email) ===
-                contactKey
-            );
-            const emailDate = new Date(email.date);
-
-            if (existingContactIndex === -1) {
-              updatedContacts.push({
-                name: recipient.name,
-                email: recipient.email,
-                lastMessageDate: email.date,
-                lastMessageSubject: email.subject,
-                labels: email.labels,
-                accountId: email.accountId,
-                accountType: email.accountType,
-              });
-            } else if (
-              new Date(contacts[existingContactIndex].lastMessageDate) < emailDate
-            ) {
-              updatedContacts[existingContactIndex] = {
-                ...contacts[existingContactIndex],
-                lastMessageDate: email.date,
-                lastMessageSubject: email.subject,
-                labels: email.labels,
-                accountId: email.accountId,
-                accountType: email.accountType,
-              };
-            }
-          }
-        });
-      }
-
-      // Sort contacts by most recent message
-      updatedContacts.sort(
-        (a, b) =>
-          new Date(b.lastMessageDate).getTime() -
-          new Date(a.lastMessageDate).getTime()
-      );
-      set({ contacts: updatedContacts });
+      const contacts = generateContactsFromEmails(updatedEmails);
+      set({ contacts });
     },
 
     // IMAP account management
@@ -857,10 +711,8 @@ export const useEmailStore = create<EmailStore>((set, get) => {
       const updatedAccounts = [...imapAccounts, account];
       set({ imapAccounts: updatedAccounts });
 
-      // Persist IMAP accounts
-      if (typeof window !== "undefined") {
-        localStorage.setItem("imapAccounts", JSON.stringify(updatedAccounts));
-      }
+      // Persist IMAP accounts to the database
+      setCacheValue("imapAccounts", updatedAccounts);
     },
 
     removeImapAccount: (id) => {
@@ -868,10 +720,8 @@ export const useEmailStore = create<EmailStore>((set, get) => {
       const updated = imapAccounts.filter((account) => account.id !== id);
       set({ imapAccounts: updated });
 
-      // Persist updated IMAP accounts
-      if (typeof window !== "undefined") {
-        localStorage.setItem("imapAccounts", JSON.stringify(updated));
-      }
+      // Persist updated IMAP accounts to the database
+      setCacheValue("imapAccounts", updated);
     },
 
     getImapAccount: (id) => {
@@ -881,10 +731,8 @@ export const useEmailStore = create<EmailStore>((set, get) => {
     setImapAccounts: (accounts) => {
       set({ imapAccounts: accounts });
 
-      // Persist IMAP accounts
-      if (typeof window !== "undefined") {
-        localStorage.setItem("imapAccounts", JSON.stringify(accounts));
-      }
+      // Persist IMAP accounts to the database
+      setCacheValue("imapAccounts", accounts);
     },
 
     syncGroups: async () => {
@@ -895,11 +743,9 @@ export const useEmailStore = create<EmailStore>((set, get) => {
           if (groups && Array.isArray(groups)) {
             set((state) => ({ ...state, groups }));
             
-            // Update local storage
-            if (typeof window !== "undefined") {
-              localStorage.setItem("groups", JSON.stringify(groups));
-              localStorage.setItem("groupsTimestamp", Date.now().toString());
-            }
+            // Update in the database
+            setCacheValue("groups", groups);
+            setCacheValue("groupsTimestamp", Date.now().toString());
           }
         } else {
           console.error("Failed to sync groups:", await response.text());
@@ -912,161 +758,115 @@ export const useEmailStore = create<EmailStore>((set, get) => {
     setGroups: (groups) => {
       set((state) => ({ ...state, groups }));
       
-      // Update local storage
-      if (typeof window !== "undefined") {
-        localStorage.setItem("groups", JSON.stringify(groups));
-        localStorage.setItem("groupsTimestamp", Date.now().toString());
-      }
+      // Update in the database
+      setCacheValue("groups", groups);
+      setCacheValue("groupsTimestamp", Date.now().toString());
     },
 
     addGroup: async (group) => {
       try {
-        // First update local state for immediate UI feedback
-        set((state) => ({
-          ...state,
-          groups: [...state.groups, group],
-        }));
-
-        // Then persist to Prisma
         const response = await fetch("/api/groups", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "create", group }),
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(group),
         });
 
         if (response.ok) {
-          const { group: savedGroup } = await response.json();
+          const { groups } = await response.json();
+          set((state) => ({ ...state, groups }));
           
-          // Update with the server-generated ID and timestamps
-          set((state) => ({
-            ...state,
-            groups: state.groups.map(g => 
-              g.id === group.id ? savedGroup : g
-            ),
-          }));
-          
-          // Update local storage
-          if (typeof window !== "undefined") {
-            const savedGroups = localStorage.getItem("groups");
-            const groups = savedGroups ? JSON.parse(savedGroups) : [];
-            const updatedGroups = groups.map((g:Group) => g.id === group.id ? savedGroup : g);
-            localStorage.setItem("groups", JSON.stringify(updatedGroups));
-            localStorage.setItem("groupsTimestamp", Date.now().toString());
-          }
+          // Update in the database
+          setCacheValue("groups", groups);
+          setCacheValue("groupsTimestamp", Date.now().toString());
         } else {
-          console.error("Failed to save group to server:", await response.text());
-          // Revert the local change if server save failed
-          await get().syncGroups();
+          console.error("Failed to add group:", await response.text());
         }
       } catch (error) {
-        console.error("Error saving group:", error);
-        // Revert the local change if there was an error
-        await get().syncGroups();
+        console.error("Error adding group:", error);
       }
     },
 
-    updateGroup: async (group) => {
+    updateGroup: async (updatedGroup) => {
       try {
-        // First update local state for immediate UI feedback
-        set((state) => ({
-          ...state,
-          groups: state.groups.map((g) => (g.id === group.id ? group : g)),
-        }));
-
-        // Then persist to Prisma
-        const response = await fetch("/api/groups", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "update", group }),
+        const response = await fetch(`/api/groups/${updatedGroup.id}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(updatedGroup),
         });
 
-        if (!response.ok) {
-          console.error("Failed to update group on server:", await response.text());
-          // Revert the local change if server update failed
-          await get().syncGroups();
+        if (response.ok) {
+          const { groups } = await response.json();
+          set((state) => ({ ...state, groups }));
+          
+          // Update in the database
+          setCacheValue("groups", groups);
+          setCacheValue("groupsTimestamp", Date.now().toString());
         } else {
-          // Update local storage
-          if (typeof window !== "undefined") {
-            const savedGroups = localStorage.getItem("groups");
-            const groups = savedGroups ? JSON.parse(savedGroups) : [];
-            const updatedGroups = groups.map((g:Group) => g.id === group.id ? group : g);
-            localStorage.setItem("groups", JSON.stringify(updatedGroups));
-            localStorage.setItem("groupsTimestamp", Date.now().toString());
-          }
+          console.error("Failed to update group:", await response.text());
         }
       } catch (error) {
         console.error("Error updating group:", error);
-        // Revert the local change if there was an error
-        await get().syncGroups();
       }
     },
 
     deleteGroup: async (groupId) => {
       try {
-        // Find the group to delete
-        const groupToDelete = get().groups.find(g => g.id === groupId);
-        if (!groupToDelete) return;
-        
-        // First update local state for immediate UI feedback
-        set((state) => ({
-          ...state,
-          groups: state.groups.filter((g) => g.id !== groupId),
-        }));
-
-        // Then delete from Prisma
-        const response = await fetch("/api/groups", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
-            action: "delete", 
-            group: { id: groupId } 
-          }),
+        const response = await fetch(`/api/groups/${groupId}`, {
+          method: "DELETE",
         });
 
-        if (!response.ok) {
-          console.error("Failed to delete group from server:", await response.text());
-          // Revert the local change if server delete failed
-          await get().syncGroups();
+        if (response.ok) {
+          const { groups } = await response.json();
+          set((state) => ({ ...state, groups }));
+          
+          // Update in the database
+          setCacheValue("groups", groups);
+          setCacheValue("groupsTimestamp", Date.now().toString());
         } else {
-          // Update local storage
-          if (typeof window !== "undefined") {
-            const savedGroups = localStorage.getItem("groups");
-            const groups = savedGroups ? JSON.parse(savedGroups) : [];
-            const filteredGroups = groups.filter((g:Group) => g.id !== groupId);
-            localStorage.setItem("groups", JSON.stringify(filteredGroups));
-            localStorage.setItem("groupsTimestamp", Date.now().toString());
-          }
+          console.error("Failed to delete group:", await response.text());
         }
       } catch (error) {
         console.error("Error deleting group:", error);
-        // Revert the local change if there was an error
-        await get().syncGroups();
       }
+    },
+
+    // Helper method to update contacts when emails change
+    updateContacts: (emails) => {
+      const contacts = generateContactsFromEmails(emails);
+      set({ contacts });
     },
   };
 });
 
 // Load persisted data on the client side only
 if (typeof window !== "undefined") {
-  // Initial load from localStorage
-  const persistedData = loadPersistedData();
-  useEmailStore.setState(persistedData);
-  
-  // Then sync with server data
-  setTimeout(async () => {
-    const store = useEmailStore.getState();
-    await store.syncGroups();
-    await store.syncImapAccounts();
-    await store.syncTwilioAccounts();
-    await store.syncJustcallAccounts();
-  }, 100);
-  
-  // Set up periodic sync
-  setInterval(async () => {
-    const store = useEmailStore.getState();
-    await store.syncGroups();
-    await store.syncImapAccounts();
-    await store.syncTwilioAccounts();
-    await store.syncJustcallAccounts();
-  }, 5 * 60 * 1000); // Sync every 5 minutes
+  // Initial load from database cache
+  (async () => {
+    const persistedData = await loadPersistedData();
+    useEmailStore.setState(persistedData);
+    
+    // Then sync with server data
+    setTimeout(async () => {
+      const store = useEmailStore.getState();
+      await store.syncGroups();
+      await store.syncImapAccounts();
+      await store.syncTwilioAccounts();
+      await store.syncJustcallAccounts();
+    }, 1000);
+    
+    // Set up periodic sync
+    setInterval(async () => {
+      const store = useEmailStore.getState();
+      await store.syncGroups();
+      await store.syncImapAccounts();
+      await store.syncTwilioAccounts();
+      await store.syncJustcallAccounts();
+    }, 5 * 60 * 1000); // Sync every 5 minutes
+  })().catch(error => {
+    console.error("Error loading initial data:", error);
+  });
 }

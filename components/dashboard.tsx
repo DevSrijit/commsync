@@ -15,6 +15,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "./ui/resizable";
+import { getCacheValue, setCacheValue, removeCacheValue } from "@/lib/client-cache-browser";
 
 export function EmailDashboard() {
   const { data: session } = useSession();
@@ -39,17 +40,21 @@ export function EmailDashboard() {
 
   useEffect(() => {
     // Try to load cached emails first for immediate display
-    const cachedEmails = localStorage.getItem("emails");
-    if (cachedEmails) {
-      setEmails(JSON.parse(cachedEmails));
-      setIsLoading(false);
-      initialLoadComplete.current = true;
-    }
+    const loadCachedEmails = async () => {
+      const cachedEmails = await getCacheValue<Email[]>("emails");
+      if (cachedEmails) {
+        setEmails(cachedEmails);
+        setIsLoading(false);
+        initialLoadComplete.current = true;
+      }
+    };
+    
+    loadCachedEmails();
 
     // Only clear cache if explicitly logged out
     if (session === null) {
-      localStorage.removeItem("emails");
-      localStorage.removeItem("emailsTimestamp");
+      removeCacheValue("emails");
+      removeCacheValue("emailsTimestamp");
       setEmails([]);
       return;
     }
@@ -161,9 +166,9 @@ export function EmailDashboard() {
         const mergedEmails = Array.from(emailMap.values());
         setEmails(mergedEmails);
         
-        // Cache the emails
-        localStorage.setItem("emails", JSON.stringify(mergedEmails));
-        localStorage.setItem("emailsTimestamp", Date.now().toString());
+        // Cache the emails in the database
+        await setCacheValue("emails", mergedEmails);
+        await setCacheValue("emailsTimestamp", Date.now().toString());
         
         // Load content for emails that don't have it
         const contentLoader = EmailContentLoader.getInstance();

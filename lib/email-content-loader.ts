@@ -1,5 +1,6 @@
 import { Email } from "@/lib/types";
 import { useEmailStore } from "@/lib/email-store";
+import { getCacheValue } from './client-cache-browser';
 
 interface EmailLoadOptions {
   maxRetries?: number;
@@ -127,8 +128,8 @@ export class EmailContentLoader {
   }
 
   private async loadGmailEmailContent(email: Email): Promise<Email | null> {
-    // Get access token from localStorage 
-    const accessToken = localStorage.getItem("gmailAccessToken");
+    // Get access token from database instead of localStorage 
+    const accessToken = await getCacheValue<string>("gmailAccessToken");
     if (!accessToken) return null;
 
     const response = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${email.id}?format=full`, {

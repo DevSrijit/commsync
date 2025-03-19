@@ -158,24 +158,57 @@ export async function POST(req: NextRequest) {
 
     // Fetch emails
     if (action === "fetchEmails") {
-      const { page = 1, pageSize = 20, filter = {} } = data || {};
-      const emails: ImapFetchResult = await fetchImapEmails(account, {
-        page,
-        pageSize,
-        filter,
-      });
+      try {
+        const { page = 1, pageSize = 100000, fetchAll = true } = data || {};
+        
+        // Connect to the IMAP server
+        const imapClient = new ImapFlow({
+          host: account.host,
+          port: account.port,
+          secure: account.secure,
+          auth: {
+            user: account.username,
+            pass: account.password,
+          },
+          logger: false,
+        });
 
-      // Standardize the email format with account ID
-      const standardizedEmails = emails.messages.map((email) =>
-        standardizeEmailFormat(email, "imap", account.id)
-      );
+        await imapClient.connect();
+        
+        // Select the inbox
+        const mailbox = await imapClient.mailboxOpen("INBOX");
+        
+        // Calculate which messages to fetch
+        let start, end;
+        
+        if (fetchAll) {
+          // Fetch all messages (from newest to oldest)
+          start = mailbox.exists;
+          end = 1;
+        } else {
+          // Use pagination
+          end = mailbox.exists - (page - 1) * pageSize;
+          start = Math.max(end - pageSize + 1, 1);
+        }
+        
+        // Fetch messages
+        const messages = [];
+        
+        // Standardize the email format with account ID
+        const standardizedEmails = emails.messages.map((email) =>
+          standardizeEmailFormat(email, "imap", account.id)
+        );
 
-      return NextResponse.json({
-        emails: standardizedEmails,
-        total: emails.total,
-        page,
-        pageSize,
-      });
+        return NextResponse.json({
+          emails: standardizedEmails,
+          total: emails.total,
+          page,
+          pageSize,
+        });
+      } catch (error) {
+        console.error("Error fetching emails:", error);
+        return NextResponse.json({ error: "Failed to fetch emails" }, { status: 500 });
+      }
     }
 
     // Send email

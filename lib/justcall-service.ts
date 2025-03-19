@@ -224,26 +224,26 @@ export class JustCallService {
 
   // Process a new message from JustCall webhook
   async processIncomingMessage(message: JustCallMessage): Promise<void> {
-    if (!message) {
-      console.error('Received null message to process');
-      return;
+    if (!message || !message.id) {
+      throw new Error('Invalid message object received');
     }
     
     try {
-      console.log(`Processing incoming JustCall message ${message.id} from ${message.contact_number}`);
+      // Remove excessive logging
+      // console.log(`Processing incoming JustCall message ${message.id} from ${message.contact_number}`);
       
-      // Debug log the message structure to assist in troubleshooting
-      console.log('JustCall message structure:', JSON.stringify({
-        id: message.id,
-        number: message.number,
-        contact_number: message.contact_number,
-        has_body: Boolean(message.body),
-        has_sms_info: Boolean(message.sms_info),
-        body_length: message.body?.length || 0,
-        sms_info_body_length: message.sms_info?.body?.length || 0,
-        direction: message.direction,
-        created_at: message.created_at
-      }));
+      // Remove detailed message structure logging
+      // console.log('JustCall message structure:', JSON.stringify({
+      //   id: message.id,
+      //   number: message.number,
+      //   contact_number: message.contact_number,
+      //   has_body: Boolean(message.body),
+      //   has_sms_info: Boolean(message.sms_info),
+      //   body_length: message.body?.length || 0,
+      //   sms_info_body_length: message.sms_info?.body?.length || 0,
+      //   direction: message.direction,
+      //   created_at: message.created_at
+      // }));
             
       // Ensure the message has all required properties
       const contactNumber = message.contact_number || '';
@@ -260,7 +260,8 @@ export class JustCallService {
       }
       
       // Additional processing could happen here
-      console.log(`Successfully processed JustCall message ${message.id}`);
+      // Remove success logging
+      // console.log(`Successfully processed JustCall message ${message.id}`);
       
     } catch (error) {
       console.error(`Error processing JustCall message ${message.id}:`, error);

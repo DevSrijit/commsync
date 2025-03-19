@@ -25,7 +25,7 @@ export class SyncService {
     gmailToken: string | null,
     imapAccounts: ImapAccount[],
     page: number = 1,
-    pageSize: number = 100
+    pageSize: number = 100000 // Increased from 100 to 100000
   ): Promise<void> {
     if (this.syncInProgress) {
       console.log("Sync already in progress");
@@ -55,7 +55,8 @@ export class SyncService {
               account,
               data: {
                 page: page,
-                pageSize: pageSize
+                pageSize: pageSize,
+                fetchAll: true // Add a flag to fetch all emails
               },
             }),
           }).then((response) => response.json().then((data) => data.emails))
@@ -184,7 +185,8 @@ export const syncJustCallAccounts = async (
       where: query,
     });
 
-    console.log(`Syncing ${accounts.length} JustCall accounts`);
+    // Reduce logging verbosity
+    // console.log(`Syncing ${accounts.length} JustCall accounts`);
     
     const results = await Promise.allSettled(
       accounts.map(async (account) => {
@@ -219,14 +221,14 @@ export const syncJustCallAccounts = async (
           // Get messages since last sync for the specific phone number
           console.log(`Fetching messages for account ${account.id} with phone ${phoneNumber}, date filter: ${dateToUse?.toISOString() || 'none'}, sort: ${options?.sortDirection || 'desc'}`);
           
-          // First, let's run a debug call to see all texts for this account
-          try {
-            console.log(`[DEBUG] Running diagnostic test for JustCall account ${account.id}`);
-            await justCallService.getAllTextsDebug(100);
-            console.log(`[DEBUG] Diagnostic test complete for JustCall account ${account.id}`);
-          } catch (debugError) {
-            console.error(`[DEBUG] Error running diagnostic test: ${debugError}`);
-          }
+          // Remove debug call that logs all texts
+          // try {
+          //   console.log(`[DEBUG] Running diagnostic test for JustCall account ${account.id}`);
+          //   await justCallService.getAllTextsDebug(100);
+          //   console.log(`[DEBUG] Diagnostic test complete for JustCall account ${account.id}`);
+          // } catch (debugError) {
+          //   console.error(`[DEBUG] Error running diagnostic test: ${debugError}`);
+          // }
           
           // Now proceed with the normal filtered request
           const messages = await justCallService.getMessages(
@@ -236,7 +238,9 @@ export const syncJustCallAccounts = async (
             options?.page || 1,
             options?.sortDirection || 'desc'
           );
-          console.log(`Retrieved ${messages.length} messages for account ${account.id} with phone ${phoneNumber}`);
+          
+          // Reduce logging verbosity
+          // console.log(`Retrieved ${messages.length} messages for account ${account.id} with phone ${phoneNumber}`);
           
           let processedCount = 0;
           let skippedCount = 0;
