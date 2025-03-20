@@ -1,6 +1,6 @@
 /**
  * Browser-compatible client for working with the server-side cache
- * This is to be used in client components where localStorage was previously used
+ * This is to be used in client components where server-side functions cannot be directly called
  */
 
 /**
@@ -18,19 +18,6 @@ export async function setCacheValue(key: string, value: any): Promise<void> {
     });
   } catch (error) {
     console.error(`Failed to set cache value for key ${key}:`, error);
-    
-    // Fallback to localStorage during migration
-    if (typeof window !== 'undefined') {
-      try {
-        if (typeof value === 'string') {
-          localStorage.setItem(key, value);
-        } else {
-          localStorage.setItem(key, JSON.stringify(value));
-        }
-      } catch (e) {
-        console.error(`Fallback to localStorage failed for key ${key}:`, e);
-      }
-    }
   }
 }
 
@@ -51,23 +38,6 @@ export async function getCacheValue<T = any>(key: string): Promise<T | null> {
     return data.value;
   } catch (error) {
     console.error(`Failed to get cache value for key ${key}:`, error);
-    
-    // Fallback to localStorage during migration
-    if (typeof window !== 'undefined') {
-      try {
-        const value = localStorage.getItem(key);
-        if (value === null) return null;
-        
-        try {
-          return JSON.parse(value) as T;
-        } catch {
-          return value as unknown as T;
-        }
-      } catch (e) {
-        console.error(`Fallback to localStorage failed for key ${key}:`, e);
-      }
-    }
-    
     return null;
   }
 }
@@ -81,15 +51,6 @@ export async function removeCacheValue(key: string): Promise<void> {
       method: 'DELETE',
       credentials: 'include',
     });
-    
-    // Also remove from localStorage during migration
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.removeItem(key);
-      } catch (e) {
-        console.error(`Failed to remove from localStorage for key ${key}:`, e);
-      }
-    }
   } catch (error) {
     console.error(`Failed to remove cache value for key ${key}:`, error);
   }
@@ -113,29 +74,6 @@ export async function getMultipleCacheValues<T = Record<string, any>>(keys: stri
     return data.values as T;
   } catch (error) {
     console.error(`Failed to get multiple cache values:`, error);
-    
-    // Fallback to localStorage during migration
-    if (typeof window !== 'undefined') {
-      try {
-        const result: Record<string, any> = {};
-        
-        for (const key of keys) {
-          const value = localStorage.getItem(key);
-          if (value !== null) {
-            try {
-              result[key] = JSON.parse(value);
-            } catch {
-              result[key] = value;
-            }
-          }
-        }
-        
-        return result as T;
-      } catch (e) {
-        console.error(`Fallback to localStorage failed for multiple keys:`, e);
-      }
-    }
-    
     return {} as T;
   }
 } 
