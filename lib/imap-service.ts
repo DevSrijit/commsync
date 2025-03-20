@@ -128,8 +128,23 @@ export async function fetchImapEmails(
         if (filter.flagged !== undefined) {
           criteria.push(filter.flagged ? "FLAGGED" : "UNFLAGGED");
         }
+        
+        // Modified date filtering for improved pagination
         if (filter.since) {
-          criteria.push(["SINCE", filter.since.toISOString()]);
+          // Format date for IMAP search
+          const sinceDate = new Date(filter.since);
+          const sinceDateStr = sinceDate.toISOString().split('T')[0];
+          criteria.push(["SINCE", sinceDateStr]);
+        }
+        
+        if (filter.before) {
+          // Format date for IMAP search - this helps with pagination
+          const beforeDate = new Date(filter.before);
+          const beforeDateStr = beforeDate.toISOString().split('T')[0];
+          criteria.push(["BEFORE", beforeDateStr]);
+          
+          // Log the date filter
+          console.log(`Filtering IMAP messages before: ${beforeDateStr}`);
         }
 
         // For cursor-based pagination, if we have a lastMessageId, adjust the search
@@ -152,6 +167,8 @@ export async function fetchImapEmails(
         // Search for messages
         const searchCriteria = criteria.length > 0 ? criteria : ["ALL"];
         
+        console.log(`IMAP search criteria:`, JSON.stringify(searchCriteria));
+        
         const uids = await new Promise<number[]>((resolveSearch, rejectSearch) => {
           imap.search(searchCriteria, (err, results) => {
             if (err) rejectSearch(err);
@@ -160,6 +177,7 @@ export async function fetchImapEmails(
         });
 
         const total = uids.length;
+        console.log(`IMAP search found ${total} messages matching criteria`);
         
         // Sort UIDs in descending order (newest first)
         uids.sort((a, b) => b - a);
@@ -167,6 +185,8 @@ export async function fetchImapEmails(
         // Apply pagination
         const start = (page - 1) * pageSize;
         const paginatedUids = uids.slice(start, start + pageSize);
+        
+        console.log(`IMAP pagination: page ${page}, returned ${paginatedUids.length} messages`);
         
         if (paginatedUids.length === 0) {
           imap.end();

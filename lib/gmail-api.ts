@@ -45,6 +45,8 @@ export async function fetchEmails(
     // If we want all emails, don't use pageToken
     const url = `https://www.googleapis.com/gmail/v1/users/me/messages?${params}`;
     
+    console.log(`Fetching Gmail emails with params: maxResults=${maxResults}, page=${page}`);
+    
     // Fetch list of messages
     let response = await fetch(
       url,
@@ -61,6 +63,7 @@ export async function fetchEmails(
       const newAccessToken = await refreshSession();
 
       if (newAccessToken) {
+        console.log("Token refreshed successfully, retrying fetch");
         // Retry the request with the new token
         response = await fetch(
           url,
@@ -70,11 +73,21 @@ export async function fetchEmails(
             },
           }
         );
+      } else {
+        console.error("Failed to refresh token");
       }
     }
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch emails: ${response.statusText}`);
+      console.error(`Failed to fetch Gmail messages: ${response.status} ${response.statusText}`);
+      // Try to get response text for more details on error
+      try {
+        const errorText = await response.text();
+        console.error(`Gmail API error response: ${errorText}`);
+      } catch (e) {
+        console.error("Could not get error response text");
+      }
+      return []; // Return empty array on error to prevent data loss
     }
 
     const data = await response.json();
@@ -89,6 +102,12 @@ export async function fetchEmails(
 
     const messages = data.messages || [];
     console.log(`Fetched ${messages.length} Gmail message IDs for page ${page}`);
+
+    // If no messages found, return empty array immediately to prevent wiping out existing data
+    if (messages.length === 0) {
+      console.log("No Gmail messages found, returning empty array");
+      return [];
+    }
 
     // Track processed message IDs to prevent duplicates
     const processedIds = new Set<string>();
@@ -134,7 +153,7 @@ export async function fetchEmails(
           }
 
           if (!msgResponse.ok) {
-            console.warn(`Failed to fetch message ${message.id}: ${msgResponse.statusText}`);
+            console.warn(`Failed to fetch message ${message.id}: ${msgResponse.status} ${msgResponse.statusText}`);
             return null;
           }
 
@@ -161,12 +180,24 @@ export async function fetchEmails(
 
     console.log(`Successfully parsed ${fetchedEmails.length} Gmail messages`);
 
-    // Sync with database instead of local storage
+    // Add safety check for zero fetched emails
+    if (fetchedEmails.length === 0) {
+      console.warn("No Gmail messages were successfully fetched, skipping database sync to prevent data loss");
+      return [];
+    }
+
+    // Sync with database only if we have successfully fetched emails
     await syncWithDatabase(fetchedEmails);
 
     return fetchedEmails;
   } catch (error) {
-    console.error("Error fetching emails:", error);
+    console.error("Error fetching emails from Gmail API:", error);
+    // Log detailed error info for debugging
+    if (error instanceof Error) {
+      console.error(`Error details: ${error.name}: ${error.message}`);
+      console.error(`Error stack: ${error.stack}`);
+    }
+    // Return empty array to prevent data loss
     return [];
   }
 }
@@ -174,8 +205,10 @@ export async function fetchEmails(
 // Update sync function to use database with improved duplicate detection
 async function syncWithDatabase(gmailEmails: Email[]) {
   try {
-    if (!gmailEmails.length) {
-      console.log("No emails to sync with database");
+    // Don't proceed with updating the database if no emails were fetched
+    // This prevents wiping out existing data on failed syncs
+    if (!gmailEmails || gmailEmails.length === 0) {
+      console.log("No Gmail emails to sync with database - skipping update to prevent data loss");
       return;
     }
 
@@ -189,6 +222,12 @@ async function syncWithDatabase(gmailEmails: Email[]) {
     // Get current emails from database
     const currentEmails = await getCacheValue<Email[]>("emails") || [];
     console.log(`Retrieved ${currentEmails.length} existing emails from database`);
+
+    // Safety check: If we have current emails but no new Gmail emails, preserve the database
+    if (currentEmails.length > 0 && gmailEmails.length === 0) {
+      console.log("Protecting existing email data from being wiped by empty Gmail fetch");
+      return;
+    }
 
     // Create new map that combines existing emails and new emails
     const emailMap = new Map();
@@ -234,13 +273,17 @@ async function syncWithDatabase(gmailEmails: Email[]) {
       new Date(b.date).getTime() - new Date(a.date).getTime()
     );
     
-    // Store in database
-    await setCacheValue("emails", mergedEmails);
-    await setCacheValue("emailsTimestamp", Date.now().toString());
-    
-    console.log(`Synced ${mergedEmails.length} emails with database`);
+    // Store in database - only if we have emails to store
+    if (mergedEmails.length > 0) {
+      await setCacheValue("emails", mergedEmails);
+      await setCacheValue("emailsTimestamp", Date.now().toString());
+      console.log(`Synced ${mergedEmails.length} emails with database`);
+    } else {
+      console.warn("No emails to store in database after merge - keeping existing data");
+    }
   } catch (error) {
     console.error("Error syncing emails with database:", error);
+    // Don't update the cache on error to prevent data loss
   }
 }
 

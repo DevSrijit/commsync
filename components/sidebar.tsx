@@ -346,7 +346,7 @@ export function Sidebar() {
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setIsGroupDialogOpen(true)}>
                   <Users className="h-4 w-4 mr-2" />
-                  <span>Add Group</span>
+                  <span>Add Contact</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

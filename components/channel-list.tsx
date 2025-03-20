@@ -233,7 +233,7 @@ export function EmailList({
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search contacts..."
+              placeholder="Search conversations..."
               className="h-9 pl-8"
               value={searchQuery}
               onChange={handleSearchChange}
@@ -267,7 +267,7 @@ export function EmailList({
         <div className="relative">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search contacts..."
+            placeholder="Search conversations..."
             className="h-9 pl-8"
             value={searchQuery}
             onChange={handleSearchChange}
@@ -292,7 +292,7 @@ export function EmailList({
             {/* Show groups first */}
             {groups.length > 0 && activeFilter !== 'sms' && (
               <div className="px-3 mb-2">
-                <h2 className="text-sm font-medium text-muted-foreground mb-2">Groups</h2>
+                <h2 className="text-sm font-medium text-muted-foreground mb-2">Contacts</h2>
                 <div className="space-y-1">
                   {groups.map(group => (
                     <GroupItem 
@@ -310,7 +310,7 @@ export function EmailList({
             {displayedContacts.length > 0 && (
               <div className="px-3">
                 <h2 className="text-sm font-medium text-muted-foreground mb-2">
-                  {activeFilter === 'sms' ? 'SMS Contacts' : 'Contacts'}
+                  {activeFilter === 'sms' ? 'SMS Conversations' : 'Conversations'}
                 </h2>
                 <div>
                   {displayedContacts.map((contact) => (

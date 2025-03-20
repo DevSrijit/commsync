@@ -251,85 +251,109 @@ export const useEmailStore = create<EmailStore>((set, get) => {
 
     syncImapAccounts: async () => {
       try {
-        console.log("Starting IMAP accounts sync - fetching ALL emails");
-        // Set fetchAll flag to true
-        const response = await fetch("/api/sync/accounts?platform=imap&fetchAll=true");
+        console.log("Starting IMAP accounts sync");
+        // Get current page
+        const currentPage = get().currentImapPage;
+        console.log(`Fetching IMAP accounts, page ${currentPage}`);
+        
+        // For loading older messages, we need to track the oldest message date
+        // Get all current emails to find the oldest date
+        const currentEmails = get().emails;
+        const imapEmails = currentEmails.filter(email => email.accountType === 'imap');
+        
+        // Find the oldest IMAP message date if we have any
+        let oldestDate: Date | undefined = undefined;
+        if (imapEmails.length > 0) {
+          const dates = imapEmails.map((email: Email) => new Date(email.date));
+          oldestDate = new Date(Math.min(...dates.map(d => d.getTime())));
+          console.log(`Oldest IMAP message date: ${oldestDate.toISOString()}`);
+        }
+        
+        // Fetch all IMAP accounts for the user
+        const response = await fetch("/api/sync/accounts?platform=imap");
         if (response.ok) {
           const { accounts } = await response.json();
           console.log(`Found ${accounts?.length || 0} IMAP accounts`);
           if (accounts && accounts.length > 0) {
             set((state) => ({ ...state, imapAccounts: accounts }));
             
-            // Sync ALL emails for each account
-            const syncResult = await fetch("/api/imap/sync", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                fetchAll: true,
-                pageSize: 100000
-              }),
-            });
-            
-            if (syncResult.ok) {
-              // After syncing, get all the messages to update the store
-              console.log(`Current email count before IMAP sync: ${get().emails.length}`);
-              const messagesResponse = await fetch(`/api/messages?platform=imap&fetchAll=true`);
-              if (messagesResponse.ok) {
-                const { messages } = await messagesResponse.json();
-                console.log(`Retrieved ${messages?.length || 0} IMAP messages`);
+            // Process each account separately to get messages
+            for (const account of accounts) {
+              console.log(`Syncing IMAP account ${account.id}`);
+              
+              // Set up filter for messages older than the oldest date we have
+              const filter: any = {};
+              if (oldestDate) {
+                // Set the 'before' filter to get messages older than our oldest message
+                filter.before = oldestDate;
+              }
+              
+              // Fetch messages with pagination and date filtering
+              const fetchResult = await fetch("/api/imap", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  action: "fetchEmails",
+                  account,
+                  data: {
+                    page: currentPage,
+                    pageSize: 100, // Use a reasonable page size
+                    filter: filter
+                  },
+                }),
+              });
+              
+              if (fetchResult.ok) {
+                const { emails: messages, total } = await fetchResult.json();
+                console.log(`Retrieved ${messages?.length || 0} older IMAP messages for account ${account.id} on page ${currentPage}`);
+                
                 if (messages && messages.length > 0) {
-                  // Convert IMAP messages to Email format
-                  const imapEmails = messages.map((msg: any) => ({
-                    id: msg.id,
-                    from: {
-                      name: msg.from.name || 'Unknown',
-                      email: msg.from.email || '',
-                    },
-                    to: [{
-                      name: msg.to.name || 'You',
-                      email: msg.to.email || '',
-                    }],
-                    subject: msg.subject || '',
-                    body: msg.body || '',
-                    date: msg.date || new Date().toISOString(),
-                    labels: msg.labels || [],
-                    accountType: 'imap',
-                    accountId: msg.accountId,
-                    platform: 'imap',
-                  }));
-                  
-                  console.log(`Converted ${imapEmails.length} IMAP messages to Email format`);
+                  console.log(`Processing ${messages.length} IMAP messages`);
                   
                   // When loading older messages, we shouldn't have duplicates by ID
                   // But check anyway for safety
-                  const existingIds = new Set(get().emails.map(email => email.id));
-                  const newEmails = imapEmails.filter((email: Email) => !existingIds.has(email.id));
+                  const existingIds = new Set(currentEmails.map(email => email.id));
+                  const newEmails = messages.filter((email: Email) => !existingIds.has(email.id));
                   
                   if (newEmails.length > 0) {
                     // Merge with existing emails
-                    const mergedEmails = [...get().emails, ...newEmails];
+                    const mergedEmails = [...currentEmails, ...newEmails];
                     
                     // Sort by date descending (newest first) after merging
                     mergedEmails.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
                     
                     get().setEmails(mergedEmails);
-                    console.log(`Updated email store with ${newEmails.length} IMAP messages. New count: ${mergedEmails.length}`);
+                    console.log(`Updated email store with ${newEmails.length} older IMAP messages. New count: ${mergedEmails.length}`);
                     setCacheValue("emails", mergedEmails);
                     
-                    // Increment the page counter only if we found new emails
-                    set((state) => ({ ...state, currentImapPage: 1 }));
-                    console.log(`Reset IMAP page to 1`);
+                    // Increment the page counter if we're looking at the last account and we found new emails
+                    if (account === accounts[accounts.length - 1]) {
+                      set((state) => ({ ...state, currentImapPage: currentPage + 1 }));
+                      console.log(`Incremented IMAP page to ${currentPage + 1}`);
+                    }
                   } else {
-                    console.log(`No new IMAP messages found`);
+                    console.log(`No new IMAP messages for account ${account.id} on page ${currentPage}`);
                   }
                 } else {
-                  console.log(`No IMAP messages found`);
+                  console.log(`No IMAP messages for account ${account.id} on page ${currentPage}`);
                 }
               } else {
-                console.error("Failed to fetch IMAP messages:", await messagesResponse.text());
+                console.error(`Failed to fetch IMAP messages for account ${account.id}:`, await fetchResult.text());
               }
-            } else {
-              console.error("Failed to sync IMAP messages:", await syncResult.text());
+              
+              // Update last sync time for the account
+              try {
+                await fetch("/api/imap", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    action: "updateLastSync",
+                    data: { accountId: account.id },
+                  }),
+                });
+              } catch (error) {
+                console.error(`Error updating last sync time for IMAP account ${account.id}:`, error);
+              }
             }
           }
         } else {
