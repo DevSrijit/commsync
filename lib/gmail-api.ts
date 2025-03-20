@@ -293,63 +293,20 @@ export async function sendEmail({
   subject,
   body,
   attachments = [],
+  threadId = null, // Add optional threadId parameter
 }: {
   accessToken: string;
   to: string;
   subject: string;
   body: string;
   attachments?: File[];
+  threadId?: string | null; // Add this parameter to associate with existing thread
 }): Promise<Email> {
   try {
-    // Create a proper MIME message
-    const message = new FormData();
-
-    // Create metadata part
-    const metadata = {
-      to: to,
-      subject: subject,
-    };
-
-    // Define a type for message parts
-    type MessagePart = {
-      mimeType: string;
-      body: string;
-      filename?: string;
-      headers?: Record<string, string>;
-    };
-
-    // Create message parts array
-    const parts: MessagePart[] = [
-      {
-        mimeType: "text/html",
-        body: body,
-      },
-    ];
-
-    // Add attachments to parts
-    for (const file of attachments) {
-      // Convert file to base64
-      const fileArrayBuffer = await file.arrayBuffer();
-      const fileBase64 = btoa(
-        new Uint8Array(fileArrayBuffer).reduce(
-          (data, byte) => data + String.fromCharCode(byte),
-          ""
-        )
-      );
-
-      parts.push({
-        filename: file.name,
-        mimeType: file.type || "application/octet-stream",
-        body: fileBase64,
-        headers: {
-          "Content-Disposition": `attachment; filename="${file.name}"`,
-          "Content-Transfer-Encoding": "base64",
-        },
-      });
-    }
-
+    console.log("Sending email via Gmail API...");
+    
     // Create the request body
-    const requestBody = {
+    const requestBody: any = {
       raw: btoa(
         `From: me\r\n` +
           `To: ${to}\r\n` +
@@ -375,6 +332,11 @@ export async function sendEmail({
         .replace(/[/]/g, "_")
         .replace(/=+$/, ""),
     };
+
+    // If threadId is provided, include it in the request to maintain threading
+    if (threadId) {
+      requestBody.threadId = threadId;
+    }
 
     // For each attachment, we need to replace the placeholder with actual base64 data
     for (const file of attachments) {

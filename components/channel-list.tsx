@@ -196,11 +196,11 @@ export function EmailList({
                   'Twilio:', store.currentTwilioPage, 
                   'JustCall:', store.currentJustcallPage);
       
-      // Load more messages from each platform
-      await Promise.all([
-        store.syncImapAccounts(),
-        store.syncTwilioAccounts(), 
-        store.syncJustcallAccounts()
+      // Track which services returned new messages
+      const results = await Promise.all([
+        store.syncImapAccounts().then(count => ({ service: 'IMAP', count })),
+        store.syncTwilioAccounts().then(count => ({ service: 'Twilio', count })),
+        store.syncJustcallAccounts().then(count => ({ service: 'JustCall', count }))
       ]);
       
       // Check if we got new emails
@@ -208,14 +208,32 @@ export function EmailList({
       const newEmailCount = newStore.emails.length;
       const messagesLoaded = newEmailCount - initialEmailCount;
       
-      console.log(`Loaded ${messagesLoaded} new messages`);
+      // Log results by service
+      results.forEach(result => {
+        if (result.count !== undefined) {
+          console.log(`${result.service} loaded ${result.count} new messages`);
+        }
+      });
       
-      // Show a notification if no new messages were found
+      console.log(`Total: Loaded ${messagesLoaded} new messages`);
+      
+      // We'll consider "no more messages" only if all services return no new messages
+      // for three consecutive attempts
       if (messagesLoaded === 0) {
-        console.log('No more messages to load.');
+        // Increment our count of empty loads
+        const emptyLoadCount = (parseInt(localStorage.getItem('emptyLoadCount') || '0')) + 1;
+        localStorage.setItem('emptyLoadCount', emptyLoadCount.toString());
+        
+        console.log(`No new messages found (attempt ${emptyLoadCount} of 3)`);
+        
         // After three consecutive empty loads, we can assume there are no more messages
-        setNoMoreMessages(true);
+        if (emptyLoadCount >= 3) {
+          console.log('No more messages to load after 3 attempts.');
+          setNoMoreMessages(true);
+        }
       } else {
+        // Reset the counter if we got new messages
+        localStorage.setItem('emptyLoadCount', '0');
         setNoMoreMessages(false);
       }
       

@@ -611,13 +611,22 @@ export function ConversationView({
                   });
                 }
               } else {
-                // Regular single-recipient email
+                // Get the latest conversation email to use its threadId if available
+                const latestEmailInConversation = conversation.length > 0 
+                  ? conversation.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
+                  : null;
+                
+                const threadId = latestEmailInConversation?.threadId || null;
+                console.log(`Replying using threadId: ${threadId || 'none'}`);
+
+                // Regular single-recipient email with threadId for proper threading
                 const newEmail = await sendEmail({
                   accessToken: session.user.accessToken,
                   to: contactEmail,
                   subject: `Re: ${contact?.lastMessageSubject || "No subject"}`,
                   body: content,
-                  attachments: uploadedAttachments, // Pass the attachments
+                  attachments: uploadedAttachments,
+                  threadId: threadId, // Pass the threadId for proper threading
                 });
 
                 addEmail(newEmail);

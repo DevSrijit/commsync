@@ -64,6 +64,8 @@ import { Badge } from "./ui/badge";
 import { ImapAccountCard } from "./imap-account-card";
 import GroupDialog from "./group-dialog";
 import { TwilioAccountDialog } from "./twilio-account-dialog";
+import { useToast } from "@/components/ui/use-toast";
+import { EmailContentLoader } from "@/lib/email-content-loader";
 
 export type MessageCategory =
   | "inbox"
@@ -79,6 +81,7 @@ export function Sidebar() {
   const { data: session } = useSession();
   const { emails, setActiveFilter, activeFilter, imapAccounts } =
     useEmailStore();
+  const { toast } = useToast();
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [isImapDialogOpen, setIsImapDialogOpen] = useState(false);
   const [isJustCallDialogOpen, setIsJustCallDialogOpen] = useState(false);
@@ -371,9 +374,109 @@ export function Sidebar() {
             onClick={async () => {
               try {
                 setIsSyncingEmail(true);
-                await useEmailStore.getState().syncImapAccounts();
+                
+                // Sync all IMAP accounts
+                const { imapAccounts } = useEmailStore.getState();
+                const contentLoader = EmailContentLoader.getInstance();
+                let totalEmailsLoaded = 0;
+                
+                for (const account of imapAccounts) {
+                  try {
+                    console.log(`Syncing account: ${account.label}`);
+                    
+                    // Fetch emails for this account
+                    const response = await fetch("/api/imap", {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                      },
+                      body: JSON.stringify({
+                        action: "fetchEmails",
+                        account,
+                        data: {
+                          page: 1,
+                          pageSize: 100,
+                        },
+                      }),
+                    });
+                    
+                    if (!response.ok) {
+                      console.error(`Failed to sync emails for ${account.label}`);
+                      continue; // Skip to next account on error
+                    }
+                    
+                    const data = await response.json();
+                    
+                    // Format emails to ensure they have required properties
+                    const formattedEmails = data.emails.map((email: any) => ({
+                      ...email,
+                      labels: email.labels || [],
+                      from: email.from || { name: '', email: '' },
+                      to: email.to || [],
+                      date: email.date || new Date().toISOString(),
+                      subject: email.subject || '(No Subject)',
+                      accountType: 'imap',
+                      accountId: account.id,
+                    }));
+                    
+                    // Update the email store with fetched emails
+                    const store = useEmailStore.getState();
+                    store.setEmails([...store.emails, ...formattedEmails]);
+                    totalEmailsLoaded += formattedEmails.length;
+                    
+                    // Update last sync time
+                    if (account.id) {
+                      await fetch("/api/imap", {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({
+                          action: "updateLastSync",
+                          data: {
+                            accountId: account.id,
+                          }
+                        }),
+                      });
+                    }
+                    
+                    // Load content for emails that don't have it
+                    const emailsWithoutContent = formattedEmails.filter((email: any) => !email.body || email.body.length === 0);
+                    
+                    // Load content for up to 5 emails at a time
+                    if (emailsWithoutContent.length > 0) {
+                      const batchSize = 5;
+                      for (let i = 0; i < emailsWithoutContent.length; i += batchSize) {
+                        const batch = emailsWithoutContent.slice(i, i + batchSize);
+                        await Promise.allSettled(
+                          batch.map((email: any) => contentLoader.loadEmailContent(email))
+                        );
+                      }
+                    }
+                  } catch (error) {
+                    console.error(`Error syncing account ${account.label}:`, error);
+                  }
+                }
+                
+                // Show toast notification with results
+                if (totalEmailsLoaded > 0) {
+                  toast({
+                    title: "Sync successful",
+                    description: `Synced ${totalEmailsLoaded} emails from ${imapAccounts.length} accounts`,
+                  });
+                } else {
+                  toast({
+                    title: "Sync complete",
+                    description: "No new emails found",
+                  });
+                }
               } catch (error) {
                 console.error("Error syncing IMAP accounts:", error);
+                toast({
+                  title: "Sync failed",
+                  description: "Failed to sync emails. Please try again.",
+                  variant: "destructive",
+                });
               } finally {
                 setIsSyncingEmail(false);
               }
