@@ -33,6 +33,7 @@ export interface Email {
   accountType?: 'gmail' | 'imap' | 'justcall' | 'twilio';
   read?: boolean;
   platform?: string; // Added for platform indication
+  source?: string; // Added to track data source (gmail-api, imap, etc.)
 }
 
 // Legacy interface - will be replaced by the new ContactModel
@@ -50,6 +51,7 @@ export interface Group {
   id: string;
   name: string;
   addresses: string[];
+  phoneNumbers: string[];
 }
 
 // New interfaces for phase 2

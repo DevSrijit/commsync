@@ -76,14 +76,26 @@ export function ConversationView({
       // Find the active group
       const group = groups.find((g) => g.id === activeGroup);
       if (group) {
-        // Filter emails that involve any address in the group
-        return emails.filter((email) =>
-          group.addresses.some(
+        // Filter emails that involve any address or phone number in the group
+        return emails.filter((email) => {
+          // Check email addresses
+          const matchesEmail = group.addresses.some(
             (addr) =>
               email.from?.email === addr ||
               email.to?.some((to) => to.email === addr)
-          )
-        );
+          );
+          
+          // Check phone numbers (for SMS messages)
+          const matchesPhone = group.phoneNumbers && group.phoneNumbers.length > 0 
+            ? group.phoneNumbers.some(
+                (phone) =>
+                  email.from?.email === phone ||
+                  email.to?.some((to) => to.email === phone)
+              )
+            : false;
+          
+          return matchesEmail || matchesPhone;
+        });
       }
       return [];
     }
@@ -136,12 +148,11 @@ export function ConversationView({
     .filter((email) => {
       if (contactEmail === null) return false;
 
-      // Enhanced debugging
-      console.log(
-        `Checking email: ${email.id}, from: ${email.from.email}, accountId: ${
-          email.accountId
-        }, type: ${email.accountType || "unknown"}`
-      );
+      // Skip emails with errors or invalid data
+      if (email.source === "gmail-api-error") {
+        console.log(`Skipping Gmail API error email: ${email.id}`);
+        return false;
+      }
 
       // For group conversations
       if (isGroup && groupId) {
@@ -156,7 +167,6 @@ export function ConversationView({
               email.to.some((to) => group.addresses.includes(to.email)));
 
           if (isGroupConversation) {
-            console.log(`Including group email: ${email.id}`);
             return true;
           }
         }
@@ -166,7 +176,7 @@ export function ConversationView({
       // For Gmail emails (from the user's Gmail account)
       if (
         session?.user?.email &&
-        (!email.accountId || email.accountType === "gmail")
+        (email.accountType === "gmail" || email.source === "gmail-api")
       ) {
         const isGmailConversation =
           (email.from.email === contactEmail &&
@@ -175,7 +185,6 @@ export function ConversationView({
             email.to.some((to) => to.email === contactEmail));
 
         if (isGmailConversation) {
-          console.log(`Including Gmail email: ${email.id}`);
           return true;
         }
       }
@@ -188,13 +197,16 @@ export function ConversationView({
           email.to.some((to) => to.email === contactEmail);
 
         if (isImapConversation) {
-          console.log(`Including IMAP email: ${email.id}`);
           return true;
         }
       }
 
       return false;
     })
+    // Deduplicate potentially duplicated messages with same IDs
+    .filter((email, index, self) => 
+      index === self.findIndex((e) => e.id === email.id)
+    )
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
   useEffect(() => {

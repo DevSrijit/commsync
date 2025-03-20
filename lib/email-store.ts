@@ -765,12 +765,21 @@ export const useEmailStore = create<EmailStore>((set, get) => {
 
     addGroup: async (group) => {
       try {
+        // Ensure phoneNumbers is defined
+        const groupWithPhoneNumbers = {
+          ...group,
+          phoneNumbers: group.phoneNumbers || []
+        };
+        
         const response = await fetch("/api/groups", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(group),
+          body: JSON.stringify({
+            action: "create",
+            group: groupWithPhoneNumbers
+          }),
         });
 
         if (response.ok) {
@@ -790,12 +799,21 @@ export const useEmailStore = create<EmailStore>((set, get) => {
 
     updateGroup: async (updatedGroup) => {
       try {
-        const response = await fetch(`/api/groups/${updatedGroup.id}`, {
-          method: "PUT",
+        // Ensure phoneNumbers is defined
+        const groupWithPhoneNumbers = {
+          ...updatedGroup,
+          phoneNumbers: updatedGroup.phoneNumbers || []
+        };
+        
+        const response = await fetch("/api/groups", {
+          method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(updatedGroup),
+          body: JSON.stringify({
+            action: "update",
+            group: groupWithPhoneNumbers
+          }),
         });
 
         if (response.ok) {
@@ -815,8 +833,15 @@ export const useEmailStore = create<EmailStore>((set, get) => {
 
     deleteGroup: async (groupId) => {
       try {
-        const response = await fetch(`/api/groups/${groupId}`, {
-          method: "DELETE",
+        const response = await fetch("/api/groups", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            action: "delete",
+            group: { id: groupId }
+          }),
         });
 
         if (response.ok) {
