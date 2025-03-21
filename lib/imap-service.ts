@@ -13,6 +13,11 @@ export interface ImapAccount {
   password: string;
   secure: boolean;
   lastSync?: Date;
+  // Add SMTP configuration
+  smtpHost?: string;
+  smtpPort?: number;
+  smtpSecure?: boolean;
+  credentials?: string; // Encrypted credentials from DB
 }
 
 interface FetchOptions {
@@ -325,10 +330,17 @@ export async function sendImapEmail({
   // Handle either username or user field
   const username = account.username || account.user || "";
 
+  // Use SMTP settings if available, otherwise fall back to IMAP settings
+  const smtpHost = account.smtpHost || account.host;
+  const smtpPort = account.smtpPort || (account.secure ? 465 : 587); // Default to standard SMTP ports
+  const smtpSecure = account.smtpSecure !== undefined ? account.smtpSecure : account.secure;
+
+  console.log(`Using SMTP configuration: host=${smtpHost}, port=${smtpPort}, secure=${smtpSecure}`);
+
   const transporter = nodemailer.createTransport({
-    host: account.host,
-    port: account.port,
-    secure: account.secure,
+    host: smtpHost,
+    port: smtpPort,
+    secure: smtpSecure,
     auth: {
       user: username,
       pass: account.password,

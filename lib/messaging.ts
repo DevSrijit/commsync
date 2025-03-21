@@ -1,19 +1,25 @@
 "use client";
 
 import { toast } from "@/hooks/use-toast";
-import { sendEmail } from "@/lib/gmail-api"; // Assuming this exists based on the code
+import { sendEmail } from "@/lib/gmail-api"; // For Gmail API
 import { useState } from "react";
 
-export type MessagePlatform = "email" | "whatsapp" | "sms" | "slack" | "reddit";
+// Updated MessagePlatform type to match our supported platforms
+export type MessagePlatform = "gmail" | "imap" | "twilio" | "justcall";
 
-export type MessageAttachment = File;
+export interface MessageAttachment {
+  name: string;
+  content: string;
+  type: string;
+}
 
 export interface MessageData {
   platform: MessagePlatform;
   recipients: string;
   subject?: string;
   content: string;
-  attachments?: MessageAttachment[];
+  attachments?: File[];
+  accountId?: string; // Added accountId for platform-specific accounts
 }
 
 export interface SendOptions {
@@ -63,9 +69,9 @@ export const useSendMessage = () => {
 
       // Handle different platforms
       switch (messageData.platform) {
-        case "email":
+        case "gmail":
           if (!options.accessToken) {
-            throw new Error("Email sending requires an access token");
+            throw new Error("Gmail sending requires an access token");
           }
 
           result = await sendEmail({
@@ -75,20 +81,92 @@ export const useSendMessage = () => {
             body: messageData.content,
             attachments: messageData.attachments || [], // Pass attachments to sendEmail
           });
-
           break;
 
-        case "whatsapp":
-          // Future implementation
-          throw new Error("WhatsApp integration coming soon");
+        case "imap":
+          if (!messageData.accountId) {
+            throw new Error("IMAP sending requires an account ID");
+          }
 
-        case "sms":
-          // Future implementation
-          throw new Error("SMS integration coming soon");
+          // Call IMAP API endpoint
+          const imapResponse = await fetch("/api/imap", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              action: "sendEmail",
+              data: {
+                accountId: messageData.accountId,
+                to: messageData.recipients,
+                subject: messageData.subject || "No subject",
+                body: messageData.content,
+                html: messageData.content, // HTML content is the same as text for now
+              },
+            }),
+          });
 
-        case "slack":
-          // Future implementation
-          throw new Error("Slack integration coming soon");
+          if (!imapResponse.ok) {
+            const errorData = await imapResponse.json();
+            throw new Error(errorData.error || "Failed to send IMAP email");
+          }
+
+          result = await imapResponse.json();
+          break;
+
+        case "twilio":
+          if (!messageData.accountId) {
+            throw new Error("Twilio sending requires an account ID");
+          }
+
+          // Call Twilio API endpoint
+          const twilioResponse = await fetch("/api/twilio/send", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              twilioAccountId: messageData.accountId,
+              to: messageData.recipients,
+              body: messageData.content,
+              // Media attachments could be added here later
+            }),
+          });
+
+          if (!twilioResponse.ok) {
+            const errorData = await twilioResponse.json();
+            throw new Error(errorData.error || "Failed to send Twilio message");
+          }
+
+          result = await twilioResponse.json();
+          break;
+
+        case "justcall":
+          if (!messageData.accountId) {
+            throw new Error("JustCall sending requires an account ID");
+          }
+
+          // Call JustCall API endpoint
+          const justcallResponse = await fetch("/api/justcall/send", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              accountId: messageData.accountId,
+              to: messageData.recipients,
+              body: messageData.content,
+              // Media attachments could be added here later
+            }),
+          });
+
+          if (!justcallResponse.ok) {
+            const errorData = await justcallResponse.json();
+            throw new Error(errorData.error || "Failed to send JustCall message");
+          }
+
+          result = await justcallResponse.json();
+          break;
 
         default:
           throw new Error(`Unsupported platform: ${messageData.platform}`);
@@ -100,7 +178,7 @@ export const useSendMessage = () => {
         error: null,
       });
 
-      // Update toast on success - handle potential type mismatch
+      // Update toast on success
       toast({
         title: "Message sent",
         description: "Your message has been sent successfully",
@@ -123,7 +201,7 @@ export const useSendMessage = () => {
         error: error.message || "Failed to send message",
       });
 
-      // Update toast on error - handle potential type mismatch
+      // Update toast on error
       toast({
         title: "Failed to send message",
         description: error.message || "Please try again later",

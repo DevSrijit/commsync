@@ -36,6 +36,9 @@ const imapFormSchema = z.object({
     username: z.string().email("Must be a valid email"),
     password: z.string().min(1, "Password is required"),
     secure: z.boolean().default(true),
+    smtpHost: z.string().optional(),
+    smtpPort: z.coerce.number().int().positive("SMTP port must be a positive number").optional(),
+    smtpSecure: z.boolean().default(true),
 });
 
 type ImapFormValues = z.infer<typeof imapFormSchema> & {
@@ -63,6 +66,9 @@ export function ImapAccountDialog({ open, onOpenChange }: ImapAccountDialogProps
             username: "",
             password: "",
             secure: true,
+            smtpHost: "",
+            smtpPort: 587,
+            smtpSecure: true,
         },
     });
 
@@ -253,6 +259,65 @@ export function ImapAccountDialog({ open, onOpenChange }: ImapAccountDialogProps
                                 </FormItem>
                             )}
                         />
+
+                        {/* SMTP Configuration Section */}
+                        <div className="border p-4 rounded-md space-y-4">
+                            <h3 className="font-medium text-sm">SMTP Settings (for sending emails)</h3>
+                            <FormDescription className="mt-1">
+                                Leave blank to use the same settings as IMAP
+                            </FormDescription>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <FormField
+                                    control={form.control}
+                                    name="smtpHost"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>SMTP Host</FormLabel>
+                                            <FormControl>
+                                                <Input placeholder="smtp.gmail.com" {...field} />
+                                            </FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+
+                                <FormField
+                                    control={form.control}
+                                    name="smtpPort"
+                                    render={({ field }) => (
+                                        <FormItem>
+                                            <FormLabel>SMTP Port</FormLabel>
+                                            <FormControl>
+                                                <Input type="number" placeholder="587" {...field} />
+                                            </FormControl>
+                                            <FormMessage />
+                                        </FormItem>
+                                    )}
+                                />
+                            </div>
+
+                            <FormField
+                                control={form.control}
+                                name="smtpSecure"
+                                render={({ field }) => (
+                                    <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border p-4">
+                                        <FormControl>
+                                            <Checkbox
+                                                checked={field.value}
+                                                onCheckedChange={field.onChange}
+                                            />
+                                        </FormControl>
+                                        <div className="space-y-1 leading-none">
+                                            <FormLabel>Use secure SMTP connection</FormLabel>
+                                            <FormDescription>
+                                                Use TLS/SSL for SMTP (port 465). Turn off for STARTTLS (port 587)
+                                            </FormDescription>
+                                        </div>
+                                    </FormItem>
+                                )}
+                            />
+                        </div>
 
                         <FormField
                             control={form.control}
