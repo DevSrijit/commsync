@@ -3,6 +3,7 @@
 import { toast } from "@/hooks/use-toast";
 import { sendEmail } from "@/lib/gmail-api"; // For Gmail API
 import { useState } from "react";
+import { uploadFilesToAppwrite } from "@/lib/appwrite-service";
 
 // Updated MessagePlatform type to match our supported platforms
 export type MessagePlatform = "gmail" | "imap" | "twilio" | "justcall";
@@ -20,6 +21,8 @@ export interface MessageData {
   content: string;
   attachments?: File[];
   accountId?: string; // Added accountId for platform-specific accounts
+  justcallNumber?: string;
+  restrictOnce?: "Yes" | "No"; // JustCall API requires "Yes" or "No"
 }
 
 export interface SendOptions {
@@ -156,7 +159,12 @@ export const useSendMessage = () => {
               accountId: messageData.accountId,
               to: messageData.recipients,
               body: messageData.content,
-              // Media attachments could be added here later
+              // Handle media attachments for JustCall
+              media: await processAttachmentsForJustCall(messageData.attachments),
+              // Add JustCall number if provided in messageData (optional)
+              justcall_number: messageData.justcallNumber,
+              // Optional restrict_once parameter
+              restrict_once: messageData.restrictOnce
             }),
           });
 
@@ -233,3 +241,19 @@ export const sendMessage = async (
   const { sendMessage } = useSendMessage();
   return sendMessage(messageData, options);
 };
+
+// Helper function to process attachment files for JustCall
+async function processAttachmentsForJustCall(files?: File[]): Promise<string[]> {
+  if (!files || files.length === 0) {
+    return [];
+  }
+  
+  try {
+    // Upload files to Appwrite and get public URLs
+    const mediaUrls = await uploadFilesToAppwrite(files);
+    return mediaUrls;
+  } catch (error) {
+    console.error('Error processing attachments for JustCall:', error);
+    throw new Error('Failed to process media attachments');
+  }
+}

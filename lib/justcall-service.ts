@@ -326,19 +326,33 @@ export class JustCallService {
   async sendMessage(
     contact_number: string,
     body: string,
-    media?: string[]
+    media?: string[],
+    justcall_number?: string,
+    restrict_once?: "Yes" | "No"
   ): Promise<JustCallMessage> {
     try {
       // Using the V2 SMS send endpoint
       const url = `${this.baseUrl}/texts/new`;
 
+      // Use provided justcall_number or fall back to the account's phone number
+      const phone_number = justcall_number || this.phoneNumber;
+      
+      if (!phone_number) {
+        throw new Error("JustCall phone number is required for sending messages");
+      }
+
       const payload: any = {
+        justcall_number: phone_number,
         contact_number,
         body,
       };
 
       if (media && media.length > 0) {
         payload.media_url = media;
+      }
+      
+      if (restrict_once) {
+        payload.restrict_once = restrict_once;
       }
 
       const response = await fetch(url, {

@@ -24,6 +24,7 @@ import {
     SelectValue,
 } from "@/components/ui/select";
 import { useSendMessage } from "@/lib/messaging";
+import { Switch } from "@/components/ui/switch";
 
 // Define updated message platform types
 export type MessagePlatform = "gmail" | "imap" | "twilio" | "justcall";
@@ -45,6 +46,7 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
     const [messageContent, setMessageContent] = useState("");
     const [attachments, setAttachments] = useState<File[]>([]);
     const [selectedAccountId, setSelectedAccountId] = useState<string>("");
+    const [restrictOnce, setRestrictOnce] = useState<boolean>(false);
 
     const { sendMessage, status } = useSendMessage();
     const isSubmitting = status.sending;
@@ -120,13 +122,27 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
             if (platform === "twilio" || platform === "justcall") {
                 // Send messages sequentially
                 for (const recipient of recipientList) {
+                    // Get account details for JustCall specifically
+                    let justcallNumber = undefined;
+                    let restrictOnceValue = undefined;
+                    
+                    if (platform === "justcall") {
+                        const account = justcallAccounts.find(a => a.id === selectedAccountId);
+                        justcallNumber = account?.accountIdentifier || undefined;
+                        
+                        // Convert boolean to "Yes"/"No" string for JustCall API
+                        restrictOnceValue = restrictOnce ? "Yes" as const : "No" as const;
+                    }
+                    
                     await sendMessage({
                         platform,
                         recipients: recipient.trim(),
                         subject,
                         content: contentToSend,
                         attachments: attachmentsToSend,
-                        accountId: selectedAccountId
+                        accountId: selectedAccountId,
+                        justcallNumber: justcallNumber,
+                        restrictOnce: restrictOnceValue
                     }, {
                         accessToken: session?.user?.accessToken,
                         onSuccess: (newMessage) => {
@@ -213,6 +229,43 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
             );
         }
 
+        // Add JustCall specific options
+        if (platform === "justcall") {
+            return (
+                <div className="space-y-3">
+                    <div className="flex items-center gap-2 px-4 py-2">
+                        <Label htmlFor="account" className="w-20 text-sm font-medium">Account:</Label>
+                        <Select
+                            value={selectedAccountId}
+                            onValueChange={setSelectedAccountId}
+                        >
+                            <SelectTrigger className="flex-1">
+                                <SelectValue placeholder={placeholder} />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {accounts.map(account => (
+                                    <SelectItem key={account.id} value={account.id}>
+                                        {account.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="flex items-center justify-between px-4 py-2">
+                        <Label htmlFor="restrict-once" className="text-sm font-medium">
+                            Prevent duplicate messages (24h)
+                        </Label>
+                        <Switch
+                            id="restrict-once"
+                            checked={restrictOnce}
+                            onCheckedChange={setRestrictOnce}
+                        />
+                    </div>
+                </div>
+            );
+        }
+
+        // Regular account selector for other platforms
         return (
             <div className="flex items-center gap-2 px-4 py-2">
                 <Label htmlFor="account" className="w-20 text-sm font-medium">Account:</Label>

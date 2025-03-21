@@ -9,7 +9,9 @@ const sendMessageSchema = z.object({
   accountId: z.string().min(1, "JustCall account ID is required"),
   to: z.string().min(1, "Recipient phone number is required"),
   body: z.string().min(1, "Message body is required"),
-  media: z.array(z.string()).optional()
+  media: z.array(z.string()).optional(),
+  justcall_number: z.string().optional(),
+  restrict_once: z.enum(["Yes", "No"]).optional()
 });
 
 export async function POST(req: Request) {
@@ -51,7 +53,13 @@ export async function POST(req: Request) {
 
     // Create JustCall service and send the message
     const justcallService = new JustCallService(justcallAccount);
-    const message = await justcallService.sendMessage(to, messageBody, media);
+    const message = await justcallService.sendMessage(
+      to,
+      messageBody,
+      media,
+      validationResult.data.justcall_number || justcallAccount.accountIdentifier,
+      validationResult.data.restrict_once
+    );
 
     // Format the sent message as an Email type for consistent handling in the UI
     const formattedMessage = {
