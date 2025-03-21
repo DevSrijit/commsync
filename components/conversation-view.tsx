@@ -131,8 +131,11 @@ export function ConversationView({
     }
   }, [contactEmail, contact, imapAccounts]);
 
+  // Always use all emails to ensure conversations include both sent and received emails
+  const allEmails = emails;
+
   // Filter all emails related to this conversation, considering account IDs
-  const conversation = filteredEmails
+  const conversation = allEmails
     .filter((email) => {
       if (contactEmail === null) return false;
 
@@ -140,7 +143,9 @@ export function ConversationView({
       console.log(
         `Checking email: ${email.id}, from: ${email.from.email}, accountId: ${
           email.accountId
-        }, type: ${email.accountType || "unknown"}`
+        }, type: ${email.accountType || "unknown"}, labels: ${
+          email.labels?.join(", ") || "none"
+        }`
       );
 
       // For group conversations
@@ -161,6 +166,19 @@ export function ConversationView({
           }
         }
         return false;
+      }
+
+      // Special handling for SENT emails
+      if (email.labels?.includes("SENT") && session?.user?.email) {
+        // For SENT emails, check if the current contact is in the recipients
+        const isSentToContact = email.to.some(
+          (to) => to.email === contactEmail
+        );
+
+        if (isSentToContact) {
+          console.log(`Including SENT email to contact: ${email.id}`);
+          return true;
+        }
       }
 
       // For Gmail emails (from the user's Gmail account)
@@ -224,11 +242,12 @@ export function ConversationView({
             // Show Gmail access limitation message instead of attempting to fetch
             toast({
               title: "Gmail conversation unavailable",
-              description: "We cannot display this conversation due to Gmail API limitations.",
+              description:
+                "We cannot display this conversation due to Gmail API limitations.",
               variant: "destructive",
               duration: 5000,
             });
-            
+
             setIsRefetching(false);
             return;
           }
@@ -421,13 +440,14 @@ export function ConversationView({
                             {email.subject}
                           </span>
                           <span className="text-xs opacity-70">
-                            {formatDistanceToNow(new Date(email.date || ''), {
+                            {formatDistanceToNow(new Date(email.date || ""), {
                               addSuffix: true,
-                              includeSeconds: true
+                              includeSeconds: true,
                             })}
-                            {email.accountType === 'justcall' && (
+                            {email.accountType === "justcall" && (
                               <span className="ml-1">
-                                [Debug: {new Date(email.date || '').toISOString()}]
+                                [Debug:{" "}
+                                {new Date(email.date || "").toISOString()}]
                               </span>
                             )}
                           </span>
@@ -557,10 +577,13 @@ export function ConversationView({
                   // Gmail-specific message
                   <div className="max-w-md">
                     <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium mb-2">Gmail Conversation Unavailable</h3>
+                    <h3 className="text-lg font-medium mb-2">
+                      Gmail Conversation Unavailable
+                    </h3>
                     <p className="text-muted-foreground mb-4">
-                      We cannot display this conversation due to Gmail API limitations. 
-                      This may be due to security restrictions or access permissions.
+                      We cannot display this conversation due to Gmail API
+                      limitations. This may be due to security restrictions or
+                      access permissions.
                     </p>
                     <p className="text-sm text-muted-foreground">
                       Try using an IMAP account for full conversation support.
@@ -570,7 +593,9 @@ export function ConversationView({
                   // Generic empty conversation message for IMAP
                   <div className="max-w-md">
                     <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                    <h3 className="text-lg font-medium mb-2">No Messages Found</h3>
+                    <h3 className="text-lg font-medium mb-2">
+                      No Messages Found
+                    </h3>
                     <p className="text-muted-foreground">
                       Start a new conversation with this contact.
                     </p>
@@ -618,12 +643,17 @@ export function ConversationView({
                 }
               } else {
                 // Get the latest conversation email to use its threadId if available
-                const latestEmailInConversation = conversation.length > 0 
-                  ? conversation.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
-                  : null;
-                
+                const latestEmailInConversation =
+                  conversation.length > 0
+                    ? conversation.sort(
+                        (a, b) =>
+                          new Date(b.date).getTime() -
+                          new Date(a.date).getTime()
+                      )[0]
+                    : null;
+
                 const threadId = latestEmailInConversation?.threadId || null;
-                console.log(`Replying using threadId: ${threadId || 'none'}`);
+                console.log(`Replying using threadId: ${threadId || "none"}`);
 
                 // Regular single-recipient email with threadId for proper threading
                 const newEmail = await sendEmail({
