@@ -329,9 +329,9 @@ export default function GroupDialog({ open, onOpenChange, groupToEdit }: GroupDi
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid grid-cols-2 mx-4 my-2">
             <TabsTrigger value="create">
-              {isEditing ? "Edit Group" : "Create Group"}
+              {isEditing ? "Edit Contact" : "Create Contact"}
             </TabsTrigger>
-            <TabsTrigger value="view">View Groups</TabsTrigger>
+            <TabsTrigger value="view">View Contacts</TabsTrigger>
           </TabsList>
 
           <TabsContent value="create" className="px-4 py-4">
