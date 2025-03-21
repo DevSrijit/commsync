@@ -35,15 +35,15 @@ export function EmailList({
 
   // Add effect to log diagnostic information
   useEffect(() => {
-    const isSMSMessage = (email: Email) => 
-      email.accountType === 'twilio' || 
-      email.accountType === 'justcall' || 
+    const isSMSMessage = (email: Email) =>
+      email.accountType === 'twilio' ||
+      email.accountType === 'justcall' ||
       (email.labels && email.labels.includes('SMS'));
 
     // Count SMS messages
     const smsMessages = emails.filter(isSMSMessage);
     setSmsCount(smsMessages.length);
-    
+
     console.log(`Channel list filtering:
 - Total emails: ${emails.length}
 - SMS messages: ${smsMessages.length}
@@ -56,7 +56,7 @@ export function EmailList({
       const sampleSize = Math.min(3, smsMessages.length);
       console.log(`Sample of ${sampleSize} SMS messages:`);
       smsMessages.slice(0, sampleSize).forEach((msg, i) => {
-        console.log(`SMS #${i+1}: 
+        console.log(`SMS #${i + 1}: 
   - id: ${msg.id}
   - from: ${msg.from.name} (${msg.from.email}) 
   - accountType: ${msg.accountType}
@@ -88,18 +88,18 @@ export function EmailList({
             !email.labels.includes("TRASH") && !email.labels.includes("SENT")
         );
       case "sent":
-        return contactEmails.some((email) => 
+        return contactEmails.some((email) =>
           email.labels.includes("SENT")
         );
       case "trash":
-        return contactEmails.some((email) => 
+        return contactEmails.some((email) =>
           email.labels.includes("TRASH")
         );
       case "sms":
-        return contactEmails.some((email) => 
-          (email.accountType === 'twilio' || 
-           email.accountType === 'justcall' || 
-           (email.labels && email.labels.includes("SMS")))
+        return contactEmails.some((email) =>
+        (email.accountType === 'twilio' ||
+          email.accountType === 'justcall' ||
+          (email.labels && email.labels.includes("SMS")))
         );
       default:
         return true;
@@ -116,18 +116,18 @@ export function EmailList({
   };
 
   // Improved SMS contact detection
-  const isSMSMessage = (email: Email) => 
-    email.accountType === 'twilio' || 
-    email.accountType === 'justcall' || 
+  const isSMSMessage = (email: Email) =>
+    email.accountType === 'twilio' ||
+    email.accountType === 'justcall' ||
     (email.labels && email.labels.includes("SMS"));
 
   // Get all contacts with SMS messages
-  const smsContacts = contacts.filter(contact => 
+  const smsContacts = contacts.filter(contact =>
     emails.some(email => {
-      const isFromOrToContact = 
-        email.from.email === contact.email || 
+      const isFromOrToContact =
+        email.from.email === contact.email ||
         email.to.some(to => to.email === contact.email);
-        
+
       return isFromOrToContact && isSMSMessage(email);
     })
   );
@@ -135,34 +135,34 @@ export function EmailList({
   // If we have no SMS contacts but have SMS messages, create contact entries for them
   const syntheticSMSContacts = smsCount > 0 && smsContacts.length === 0
     ? emails
-        .filter(isSMSMessage)
-        .map(email => ({
-          name: email.from.name || email.from.email,
-          email: email.from.email,
-          lastMessageDate: email.date,
-          lastMessageSubject: 'SMS Message',
-          labels: ['SMS'],
-          accountId: email.accountId,
-          accountType: email.accountType
-        }))
-        // Remove duplicates by email address
-        .filter((contact, index, self) => 
-          index === self.findIndex(c => c.email === contact.email)
-        )
+      .filter(isSMSMessage)
+      .map(email => ({
+        name: email.from.name || email.from.email,
+        email: email.from.email,
+        lastMessageDate: email.date,
+        lastMessageSubject: 'SMS Message',
+        labels: ['SMS'],
+        accountId: email.accountId,
+        accountType: email.accountType
+      }))
+      // Remove duplicates by email address
+      .filter((contact, index, self) =>
+        index === self.findIndex(c => c.email === contact.email)
+      )
     : [];
 
   // Only show SMS contacts when SMS filter is active
-  const displayedContacts = activeFilter === 'sms' 
+  const displayedContacts = activeFilter === 'sms'
     ? [...smsContacts, ...syntheticSMSContacts]
     : filteredContacts;
 
   const GroupItem = ({ group, isSelected, onClick }: {
-    group: Group; 
-    isSelected: boolean; 
+    group: Group;
+    isSelected: boolean;
     onClick: () => void;
   }) => {
     return (
-      <div 
+      <div
         className={cn(
           "flex items-center p-3 hover:bg-muted/50 rounded-lg cursor-pointer",
           isSelected && "bg-muted"
@@ -186,61 +186,72 @@ export function EmailList({
   const loadMoreMessages = useCallback(async () => {
     try {
       setIsLoadingMore(true);
-      
+      setNoMoreMessages(false); // Reset no more messages state when loading starts
+
       // Get the current store state
       const store = useEmailStore.getState();
+
       const initialEmailCount = store.emails.length;
-      
+
       console.log('Loading more messages...');
-      console.log('Current page numbers - IMAP:', store.currentImapPage, 
-                  'Twilio:', store.currentTwilioPage, 
-                  'JustCall:', store.currentJustcallPage);
-      
+      console.log('Current page numbers - IMAP:', store.currentImapPage,
+        'Twilio:', store.currentTwilioPage,
+        'JustCall:', store.currentJustcallPage);
+
       // Track which services returned new messages
       const results = await Promise.all([
         store.syncImapAccounts().then(count => ({ service: 'IMAP', count })),
         store.syncTwilioAccounts().then(count => ({ service: 'Twilio', count })),
         store.syncJustcallAccounts().then(count => ({ service: 'JustCall', count }))
       ]);
-      
+
       // Check if we got new emails
       const newStore = useEmailStore.getState();
       const newEmailCount = newStore.emails.length;
       const messagesLoaded = newEmailCount - initialEmailCount;
-      
+
       // Log results by service
       results.forEach(result => {
         if (result.count !== undefined) {
           console.log(`${result.service} loaded ${result.count} new messages`);
         }
       });
-      
+
       console.log(`Total: Loaded ${messagesLoaded} new messages`);
-      
+
       // We'll consider "no more messages" only if all services return no new messages
-      // for three consecutive attempts
       if (messagesLoaded === 0) {
         // Increment our count of empty loads
         const emptyLoadCount = (parseInt(localStorage.getItem('emptyLoadCount') || '0')) + 1;
         localStorage.setItem('emptyLoadCount', emptyLoadCount.toString());
-        
+
         console.log(`No new messages found (attempt ${emptyLoadCount} of 3)`);
-        
+
         // After three consecutive empty loads, we can assume there are no more messages
         if (emptyLoadCount >= 3) {
           console.log('No more messages to load after 3 attempts.');
           setNoMoreMessages(true);
+          
+          // Reset the "No more messages" state after 3 seconds
+          setTimeout(() => {
+            setNoMoreMessages(false);
+            localStorage.setItem('emptyLoadCount', '0');
+          }, 3000);
         }
       } else {
         // Reset the counter if we got new messages
         localStorage.setItem('emptyLoadCount', '0');
         setNoMoreMessages(false);
       }
-      
+
       setIsLoadingMore(false);
     } catch (error) {
       console.error("Error loading more messages:", error);
       setIsLoadingMore(false);
+      // Show error briefly then allow retry
+      setTimeout(() => {
+        setNoMoreMessages(false);
+      }, 3000);
     }
   }, []);
 
@@ -313,7 +324,7 @@ export function EmailList({
                 <h2 className="text-sm font-medium text-muted-foreground mb-2">Contacts</h2>
                 <div className="space-y-1">
                   {groups.map(group => (
-                    <GroupItem 
+                    <GroupItem
                       key={group.id}
                       group={group}
                       isSelected={selectedGroupId === group.id}
@@ -342,7 +353,7 @@ export function EmailList({
                 </div>
               </div>
             )}
-            
+
             {/* Load More button */}
             <div className="p-4 flex justify-center">
               <Button

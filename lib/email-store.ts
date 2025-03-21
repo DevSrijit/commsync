@@ -133,15 +133,6 @@ const isValidEmail = (email: Email): boolean => {
   return true;
 };
 
-const generateContactKey = (
-  accountType: string | undefined,
-  accountId: string | undefined,
-  email: string
-): string => {
-  // Use email address as the primary key, regardless of account
-  return email.toLowerCase();
-};
-
 // Helper function to generate contacts from emails
 const generateContactsFromEmails = (emails: Email[]): Contact[] => {
   const contactsMap = new Map<string, Contact>();
@@ -255,8 +246,34 @@ export const useEmailStore = create<EmailStore>((set, get) => {
 
     syncEmails: async (gmailToken: string | null) => {
       const { imapAccounts } = get();
-      // Set very large page size to fetch all emails
-      await SyncService.getInstance().syncAllEmails(gmailToken, imapAccounts, 1, 100000);
+      try {
+        // Set very large page size to fetch all emails
+        await SyncService.getInstance().syncAllEmails(gmailToken, imapAccounts, 1, 100000);
+      } catch (error: any) {
+        // Handle auth errors
+        console.error("Error syncing emails:", error);
+        if (error?.response?.status === 401 || 
+            (error?.error?.code === 401) ||
+            (error?.message && error.message.includes('Invalid Credentials'))) {
+          
+          // Instead of using the imported function, handle it here:
+          try {
+            const response = await fetch(`/api/auth/refresh?provider=google`, {
+              method: 'POST',
+            });
+            
+            if (!response.ok) {
+              console.error('Failed to refresh Google token:', await response.text());
+              // Only redirect if we're in browser context
+              if (typeof window !== 'undefined') {
+                window.location.href = `/login?error=token_expired&provider=google`;
+              }
+            }
+          } catch (refreshError) {
+            console.error('Error refreshing Google token:', refreshError);
+          }
+        }
+      }
     },
 
     syncImapAccounts: async () => {
@@ -296,6 +313,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
         set((state) => ({ ...state, imapAccounts: accounts }));
         
         let totalNewMessages = 0;
+        let newMessagesFoundForAnyAccount = false;
             
         // Process each account separately to get messages
         for (const account of accounts) {
@@ -337,6 +355,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
               
               if (newEmails.length > 0) {
                 totalNewMessages += newEmails.length;
+                newMessagesFoundForAnyAccount = true;
                 
                 // Merge with existing emails
                 const mergedEmails = [...currentEmails, ...newEmails];
@@ -347,12 +366,6 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                 get().setEmails(mergedEmails);
                 console.log(`Updated email store with ${newEmails.length} older IMAP messages. New count: ${mergedEmails.length}`);
                 setCacheValue("emails", mergedEmails);
-                
-                // Increment the page counter if we're looking at the last account and we found new emails
-                if (account === accounts[accounts.length - 1]) {
-                  set((state) => ({ ...state, currentImapPage: currentPage + 1 }));
-                  console.log(`Incremented IMAP page to ${currentPage + 1}`);
-                }
               } else {
                 console.log(`No new IMAP messages for account ${account.id} on page ${currentPage}`);
               }
@@ -376,6 +389,12 @@ export const useEmailStore = create<EmailStore>((set, get) => {
           } catch (error) {
             console.error(`Error updating last sync time for IMAP account ${account.id}:`, error);
           }
+        }
+        
+        // Only increment the page counter if we found new messages for any account
+        if (newMessagesFoundForAnyAccount) {
+          set((state) => ({ ...state, currentImapPage: currentPage + 1 }));
+          console.log(`Incremented IMAP page to ${currentPage + 1}`);
         }
         
         // Return the number of new messages we found
@@ -423,6 +442,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
         set((state) => ({ ...state, twilioAccounts: accounts }));
         
         let totalNewMessages = 0;
+        let newMessagesFoundForAnyAccount = false;
         
         // Sync messages for each account
         const syncResult = await fetch("/api/sync/messages", {
@@ -474,6 +494,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
               
               if (newEmails.length > 0) {
                 totalNewMessages += newEmails.length;
+                newMessagesFoundForAnyAccount = true;
                 
                 // Merge with existing emails
                 const mergedEmails = [...currentEmails, ...newEmails];
@@ -484,10 +505,6 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                 get().setEmails(mergedEmails);
                 console.log(`Updated email store with ${newEmails.length} older Twilio messages. New count: ${mergedEmails.length}`);
                 setCacheValue("emails", mergedEmails);
-                
-                // Increment the page counter only if we found new emails
-                set((state) => ({ ...state, currentTwilioPage: currentPage + 1 }));
-                console.log(`Incremented Twilio page to ${currentPage + 1}`);
               } else {
                 console.log(`No new Twilio messages on page ${currentPage}, not incrementing page counter`);
               }
@@ -499,6 +516,12 @@ export const useEmailStore = create<EmailStore>((set, get) => {
           }
         } else {
           console.error("Failed to sync Twilio messages:", await syncResult.text());
+        }
+        
+        // Only increment the page counter if we found new messages
+        if (newMessagesFoundForAnyAccount) {
+          set((state) => ({ ...state, currentTwilioPage: currentPage + 1 }));
+          console.log(`Incremented Twilio page to ${currentPage + 1}`);
         }
         
         // Return the count of new messages found
@@ -546,6 +569,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
         set((state) => ({ ...state, justcallAccounts: accounts }));
         
         let totalNewMessages = 0;
+        let newMessagesFoundForAnyAccount = false;
         
         // Process each account separately to ensure phone number filtering
         for (const account of accounts) {
@@ -621,6 +645,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                 
                 if (newEmails.length > 0) {
                   totalNewMessages += newEmails.length;
+                  newMessagesFoundForAnyAccount = true;
                   
                   // Merge with existing emails
                   const mergedEmails = [...currentEmails, ...newEmails];
@@ -631,12 +656,6 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                   get().setEmails(mergedEmails);
                   console.log(`Updated email store with ${newEmails.length} older JustCall messages for phone ${account.accountIdentifier}. New count: ${mergedEmails.length}`);
                   setCacheValue("emails", mergedEmails);
-                  
-                  // Increment the page counter only if we found new emails (per account)
-                  if (account === accounts[accounts.length - 1]) { // Only increment after processing the last account
-                    set((state) => ({ ...state, currentJustcallPage: currentPage + 1 }));
-                    console.log(`Incremented JustCall page to ${currentPage + 1}`);
-                  }
                 } else {
                   console.log(`No new JustCall messages for phone ${account.accountIdentifier} on page ${currentPage}`);
                 }
@@ -649,6 +668,12 @@ export const useEmailStore = create<EmailStore>((set, get) => {
           } else {
             console.error(`Failed to sync JustCall messages for phone ${account.accountIdentifier}:`, await syncResult.text());
           }
+        }
+        
+        // Only increment the page counter if we found new messages for any account
+        if (newMessagesFoundForAnyAccount) {
+          set((state) => ({ ...state, currentJustcallPage: currentPage + 1 }));
+          console.log(`Incremented JustCall page to ${currentPage + 1}`);
         }
         
         // Return the count of new messages found
