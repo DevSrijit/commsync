@@ -11,8 +11,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get the platform and other parameters from request body
-    const { platform, phoneNumber, accountId, page, pageSize, oldestDate, sortDirection } = await request.json();
+    // Extract payload
+    const payload = await request.json();
+    const { platform, authCode, pageSize = 100, accountId, phoneNumber, lastSmsIdFetched, sortDirection = 'desc', isLoadingMore = false } = payload;
+    
+    // If this is a "Load More" operation, log it clearly
+    if (isLoadingMore) {
+      console.log(`[${platform.toUpperCase()}] Load More operation with cursor: ${lastSmsIdFetched || 'none'}`);
+    } else {
+      console.log(`[${platform.toUpperCase()}] Regular sync operation (no cursor)`);
+    }
 
     if (!platform) {
       return NextResponse.json({ error: 'Platform parameter is required' }, { status: 400 });
@@ -31,9 +39,9 @@ export async function POST(request: Request) {
         result = await syncJustCallAccounts(session.user.id, { 
           phoneNumber, 
           accountId,
-          page,
           pageSize,
-          oldestDate,
+          // Only include lastSmsIdFetched if this is a load more operation
+          ...(isLoadingMore ? { lastSmsIdFetched } : {}),
           sortDirection
         });
         break;

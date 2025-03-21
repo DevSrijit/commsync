@@ -22,7 +22,7 @@ export async function GET(request: Request) {
     const phoneNumber = searchParams.get('phoneNumber');
     const accountId = searchParams.get('accountId');
     const sortDirection = searchParams.get('sortDirection') as 'asc' | 'desc' || 'desc';
-    const oldestDate = searchParams.get('oldestDate');
+    const lastSmsIdFetched = searchParams.get('lastSmsIdFetched');
     
     if (!platform) {
       return NextResponse.json({ error: 'Platform parameter is required' }, { status: 400 });
@@ -68,27 +68,27 @@ export async function GET(request: Request) {
             continue;
           }
           
-          // Create a Date object from the oldestDate string if provided
-          let oldestDateObj: Date | undefined = undefined;
-          if (oldestDate) {
-            try {
-              oldestDateObj = new Date(oldestDate);
-              console.log(`Using oldest date filter: ${oldestDateObj.toISOString()}`);
-            } catch (e) {
-              console.error(`Invalid oldestDate parameter: ${oldestDate}`, e);
-            }
-          }
+          console.log(`Fetching messages for JustCall account ${account.id}:`);
+          console.log(`- Phone: ${phoneToUse}`);
+          console.log(`- Sort direction: ${sortDirection}`);
+          console.log(`- Pagination cursor (lastSmsIdFetched): ${lastSmsIdFetched || 'none'}`);
           
-          console.log(`Fetching messages for JustCall account ${account.id} with phone ${phoneToUse}, page ${page}, sort=${sortDirection}`);
-          // Pass the page, pageSize, and sortDirection parameters to the getMessages function
+          // Use cursor-based pagination with lastSmsIdFetched instead of page numbers
           messages = await justcallService.getMessages(
             phoneToUse, 
-            oldestDateObj,
+            undefined, // No date filtering
             pageSize,
-            page,
+            lastSmsIdFetched || undefined,
             sortDirection as 'asc' | 'desc'
           );
-          console.log(`Retrieved ${messages.length} messages from JustCall for page ${page} with sort=${sortDirection}`);
+          console.log(`Retrieved ${messages.length} messages from JustCall`);
+          
+          // Log the ID range to help with troubleshooting pagination
+          if (messages.length > 0) {
+            const firstId = messages[0].id;
+            const lastId = messages[messages.length - 1].id;
+            console.log(`Message ID range: ${firstId} - ${lastId}`);
+          }
         }
         
         // Add account ID to each message for reference
@@ -104,7 +104,15 @@ export async function GET(request: Request) {
       }
     }
 
-    // Apply pagination to the results
+    // For JustCall with cursor-based pagination, we don't need to apply additional pagination
+    if (platform.toLowerCase() === 'justcall') {
+      return NextResponse.json({ 
+        messages: allMessages,
+        total: allMessages.length
+      });
+    }
+    
+    // Apply pagination to the results for other platforms
     const startIndex = (page - 1) * pageSize;
     const endIndex = startIndex + pageSize;
     const paginatedMessages = allMessages.slice(startIndex, endIndex);

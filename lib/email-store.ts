@@ -19,7 +19,7 @@ interface EmailStore {
   groups: Group[];
   currentImapPage: number;
   currentTwilioPage: number;
-  currentJustcallPage: number;
+  lastJustcallMessageId: string | null;
   setEmails: (emails: Email[]) => void;
   setActiveFilter: (filter: MessageCategory) => void;
   addEmail: (email: Email) => void;
@@ -29,7 +29,7 @@ interface EmailStore {
   syncEmails: (gmailToken: string | null) => Promise<void>;
   syncImapAccounts: () => Promise<number>;
   syncTwilioAccounts: () => Promise<number>;
-  syncJustcallAccounts: () => Promise<number>;
+  syncJustcallAccounts: (isLoadingMore?: boolean) => Promise<number>;
   setImapAccounts: (accounts: ImapAccount[]) => void;
   setTwilioAccounts: (accounts: any[]) => void;
   setJustcallAccounts: (accounts: any[]) => void;
@@ -50,7 +50,8 @@ const loadPersistedData = async () => {
       imapAccounts: [], 
       twilioAccounts: [],
       justcallAccounts: [],
-      groups: [] 
+      groups: [],
+      lastJustcallMessageId: null
     };
   }
 
@@ -61,7 +62,8 @@ const loadPersistedData = async () => {
       "imapAccounts", 
       "twilioAccounts", 
       "justcallAccounts", 
-      "groups"
+      "groups",
+      "lastJustcallMessageId"
     ]);
 
     return {
@@ -70,10 +72,11 @@ const loadPersistedData = async () => {
       twilioAccounts: cacheData.twilioAccounts || [],
       justcallAccounts: cacheData.justcallAccounts || [],
       groups: cacheData.groups || [],
+      lastJustcallMessageId: cacheData.lastJustcallMessageId || null,
     };
   } catch (e) {
     console.error("Failed to load persisted data:", e);
-    return { emails: [], imapAccounts: [], twilioAccounts: [], justcallAccounts: [], groups: [] };
+    return { emails: [], imapAccounts: [], twilioAccounts: [], justcallAccounts: [], groups: [], lastJustcallMessageId: null };
   }
 };
 
@@ -213,7 +216,14 @@ const generateContactsFromEmails = (emails: Email[]): Contact[] => {
 
 export const useEmailStore = create<EmailStore>((set, get) => {
   // Initialize with empty data, we'll load asynchronously
-  const initialData = { emails: [], imapAccounts: [], twilioAccounts: [], justcallAccounts: [], groups: [] };
+  const initialData = { 
+    emails: [], 
+    imapAccounts: [], 
+    twilioAccounts: [], 
+    justcallAccounts: [], 
+    groups: [],
+    lastJustcallMessageId: null
+  };
 
   // Load data asynchronously after initialization
   if (typeof window !== "undefined") {
@@ -227,7 +237,8 @@ export const useEmailStore = create<EmailStore>((set, get) => {
           imapAccounts: persistedData.imapAccounts,
           twilioAccounts: persistedData.twilioAccounts,
           justcallAccounts: persistedData.justcallAccounts,
-          groups: persistedData.groups
+          groups: persistedData.groups,
+          lastJustcallMessageId: persistedData.lastJustcallMessageId
         });
       } catch (error) {
         console.error("Error loading persisted data:", error);
@@ -246,7 +257,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
     groups: initialData.groups,
     currentImapPage: 1,
     currentTwilioPage: 1,
-    currentJustcallPage: 1,
+    lastJustcallMessageId: initialData.lastJustcallMessageId,
 
     syncEmails: async (gmailToken: string | null) => {
       const { imapAccounts } = get();
@@ -546,25 +557,25 @@ export const useEmailStore = create<EmailStore>((set, get) => {
       }
     },
 
-    syncJustcallAccounts: async () => {
+    syncJustcallAccounts: async (isLoadingMore: boolean = false) => {
       try {
         console.log("Starting JustCall accounts sync");
-        // Get current page
-        const currentPage = get().currentJustcallPage;
-        console.log(`Fetching JustCall accounts, page ${currentPage}`);
-
-        // For loading older messages, we need to track the oldest message date
-        // Get all current emails to find the oldest date
-        const currentEmails = get().emails;
-        const justcallEmails = currentEmails.filter(email => email.accountType === 'justcall');
         
-        // Find the oldest justcall message date if we have any
-        let oldestDate: Date | undefined = undefined;
-        if (justcallEmails.length > 0) {
-          const dates = justcallEmails.map((email: Email) => new Date(email.date));
-          oldestDate = new Date(Math.min(...dates.map(d => d.getTime())));
-          console.log(`Oldest JustCall message date: ${oldestDate.toISOString()}`);
+        // Get the current lastJustcallMessageId for pagination
+        const lastMessageId = get().lastJustcallMessageId;
+        
+        // Only use lastMessageId for pagination if this is a "Load More" operation
+        const paginationCursor = isLoadingMore ? lastMessageId : null;
+        
+        console.log(`Fetching JustCall messages: ${isLoadingMore ? 'LOAD MORE operation' : 'SYNC operation'}`);
+        if (isLoadingMore) {
+          console.log(`Using pagination cursor: ${paginationCursor || 'none'}`);
+        } else {
+          console.log('Getting most recent messages (no cursor - sync operation)');
         }
+
+        // Get all current emails for merging
+        const currentEmails = get().emails;
         
         // Fetch all JustCall accounts for the user
         const response = await fetch("/api/sync/accounts?platform=justcall");
@@ -583,7 +594,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
         set((state) => ({ ...state, justcallAccounts: accounts }));
         
         let totalNewMessages = 0;
-        let newMessagesFoundForAnyAccount = false;
+        let lastProcessedMessageId = lastMessageId;
         
         // Process each account separately to ensure phone number filtering
         for (const account of accounts) {
@@ -601,25 +612,38 @@ export const useEmailStore = create<EmailStore>((set, get) => {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               platform: "justcall",
-              page: currentPage,
               pageSize: 100,
               phoneNumber: account.accountIdentifier,
               accountId: account.id,
-              oldestDate: oldestDate ? oldestDate.toISOString() : undefined,
-              sortDirection: 'asc' // Important: Load older messages, not newer
+              lastSmsIdFetched: paginationCursor, // Only use cursor for "Load More" operations
+              sortDirection: 'desc', // Always use desc for newest messages first
+              isLoadingMore: isLoadingMore // Indicate whether this is a "Load More" operation
             }),
           });
           
           if (syncResult.ok) {
             // After syncing, get messages for this specific phone number
             console.log(`Current email count before JustCall sync: ${currentEmails.length}`);
-            const messagesResponse = await fetch(`/api/messages?platform=justcall&page=${currentPage}&pageSize=100&phoneNumber=${encodeURIComponent(account.accountIdentifier)}&accountId=${account.id}&oldestDate=${oldestDate ? encodeURIComponent(oldestDate.toISOString()) : ''}&sortDirection=asc`);
+            const messagesResponse = await fetch(`/api/messages?platform=justcall&pageSize=100&phoneNumber=${encodeURIComponent(account.accountIdentifier)}&accountId=${account.id}&lastSmsIdFetched=${paginationCursor || ''}&sortDirection=desc`);
             
             if (messagesResponse.ok) {
               const { messages } = await messagesResponse.json();
-              console.log(`Retrieved ${messages?.length || 0} older JustCall messages for phone ${account.accountIdentifier} on page ${currentPage}`);
+              console.log(`Retrieved ${messages?.length || 0} JustCall messages for phone ${account.accountIdentifier}`);
               
               if (messages && messages.length > 0) {
+                // Save the ID of the last message for pagination
+                // In descending order, the last message (oldest) should be used for pagination
+                const lastMessage = messages[messages.length - 1]; // Last is oldest in desc order
+                if (lastMessage && lastMessage.id) {
+                  // Only update lastProcessedMessageId if we're loading more
+                  if (isLoadingMore) {
+                    lastProcessedMessageId = lastMessage.id;
+                    console.log(`Updated cursor to last message ID: ${lastMessage.id} (Load More operation)`);
+                  } else {
+                    console.log(`Not updating pagination cursor during sync operation`);
+                  }
+                }
+                
                 // Convert JustCall messages to Email format
                 const justcallEmails = messages.map((msg: any) => {
                   // Format timestamp using the utility function with priority:
@@ -644,9 +668,6 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                   else {
                     timestamp = new Date().toISOString();
                   }
-                  
-                  // Log the resulting timestamp for debugging
-                  console.log(`Final timestamp for message ${msg.id}: ${timestamp}`);
                   
                   return {
                     id: msg.id,
@@ -689,14 +710,12 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                 
                 console.log(`Converted ${justcallEmails.length} JustCall messages to Email format`);
                 
-                // When loading older messages, we shouldn't have duplicates by ID
-                // But check anyway for safety
+                // Check for duplicates by ID
                 const existingIds = new Set(currentEmails.map(email => email.id));
                 const newEmails = justcallEmails.filter((email: Email) => !existingIds.has(email.id));
                 
                 if (newEmails.length > 0) {
                   totalNewMessages += newEmails.length;
-                  newMessagesFoundForAnyAccount = true;
                   
                   // Merge with existing emails
                   const mergedEmails = [...currentEmails, ...newEmails];
@@ -710,13 +729,13 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                   });
                   
                   get().setEmails(mergedEmails);
-                  console.log(`Updated email store with ${newEmails.length} older JustCall messages for phone ${account.accountIdentifier}. New count: ${mergedEmails.length}`);
+                  console.log(`Updated email store with ${newEmails.length} JustCall messages for phone ${account.accountIdentifier}. New count: ${mergedEmails.length}`);
                   setCacheValue("emails", mergedEmails);
                 } else {
-                  console.log(`No new JustCall messages for phone ${account.accountIdentifier} on page ${currentPage}`);
+                  console.log(`No new JustCall messages for phone ${account.accountIdentifier}`);
                 }
               } else {
-                console.log(`No JustCall messages for phone ${account.accountIdentifier} on page ${currentPage}`);
+                console.log(`No JustCall messages for phone ${account.accountIdentifier}`);
               }
             } else {
               console.error(`Failed to fetch JustCall messages for phone ${account.accountIdentifier}:`, await messagesResponse.text());
@@ -726,10 +745,13 @@ export const useEmailStore = create<EmailStore>((set, get) => {
           }
         }
         
-        // Only increment the page counter if we found new messages for any account
-        if (newMessagesFoundForAnyAccount) {
-          set((state) => ({ ...state, currentJustcallPage: currentPage + 1 }));
-          console.log(`Incremented JustCall page to ${currentPage + 1}`);
+        // Update the lastJustcallMessageId for next pagination only if this was a "Load More" operation
+        if (isLoadingMore && lastProcessedMessageId && lastProcessedMessageId !== lastMessageId) {
+          set((state) => ({ ...state, lastJustcallMessageId: lastProcessedMessageId }));
+          setCacheValue("lastJustcallMessageId", lastProcessedMessageId);
+          console.log(`Updated last JustCall message ID to: ${lastProcessedMessageId} (Load More operation)`);
+        } else if (!isLoadingMore) {
+          console.log(`Skipping cursor update during sync operation`);
         }
         
         // Return the count of new messages found

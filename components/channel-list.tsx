@@ -219,23 +219,33 @@ export function EmailList({
       const store = useEmailStore.getState();
 
       const initialEmailCount = store.emails.length;
+      const initialCursor = store.lastJustcallMessageId;
 
       console.log('Loading more messages...');
-      console.log('Current page numbers - IMAP:', store.currentImapPage,
-        'Twilio:', store.currentTwilioPage,
-        'JustCall:', store.currentJustcallPage);
+      console.log('Current pagination state:');
+      console.log('- IMAP page:', store.currentImapPage);
+      console.log('- Twilio page:', store.currentTwilioPage);
+      console.log('- JustCall cursor (lastMessageId):', store.lastJustcallMessageId || 'none');
 
       // Track which services returned new messages
       const results = await Promise.all([
         store.syncImapAccounts().then(count => ({ service: 'IMAP', count })),
         store.syncTwilioAccounts().then(count => ({ service: 'Twilio', count })),
-        store.syncJustcallAccounts().then(count => ({ service: 'JustCall', count }))
+        store.syncJustcallAccounts(true).then(count => ({ service: 'JustCall', count }))
       ]);
 
       // Check if we got new emails
       const newStore = useEmailStore.getState();
       const newEmailCount = newStore.emails.length;
       const messagesLoaded = newEmailCount - initialEmailCount;
+      
+      // Check if JustCall cursor changed
+      if (initialCursor !== newStore.lastJustcallMessageId) {
+        console.log('JustCall cursor updated:', 
+          `${initialCursor || 'none'} → ${newStore.lastJustcallMessageId || 'none'}`);
+      } else if (newStore.lastJustcallMessageId) {
+        console.warn('JustCall cursor did not update! Still using:', newStore.lastJustcallMessageId);
+      }
 
       // Log results by service
       results.forEach(result => {
@@ -263,6 +273,9 @@ export function EmailList({
           setTimeout(() => {
             setNoMoreMessages(false);
             localStorage.setItem('emptyLoadCount', '0');
+            
+            // For JustCall, we don't need to reset anything as we use cursor-based pagination
+            // The lastJustcallMessageId will be automatically updated as new messages come in
           }, 3000);
         }
       } else {

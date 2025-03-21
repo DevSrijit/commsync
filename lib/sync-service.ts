@@ -163,9 +163,8 @@ export const syncJustCallAccounts = async (
   options?: { 
     phoneNumber?: string; 
     accountId?: string;
-    page?: number;
     pageSize?: number;
-    oldestDate?: string;
+    lastSmsIdFetched?: string;
     sortDirection?: 'asc' | 'desc';
   }
 ): Promise<{ success: number; failed: number; results: any[] }> => {
@@ -185,8 +184,7 @@ export const syncJustCallAccounts = async (
       where: query,
     });
 
-    // Reduce logging verbosity
-    // console.log(`Syncing ${accounts.length} JustCall accounts`);
+    console.log(`Syncing ${accounts.length} JustCall accounts`);
     
     const results = await Promise.allSettled(
       accounts.map(async (account) => {
@@ -202,41 +200,38 @@ export const syncJustCallAccounts = async (
           }
           
           console.log(`Syncing messages for JustCall account ${account.id} with phone number: ${phoneNumber}`);
-
-          // Parse oldest date if provided
-          let oldestDate: Date | undefined = undefined;
-          if (options?.oldestDate) {
-            try {
-              oldestDate = new Date(options.oldestDate);
-              console.log(`Using oldest date filter: ${oldestDate.toISOString()}`);
-            } catch (e) {
-              console.error(`Invalid oldestDate parameter: ${options.oldestDate}`, e);
-            }
-          }
           
-          // Default to using lastSync date if no oldestDate is provided and we're fetching newer messages (desc)
-          // For older messages (asc), we should use oldestDate as the upper bound, not lastSync
-          const dateToUse = options?.sortDirection === 'asc' ? oldestDate : account.lastSync;
+          // Use cursor-based pagination with lastSmsIdFetched
+          console.log(`JustCall sync for account ${account.id}:`);
+          console.log(`- Phone: ${phoneNumber}`);
+          console.log(`- Sort: ${options?.sortDirection || 'desc'}`);
+          console.log(`- Pagination cursor: ${options?.lastSmsIdFetched || 'none'}`);
           
-          // Get messages since last sync for the specific phone number
-          console.log(`Fetching messages for account ${account.id} with phone ${phoneNumber}, date filter: ${dateToUse?.toISOString() || 'none'}, sort: ${options?.sortDirection || 'desc'}`);
-          
-          // Now proceed with the normal filtered request
+          // Get messages using the lastSmsIdFetched for pagination instead of date-based filtering
           const messages = await justCallService.getMessages(
             phoneNumber, 
-            dateToUse,
+            undefined, // No date filtering needed
             options?.pageSize || 100,
-            options?.page || 1,
-            options?.sortDirection || 'desc'
+            options?.lastSmsIdFetched,
+            options?.sortDirection || 'desc'  // Default to desc for newest first
           );
           
-          // Add debug logging to inspect the timestamps of retrieved messages
+          // Add debug logging to inspect the retrieved messages
           if (messages.length > 0) {
-            console.log(`Retrieved ${messages.length} JustCall messages for account ${account.id}. First message timestamp:`, {
-              created_at: messages[0].created_at,
-              sms_user_date: messages[0].sms_user_date,
-              sms_user_time: messages[0].sms_user_time
+            console.log(`Retrieved ${messages.length} JustCall messages for account ${account.id}.`);
+            console.log(`Message ID range: ${messages[0].id} - ${messages[messages.length-1].id}`);
+            
+            // Remember the oldest message ID for returning to the caller
+            const oldestMessageId = messages[messages.length-1].id;
+            
+            // Log a sample of messages
+            const sampleSize = Math.min(3, messages.length);
+            console.log(`Sample of ${sampleSize} messages (showing IDs):`);
+            messages.slice(0, sampleSize).forEach((msg, idx) => {
+              console.log(`- ${msg.id}`);
             });
+          } else {
+            console.log(`No messages retrieved for account ${account.id}`);
           }
           
           let processedCount = 0;
@@ -260,9 +255,9 @@ export const syncJustCallAccounts = async (
             }
           }
           
-          // Only update last sync time if we're fetching newer messages (desc sort)
-          // When fetching older messages (asc sort), we don't want to update the lastSync
-          if (!options?.sortDirection || options.sortDirection === 'desc') {
+          // Only update last sync time if we're not using pagination for loading more messages
+          // This way we don't affect the sync time when just loading more historical messages
+          if (!options?.lastSmsIdFetched) {
             // Store the sync time but don't affect message timestamps
             await db.syncAccount.update({
               where: { id: account.id },
@@ -270,7 +265,15 @@ export const syncJustCallAccounts = async (
             });
           }
           
-          return { accountId: account.id, processed: processedCount, skipped: skippedCount };
+          // Return data including the oldest message ID for pagination
+          const oldestMessageId = messages.length > 0 ? messages[messages.length-1].id : null;
+          
+          return { 
+            accountId: account.id, 
+            processed: processedCount, 
+            skipped: skippedCount, 
+            lastMessageId: oldestMessageId // Return the oldest message ID for pagination
+          };
         } catch (error) {
           console.error(`Error syncing JustCall account ${account.id}:`, error);
           throw error;

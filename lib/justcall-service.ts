@@ -143,7 +143,7 @@ export class JustCallService {
     phoneNumber?: string,
     fromDate?: Date,
     limit = 100,
-    page = 1,
+    lastSmsIdFetched?: string,
     sortDirection: "asc" | "desc" = "desc"
   ): Promise<JustCallMessage[]> {
     try {
@@ -151,10 +151,10 @@ export class JustCallService {
       let url = `${this.baseUrl}/texts`;
       const queryParams = new URLSearchParams();
 
+      // Set pagination parameters
       queryParams.append("per_page", limit.toString());
-      queryParams.append("page", page.toString());
-
-      // The 'sort' parameter should be 'id' or 'datetime', not the direction
+      
+      // The 'sort' parameter should always be 'datetime'
       queryParams.append("sort", "datetime");
 
       // The direction should be in an 'order' parameter
@@ -175,21 +175,16 @@ export class JustCallService {
         );
       }
 
-      if (fromDate) {
-        // Both from_datetime and to_datetime can be used together
-        // When loading older messages (order=asc), we want messages older than fromDate
-        // When loading newer messages (order=desc), we want messages newer than fromDate
-        if (sortDirection === "asc") {
-          // For ascending order (oldest first), use to_datetime as upper bound
-          queryParams.append("to_datetime", fromDate.toISOString());
-        } else {
-          // For descending order (newest first), use from_datetime as lower bound
-          queryParams.append("from_datetime", fromDate.toISOString());
-        }
+      // Use cursor-based pagination with last_sms_id_fetched instead of page number
+      if (lastSmsIdFetched) {
+        queryParams.append("last_sms_id_fetched", lastSmsIdFetched);
+        console.log(`Using cursor-based pagination with last_sms_id_fetched: ${lastSmsIdFetched}`);
+      } else {
+        console.log('Initial fetch (no pagination cursor)');
       }
 
       url = `${url}?${queryParams.toString()}`;
-      console.log(`JustCall fetch URL with order=${sortDirection}:`, url);
+      console.log(`JustCall API request: ${url}`);
 
       const response = await fetch(url, {
         method: "GET",
@@ -219,8 +214,7 @@ export class JustCallService {
       }
 
       const data = await response.json();
-      console.log("JustCall API response data:", JSON.stringify(data, null, 2));
-
+      
       const messages = data.data || [];
       if (!Array.isArray(messages)) {
         console.error("JustCall API returned unexpected data format:", data);
@@ -229,20 +223,22 @@ export class JustCallService {
 
       // Log all messages with their timestamps for debugging
       if (messages.length > 0) {
-        console.log(`Detailed JustCall message timestamps (showing first 3 of ${messages.length}):`);
-        messages.slice(0, 3).forEach((msg, idx) => {
+        console.log(`Retrieved ${messages.length} JustCall messages.`);
+        console.log(`First message ID: ${messages[0].id}, Last message ID: ${messages[messages.length-1].id}`);
+        
+        // Show the first 3 messages for debugging
+        const sampleSize = Math.min(3, messages.length);
+        console.log(`Sample of first ${sampleSize} messages:`);
+        messages.slice(0, sampleSize).forEach((msg, idx) => {
           console.log(`Message ${idx+1}:`, {
             id: msg.id,
             direction: msg.direction,
             contact_number: msg.contact_number,
-            justcall_number: msg.justcall_number,
-            sms_user_date: msg.sms_user_date,
-            sms_user_time: msg.sms_user_time,
-            sms_date: msg.sms_date,
-            sms_time: msg.sms_time,
-            datetime: msg.datetime
+            date: msg.sms_user_date || msg.sms_date
           });
         });
+      } else {
+        console.log('No messages returned from JustCall API');
       }
 
       // Create a map to group messages by conversation
