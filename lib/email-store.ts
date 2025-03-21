@@ -6,6 +6,7 @@ import { MessageCategory } from "@/components/sidebar";
 import { ImapAccount } from "@/lib/imap-service";
 import { SyncService } from "./sync-service";
 import { getCacheValue, getMultipleCacheValues, setCacheValue, removeCacheValue } from './client-cache-browser';
+import { formatJustCallTimestamp } from "./justcall-service";
 
 interface EmailStore {
   emails: Email[];
@@ -148,12 +149,14 @@ const generateContactsFromEmails = (emails: Email[]): Contact[] => {
                   email.accountType === 'justcall' || 
                   (email.labels && email.labels.includes('SMS'));
     
+    // Safely parse the email date to a Date object
+    const emailDate = email.date ? new Date(email.date) : new Date();
+    
     // Add sender as contact (if not the current user)
     if (!email.from.email.includes("me")) {
       // Use email address only as the contact key
       const contactKey = email.from.email.toLowerCase();
       const existingContact = contactsMap.get(contactKey);
-      const emailDate = new Date(email.date);
 
       if (
         !existingContact ||
@@ -178,7 +181,6 @@ const generateContactsFromEmails = (emails: Email[]): Contact[] => {
           // Use email address only as the contact key
           const contactKey = recipient.email.toLowerCase();
           const existingContact = contactsMap.get(contactKey);
-          const emailDate = new Date(email.date);
 
           if (
             !existingContact ||
@@ -201,9 +203,11 @@ const generateContactsFromEmails = (emails: Email[]): Contact[] => {
 
   // Sort contacts by most recent message
   return Array.from(contactsMap.values()).sort(
-    (a, b) =>
-      new Date(b.lastMessageDate).getTime() -
-      new Date(a.lastMessageDate).getTime()
+    (a, b) => {
+      const dateA = a.lastMessageDate ? new Date(a.lastMessageDate).getTime() : 0;
+      const dateB = b.lastMessageDate ? new Date(b.lastMessageDate).getTime() : 0;
+      return dateB - dateA; // Newest first
+    }
   );
 };
 
@@ -361,7 +365,12 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                 const mergedEmails = [...currentEmails, ...newEmails];
                 
                 // Sort by date descending (newest first) after merging
-                mergedEmails.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                mergedEmails.sort((a, b) => {
+                  // Safely parse dates and convert to timestamp
+                  const dateA = a.date ? new Date(a.date).getTime() : 0;
+                  const dateB = b.date ? new Date(b.date).getTime() : 0;
+                  return dateB - dateA; // Newest first
+                });
                 
                 get().setEmails(mergedEmails);
                 console.log(`Updated email store with ${newEmails.length} older IMAP messages. New count: ${mergedEmails.length}`);
@@ -500,7 +509,12 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                 const mergedEmails = [...currentEmails, ...newEmails];
                 
                 // Sort by date descending (newest first) after merging
-                mergedEmails.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                mergedEmails.sort((a, b) => {
+                  // Safely parse dates and convert to timestamp
+                  const dateA = a.date ? new Date(a.date).getTime() : 0;
+                  const dateB = b.date ? new Date(b.date).getTime() : 0;
+                  return dateB - dateA; // Newest first
+                });
                 
                 get().setEmails(mergedEmails);
                 console.log(`Updated email store with ${newEmails.length} older Twilio messages. New count: ${mergedEmails.length}`);
@@ -607,34 +621,51 @@ export const useEmailStore = create<EmailStore>((set, get) => {
               
               if (messages && messages.length > 0) {
                 // Convert JustCall messages to Email format
-                const justcallEmails = messages.map((msg: any) => ({
-                  id: msg.id,
-                  threadId: msg.threadId, // Use the threadId for grouping
-                  from: {
-                    name: msg.direction === 'inbound' ? 
-                      (msg.contact_name || msg.contact_number || 'Unknown') : 
-                      'You',
-                    email: msg.direction === 'inbound' ? 
-                      msg.contact_number : 
-                      msg.number,
-                  },
-                  to: [{
-                    name: msg.direction === 'inbound' ? 'You' : 
-                      (msg.contact_name || msg.contact_number || 'Unknown'),
-                    email: msg.direction === 'inbound' ? 
-                      msg.number : 
-                      msg.contact_number,
-                  }],
-                  subject: 'SMS Message',
-                  // Access body from sms_info object for V2 API
-                  body: msg.sms_info?.body || msg.body || '',
-                  date: msg.created_at || new Date().toISOString(),
-                  labels: ['SMS'],
-                  accountType: 'justcall',
-                  accountId: account.id,
-                  platform: 'justcall',
-                  phoneNumber: account.accountIdentifier // Store the phone number for reference
-                }));
+                const justcallEmails = messages.map((msg: any) => {
+                  // Format timestamp using the utility function
+                  const timestamp = formatJustCallTimestamp(
+                    msg.sms_user_date || msg.sms_date,
+                    msg.sms_user_time || msg.sms_time
+                  );
+                  
+                  return {
+                    id: msg.id,
+                    threadId: msg.threadId, // Use the threadId for grouping
+                    from: {
+                      name: msg.direction === 'inbound' ? 
+                        (msg.contact_name || msg.contact_number || 'Unknown') : 
+                        'You',
+                      email: msg.direction === 'inbound' ? 
+                        msg.contact_number : 
+                        msg.number,
+                    },
+                    to: [{
+                      name: msg.direction === 'inbound' ? 'You' : 
+                        (msg.contact_name || msg.contact_number || 'Unknown'),
+                      email: msg.direction === 'inbound' ? 
+                        msg.number : 
+                        msg.contact_number,
+                    }],
+                    subject: 'SMS Message',
+                    // Access body from sms_info object for V2 API
+                    body: msg.sms_info?.body || msg.body || '',
+                    // Use the properly formatted timestamp
+                    date: timestamp,
+                    labels: ['SMS'],
+                    accountType: 'justcall',
+                    accountId: account.id,
+                    platform: 'justcall',
+                    phoneNumber: account.accountIdentifier, // Store the phone number for reference
+                    // Add all justcall time fields for debugging
+                    justcallTimes: {
+                      sms_user_time: msg.sms_user_time,
+                      sms_time: msg.sms_time,
+                      sms_user_date: msg.sms_user_date,
+                      sms_date: msg.sms_date,
+                      formatted: timestamp
+                    }
+                  };
+                });
                 
                 console.log(`Converted ${justcallEmails.length} JustCall messages to Email format`);
                 
@@ -651,7 +682,12 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                   const mergedEmails = [...currentEmails, ...newEmails];
                   
                   // Sort by date descending (newest first) after merging
-                  mergedEmails.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                  mergedEmails.sort((a, b) => {
+                    // Safely parse dates and convert to timestamp
+                    const dateA = a.date ? new Date(a.date).getTime() : 0;
+                    const dateB = b.date ? new Date(b.date).getTime() : 0;
+                    return dateB - dateA; // Newest first
+                  });
                   
                   get().setEmails(mergedEmails);
                   console.log(`Updated email store with ${newEmails.length} older JustCall messages for phone ${account.accountIdentifier}. New count: ${mergedEmails.length}`);

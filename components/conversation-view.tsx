@@ -421,8 +421,9 @@ export function ConversationView({
                             {email.subject}
                           </span>
                           <span className="text-xs opacity-70">
-                            {formatDistanceToNow(new Date(email.date), {
+                            {formatDistanceToNow(new Date(email.date || ''), {
                               addSuffix: true,
+                              includeSeconds: true
                             })}
                           </span>
                         </div>

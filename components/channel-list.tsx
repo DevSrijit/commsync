@@ -33,6 +33,30 @@ export function EmailList({
   const [noMoreMessages, setNoMoreMessages] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Improved SMS contact detection
+  const isSMSMessage = (email: Email) =>
+    email.accountType === 'twilio' ||
+    email.accountType === 'justcall' ||
+    (email.labels && email.labels.includes("SMS"));
+
+  // Get all contacts with SMS messages
+  const smsContacts = contacts.filter(contact =>
+    emails.some(email => {
+      const isFromOrToContact =
+        email.from.email === contact.email ||
+        email.to.some(to => to.email === contact.email);
+
+      return isFromOrToContact && isSMSMessage(email);
+    })
+  );
+
+  // Sort SMS contacts by the most recent message date
+  const sortedSMSContacts = [...smsContacts].sort((a, b) => {
+    const dateA = a.lastMessageDate ? new Date(a.lastMessageDate).getTime() : 0;
+    const dateB = b.lastMessageDate ? new Date(b.lastMessageDate).getTime() : 0;
+    return dateB - dateA; // Newest first
+  });
+
   // Add effect to log diagnostic information
   useEffect(() => {
     const isSMSMessage = (email: Email) =>
@@ -56,15 +80,55 @@ export function EmailList({
       const sampleSize = Math.min(3, smsMessages.length);
       console.log(`Sample of ${sampleSize} SMS messages:`);
       smsMessages.slice(0, sampleSize).forEach((msg, i) => {
+        // Use type assertion to access justcallTimes
+        const justcallTimesStr = (msg as any).justcallTimes
+          ? JSON.stringify((msg as any).justcallTimes)
+          : 'N/A';
+
         console.log(`SMS #${i + 1}: 
   - id: ${msg.id}
   - from: ${msg.from.name} (${msg.from.email}) 
   - accountType: ${msg.accountType}
   - labels: ${msg.labels?.join(', ')}
+  - date: ${msg.date}
+  - justcallTimes: ${justcallTimesStr}
   - has body: ${Boolean(msg.body)}`);
       });
+
+      // Log sorted SMS contacts
+      if (smsContacts.length > 0) {
+        console.log(`Top 3 SMS contacts by lastMessageDate:`);
+        sortedSMSContacts.slice(0, 3).forEach((contact, i) => {
+          console.log(`Contact #${i + 1}: ${contact.name} (${contact.email}), lastMessageDate: ${contact.lastMessageDate}`);
+        });
+      }
     }
-  }, [emails, activeFilter, contacts]);
+  }, [emails, activeFilter, contacts, sortedSMSContacts, smsContacts]);
+
+  // If we have no SMS contacts but have SMS messages, create contact entries for them
+  const syntheticSMSContacts = smsCount > 0 && smsContacts.length === 0
+    ? emails
+      .filter(isSMSMessage)
+      .map(email => ({
+        name: email.from.name || email.from.email,
+        email: email.from.email,
+        lastMessageDate: email.date,
+        lastMessageSubject: 'SMS Message',
+        labels: ['SMS'],
+        accountId: email.accountId,
+        accountType: email.accountType
+      }))
+      // Remove duplicates by email address
+      .filter((contact, index, self) =>
+        index === self.findIndex(c => c.email === contact.email)
+      )
+      // Sort by date
+      .sort((a, b) => {
+        const dateA = a.lastMessageDate ? new Date(a.lastMessageDate).getTime() : 0;
+        const dateB = b.lastMessageDate ? new Date(b.lastMessageDate).getTime() : 0;
+        return dateB - dateA; // Newest first
+      })
+    : [];
 
   const filteredContacts = contacts.filter((contact) => {
     // First filter by search query
@@ -115,45 +179,9 @@ export function EmailList({
     onSelectContact(group.addresses.join(", "), true, group.id);
   };
 
-  // Improved SMS contact detection
-  const isSMSMessage = (email: Email) =>
-    email.accountType === 'twilio' ||
-    email.accountType === 'justcall' ||
-    (email.labels && email.labels.includes("SMS"));
-
-  // Get all contacts with SMS messages
-  const smsContacts = contacts.filter(contact =>
-    emails.some(email => {
-      const isFromOrToContact =
-        email.from.email === contact.email ||
-        email.to.some(to => to.email === contact.email);
-
-      return isFromOrToContact && isSMSMessage(email);
-    })
-  );
-
-  // If we have no SMS contacts but have SMS messages, create contact entries for them
-  const syntheticSMSContacts = smsCount > 0 && smsContacts.length === 0
-    ? emails
-      .filter(isSMSMessage)
-      .map(email => ({
-        name: email.from.name || email.from.email,
-        email: email.from.email,
-        lastMessageDate: email.date,
-        lastMessageSubject: 'SMS Message',
-        labels: ['SMS'],
-        accountId: email.accountId,
-        accountType: email.accountType
-      }))
-      // Remove duplicates by email address
-      .filter((contact, index, self) =>
-        index === self.findIndex(c => c.email === contact.email)
-      )
-    : [];
-
   // Only show SMS contacts when SMS filter is active
   const displayedContacts = activeFilter === 'sms'
-    ? [...smsContacts, ...syntheticSMSContacts]
+    ? [...sortedSMSContacts, ...syntheticSMSContacts]
     : filteredContacts;
 
   const GroupItem = ({ group, isSelected, onClick }: {
@@ -231,7 +259,7 @@ export function EmailList({
         if (emptyLoadCount >= 3) {
           console.log('No more messages to load after 3 attempts.');
           setNoMoreMessages(true);
-          
+
           // Reset the "No more messages" state after 3 seconds
           setTimeout(() => {
             setNoMoreMessages(false);

@@ -34,6 +34,14 @@ export interface Email {
   read?: boolean;
   platform?: string; // Added for platform indication
   source?: string; // Added to track data source (gmail-api, imap, etc.)
+  phoneNumber?: string;
+  justcallTimes?: {
+    sms_user_time?: string;
+    sms_time?: string;
+    sms_user_date?: string;
+    sms_date?: string;
+    formatted?: string;
+  };
 }
 
 // Legacy interface - will be replaced by the new ContactModel
@@ -125,21 +133,21 @@ export interface JustCallMessage {
   created_at: string;
   updated_at: string;
   status: string;
-  agent_id: string;
-  contact_id: string;
-  contact_name: string;
-  media: any[];
+  agent_id?: string;
+  contact_id?: string;
+  contact_name?: string;
+  media?: any[];
   threadId?: string;
   // New fields for JustCall V2 API
-  sms_info?: {
-    body: string;
-    is_mms: string;
-    mms: any[];
-  };
+  sms_info?: any;
   justcall_number?: string;
   justcall_line_name?: string;
   delivery_status?: string;
-  accountId?: string;
+  // Time fields
+  sms_user_time?: string;
+  sms_time?: string;
+  sms_user_date?: string;
+  sms_date?: string;
 }
 
 export interface JustCallWebhookPayload {
