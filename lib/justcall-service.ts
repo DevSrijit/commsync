@@ -324,21 +324,21 @@ export class JustCallService {
   }
 
   async sendMessage(
-    to: string,
+    contact_number: string,
     body: string,
     media?: string[]
   ): Promise<JustCallMessage> {
     try {
       // Using the V2 SMS send endpoint
-      const url = `${this.baseUrl}/texts/send`;
+      const url = `${this.baseUrl}/texts/new`;
 
       const payload: any = {
-        to,
+        contact_number,
         body,
       };
 
       if (media && media.length > 0) {
-        payload.media = media;
+        payload.media_url = media;
       }
 
       const response = await fetch(url, {

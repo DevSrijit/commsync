@@ -202,7 +202,7 @@ export function EmailList({
         <div className="ml-3 overflow-hidden">
           <div className="font-medium truncate">{group.name}</div>
           <div className="text-sm text-muted-foreground truncate">
-            {group.addresses.length} contacts
+            {group.addresses.length} addresses
           </div>
         </div>
       </div>
