@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { Group, Email } from "@/lib/types";
 import { Button } from "@/components/ui/button";
+import { useSession } from "next-auth/react";
 
 interface EmailListProps {
   isLoading: boolean;
@@ -30,6 +31,7 @@ export function EmailList({
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [noMoreMessages, setNoMoreMessages] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const { data: session } = useSession();
 
   // Improved SMS contact detection
   const isSMSMessage = (email: Email) =>
@@ -128,6 +130,12 @@ export function EmailList({
       contact.email.toLowerCase().includes(searchQuery.toLowerCase());
 
     if (!matchesSearch) return false;
+
+    // Skip contacts that are the user's own Gmail address and likely error placeholders
+    if (session?.user?.email && contact.email === session.user.email && 
+        contact.accountType !== 'imap' && !contact.accountId) {
+      return false;
+    }
 
     // Then filter by category
     const contactEmails = emails.filter(

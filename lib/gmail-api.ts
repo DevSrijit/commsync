@@ -206,7 +206,6 @@ export async function fetchEmails(
 async function syncWithDatabase(gmailEmails: Email[]) {
   try {
     // Don't proceed with updating the database if no emails were fetched
-    // This prevents wiping out existing data on failed syncs
     if (!gmailEmails || gmailEmails.length === 0) {
       console.log("No Gmail emails to sync with database - skipping update to prevent data loss");
       return;
@@ -219,18 +218,21 @@ async function syncWithDatabase(gmailEmails: Email[]) {
       gmailEmails.map((email) => [email.id, email])
     );
 
-    // Get current emails from database
+    // Get existing emails from database
     const currentEmails = await getCacheValue<Email[]>("emails") || [];
-    console.log(`Retrieved ${currentEmails.length} existing emails from database`);
-
-    // Safety check: If we have current emails but no new Gmail emails, preserve the database
-    if (currentEmails.length > 0 && gmailEmails.length === 0) {
-      console.log("Protecting existing email data from being wiped by empty Gmail fetch");
-      return;
-    }
-
+    
     // Create new map that combines existing emails and new emails
     const emailMap = new Map();
+    
+    // First identify error emails to be replaced
+    const errorEmails = new Set<string>();
+    currentEmails.forEach((email) => {
+      if (email.source === "gmail-api-error") {
+        // Use thread ID + subject as key for better matching
+        const key = generateEmailKey(email);
+        errorEmails.add(key);
+      }
+    });
     
     // First add all existing emails that aren't duplicates from Gmail
     currentEmails.forEach((email) => {
@@ -238,6 +240,19 @@ async function syncWithDatabase(gmailEmails: Email[]) {
       // Skip existing Gmail emails that might be duplicates of what we're adding
       const isGmailEmail = !email.accountId || email.accountType === "gmail" || email.source === "gmail-api";
       const isInCurrentBatch = isGmailEmail && gmailEmailMap.has(email.id);
+      const key = generateEmailKey(email);
+      
+      // Skip error emails that will be replaced by real ones
+      if (email.source === "gmail-api-error" && errorEmails.has(key)) {
+        const hasRealVersion = gmailEmails.some(newEmail => 
+          generateEmailKey(newEmail) === key && newEmail.source !== "gmail-api-error"
+        );
+        
+        if (hasRealVersion) {
+          console.log(`Skipping error email with key ${key} as it will be replaced`);
+          return;
+        }
+      }
       
       if (!isInCurrentBatch) {
         emailMap.set(email.id, email);
@@ -248,6 +263,20 @@ async function syncWithDatabase(gmailEmails: Email[]) {
     
     // Then add new Gmail emails
     gmailEmails.forEach((email) => {
+      // Skip error emails if we already have a good version
+      if (email.source === "gmail-api-error") {
+        const key = generateEmailKey(email);
+        const existingEmails = Array.from(emailMap.values());
+        const hasGoodVersion = existingEmails.some(existing => 
+          generateEmailKey(existing) === key && existing.source !== "gmail-api-error"
+        );
+        
+        if (hasGoodVersion) {
+          console.log(`Skipping error email as we already have a good version: ${key}`);
+          return;
+        }
+      }
+      
       if (!emailMap.has(email.id)) {
         emailMap.set(email.id, email);
       } else {
@@ -578,4 +607,179 @@ function parseEmailAddress(address: string) {
 function decodeBase64(data: string) {
   const text = atob(data.replace(/-/g, "+").replace(/_/g, "/"));
   return decodeURIComponent(escape(text));
+}
+
+function generateEmailKey(email: Email): string {
+  // Use threadId + subject as a more reliable key for deduplication
+  return `${email.threadId || ''}-${email.subject || ''}`;
+}
+
+/**
+ * Identifies and re-fetches problematic emails from Gmail
+ * @param token Access token for Gmail API
+ * @returns Array of fixed emails
+ */
+export async function repairErrorEmails(token: string): Promise<Email[]> {
+  try {
+    console.log("Starting repair of error emails...");
+    
+    // Get existing emails from cache
+    const currentEmails = await getCacheValue<Email[]>("emails") || [];
+    
+    // Identify problematic emails
+    const errorEmails = currentEmails.filter(email => 
+      // Check for emails with Gmail API errors
+      email.source === "gmail-api-error" || 
+      // Check for emails with empty bodies that should have content
+      ((!email.accountId || email.accountType === "gmail") && 
+       (!email.body || email.body.trim() === "") && 
+       !email.labels?.includes("DRAFT"))
+    );
+    
+    if (errorEmails.length === 0) {
+      console.log("No error emails found to repair");
+      return [];
+    }
+    
+    console.log(`Found ${errorEmails.length} emails to repair`);
+    
+    // Group by threadId to avoid duplicate fetches for the same thread
+    const threadGroups = new Map<string, Email[]>();
+    errorEmails.forEach(email => {
+      if (email.threadId) {
+        const group = threadGroups.get(email.threadId) || [];
+        group.push(email);
+        threadGroups.set(email.threadId, group);
+      } else {
+        // Handle emails without threadId
+        const key = `no-thread-${email.id}`;
+        threadGroups.set(key, [email]);
+      }
+    });
+    
+    console.log(`Grouped into ${threadGroups.size} threads to fetch`);
+    
+    // Fetch and repair emails thread by thread
+    const repairedEmails: Email[] = [];
+    
+    for (const [threadId, emails] of threadGroups.entries()) {
+      try {
+        if (threadId.startsWith('no-thread-')) {
+          // Handle individual emails without threadId
+          const email = emails[0];
+          const messageId = email.id;
+          
+          console.log(`Fetching individual message ${messageId}`);
+          
+          // Fetch the individual message
+          const msgResponse = await fetch(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}`,
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
+          
+          if (!msgResponse.ok) {
+            console.warn(`Failed to fetch message ${messageId}: ${msgResponse.status}`);
+            continue;
+          }
+          
+          const msgData = await msgResponse.json();
+          const parsedEmail = parseGmailMessage(msgData);
+          parsedEmail.source = 'gmail-api';
+          
+          repairedEmails.push(parsedEmail);
+        } else {
+          // Fetch the entire thread
+          console.log(`Fetching thread ${threadId}`);
+          
+          const threadResponse = await fetch(
+            `https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}`,
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
+          
+          if (!threadResponse.ok) {
+            console.warn(`Failed to fetch thread ${threadId}: ${threadResponse.status}`);
+            continue;
+          }
+          
+          const threadData = await threadResponse.json();
+          
+          // Process all messages in the thread
+          if (threadData.messages && threadData.messages.length > 0) {
+            for (const message of threadData.messages) {
+              const parsedEmail = parseGmailMessage(message);
+              parsedEmail.source = 'gmail-api';
+              repairedEmails.push(parsedEmail);
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`Error repairing thread ${threadId}:`, error);
+      }
+    }
+    
+    console.log(`Successfully repaired ${repairedEmails.length} emails`);
+    
+    // Update the email store with repaired emails
+    if (repairedEmails.length > 0) {
+      await updateEmailStore(repairedEmails);
+    }
+    
+    return repairedEmails;
+  } catch (error) {
+    console.error("Error repairing emails:", error);
+    return [];
+  }
+}
+
+/**
+ * Updates the email store with repaired emails
+ */
+async function updateEmailStore(repairedEmails: Email[]): Promise<void> {
+  try {
+    // Get current emails
+    const currentEmails = await getCacheValue<Email[]>("emails") || [];
+    
+    // Create a map for quick lookup
+    const emailMap = new Map(currentEmails.map(email => [email.id, email]));
+    
+    // Update or add repaired emails
+    let updatedCount = 0;
+    let addedCount = 0;
+    
+    repairedEmails.forEach(email => {
+      if (emailMap.has(email.id)) {
+        // Update existing email
+        emailMap.set(email.id, {
+            ...emailMap.get(email.id),
+            ...email,
+            body: email.body || emailMap.get(email.id)?.body || "No content available",
+            attachments: email.attachments || emailMap.get(email.id)?.attachments,
+            source: 'gmail-api'
+          });
+        updatedCount++;
+      } else {
+        // Add new email
+        emailMap.set(email.id, email);
+        addedCount++;
+      }
+    });
+    
+    // Convert map back to array
+    const updatedEmails = Array.from(emailMap.values());
+    
+    // Save to cache
+    await setCacheValue("emails", updatedEmails);
+    
+    console.log(`Email store updated: ${updatedCount} emails updated, ${addedCount} emails added`);
+  } catch (error) {
+    console.error("Error updating email store:", error);
+  }
 }
