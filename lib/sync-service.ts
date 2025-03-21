@@ -221,15 +221,6 @@ export const syncJustCallAccounts = async (
           // Get messages since last sync for the specific phone number
           console.log(`Fetching messages for account ${account.id} with phone ${phoneNumber}, date filter: ${dateToUse?.toISOString() || 'none'}, sort: ${options?.sortDirection || 'desc'}`);
           
-          // Remove debug call that logs all texts
-          // try {
-          //   console.log(`[DEBUG] Running diagnostic test for JustCall account ${account.id}`);
-          //   await justCallService.getAllTextsDebug(100);
-          //   console.log(`[DEBUG] Diagnostic test complete for JustCall account ${account.id}`);
-          // } catch (debugError) {
-          //   console.error(`[DEBUG] Error running diagnostic test: ${debugError}`);
-          // }
-          
           // Now proceed with the normal filtered request
           const messages = await justCallService.getMessages(
             phoneNumber, 
@@ -239,8 +230,14 @@ export const syncJustCallAccounts = async (
             options?.sortDirection || 'desc'
           );
           
-          // Reduce logging verbosity
-          // console.log(`Retrieved ${messages.length} messages for account ${account.id} with phone ${phoneNumber}`);
+          // Add debug logging to inspect the timestamps of retrieved messages
+          if (messages.length > 0) {
+            console.log(`Retrieved ${messages.length} JustCall messages for account ${account.id}. First message timestamp:`, {
+              created_at: messages[0].created_at,
+              sms_user_date: messages[0].sms_user_date,
+              sms_user_time: messages[0].sms_user_time
+            });
+          }
           
           let processedCount = 0;
           let skippedCount = 0;
@@ -266,6 +263,7 @@ export const syncJustCallAccounts = async (
           // Only update last sync time if we're fetching newer messages (desc sort)
           // When fetching older messages (asc sort), we don't want to update the lastSync
           if (!options?.sortDirection || options.sortDirection === 'desc') {
+            // Store the sync time but don't affect message timestamps
             await db.syncAccount.update({
               where: { id: account.id },
               data: { lastSync: new Date() },

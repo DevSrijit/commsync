@@ -7,8 +7,6 @@ import { useEmailStore } from "@/lib/email-store";
 import { ContactItem } from "@/components/contact-item";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { MessageCategory } from "@/components/sidebar";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Group, Email } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 
@@ -67,13 +65,6 @@ export function EmailList({
     // Count SMS messages
     const smsMessages = emails.filter(isSMSMessage);
     setSmsCount(smsMessages.length);
-
-    console.log(`Channel list filtering:
-- Total emails: ${emails.length}
-- SMS messages: ${smsMessages.length}
-- Active filter: ${activeFilter}
-- Contact count: ${contacts.length}
-`);
 
     if (smsMessages.length > 0) {
       // Log some details about the first few SMS messages

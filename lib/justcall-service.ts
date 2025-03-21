@@ -10,15 +10,47 @@ import { db } from "@/lib/db";
  * @returns An ISO formatted timestamp string
  */
 export function formatJustCallTimestamp(dateStr?: string, timeStr?: string): string {
+  
   if (!dateStr && !timeStr) {
-    return new Date().toISOString();
+    const fallbackTime = new Date().toISOString();
+    console.log(`No date or time provided, using current time: ${fallbackTime}`);
+    return fallbackTime;
   }
   
   try {
     // If we have both date and time, combine them
     if (dateStr && timeStr) {
+      // Make sure dateStr is in YYYY-MM-DD format
+      let formattedDate = dateStr;
+      let formattedTime = timeStr;
+      
+      // Check if date is in MM/DD/YYYY format and convert to YYYY-MM-DD
+      if (dateStr.includes('/')) {
+        const dateParts = dateStr.split('/');
+        if (dateParts.length === 3) {
+          formattedDate = `${dateParts[2]}-${dateParts[0].padStart(2, '0')}-${dateParts[1].padStart(2, '0')}`;
+        }
+      }
+      
+      // Make sure time is in HH:MM:SS format
+      if (!formattedTime.includes(':')) {
+        // If time isn't in the expected format, try to use it as is
+      } else if (formattedTime.split(':').length === 2) {
+        // Add seconds if missing
+        formattedTime = `${formattedTime}:00`;
+      }
+      
       // Format: YYYY-MM-DD HH:MM:SS
-      return `${dateStr}T${timeStr}`;
+      const isoTime = `${formattedDate}T${formattedTime}`;
+      
+      // Validate the timestamp by parsing it
+      const date = new Date(isoTime);
+      if (!isNaN(date.getTime())) {
+        const result = date.toISOString();
+        return result;
+      } else {
+        // Continue to fallback methods
+      }
     }
     
     // If we only have time string (should include date info anyway)
@@ -31,7 +63,8 @@ export function formatJustCallTimestamp(dateStr?: string, timeStr?: string): str
       // Try to parse it as a regular timestamp
       const date = new Date(timeStr);
       if (!isNaN(date.getTime())) {
-        return date.toISOString();
+        const result = date.toISOString();
+        return result;
       }
     }
     
@@ -39,14 +72,15 @@ export function formatJustCallTimestamp(dateStr?: string, timeStr?: string): str
     if (dateStr) {
       const date = new Date(dateStr);
       if (!isNaN(date.getTime())) {
-        return date.toISOString();
+        const result = date.toISOString();
+        return result;
       }
     }
     
     // Fallback to current time if parsing fails
-    return new Date().toISOString();
+    const fallbackTime = new Date().toISOString();
+    return fallbackTime;
   } catch (error) {
-    console.error("Error formatting JustCall timestamp:", error);
     return new Date().toISOString();
   }
 }
@@ -191,6 +225,24 @@ export class JustCallService {
       if (!Array.isArray(messages)) {
         console.error("JustCall API returned unexpected data format:", data);
         return [];
+      }
+
+      // Log all messages with their timestamps for debugging
+      if (messages.length > 0) {
+        console.log(`Detailed JustCall message timestamps (showing first 3 of ${messages.length}):`);
+        messages.slice(0, 3).forEach((msg, idx) => {
+          console.log(`Message ${idx+1}:`, {
+            id: msg.id,
+            direction: msg.direction,
+            contact_number: msg.contact_number,
+            justcall_number: msg.justcall_number,
+            sms_user_date: msg.sms_user_date,
+            sms_user_time: msg.sms_user_time,
+            sms_date: msg.sms_date,
+            sms_time: msg.sms_time,
+            datetime: msg.datetime
+          });
+        });
       }
 
       // Create a map to group messages by conversation

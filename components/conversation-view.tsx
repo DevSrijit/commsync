@@ -425,6 +425,11 @@ export function ConversationView({
                               addSuffix: true,
                               includeSeconds: true
                             })}
+                            {email.accountType === 'justcall' && (
+                              <span className="ml-1">
+                                [Debug: {new Date(email.date || '').toISOString()}]
+                              </span>
+                            )}
                           </span>
                         </div>
                         <div

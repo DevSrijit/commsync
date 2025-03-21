@@ -622,11 +622,31 @@ export const useEmailStore = create<EmailStore>((set, get) => {
               if (messages && messages.length > 0) {
                 // Convert JustCall messages to Email format
                 const justcallEmails = messages.map((msg: any) => {
-                  // Format timestamp using the utility function
-                  const timestamp = formatJustCallTimestamp(
-                    msg.sms_user_date || msg.sms_date,
-                    msg.sms_user_time || msg.sms_time
-                  );
+                  // Format timestamp using the utility function with priority:
+                  // 1. User date/time (timezone-adjusted)
+                  // 2. Server date/time
+                  // 3. Current time as fallback
+                  let timestamp;
+                  
+                  // First check if we have the user's timezone values (preferred)
+                  if (msg.sms_user_date && msg.sms_user_time) {
+                    timestamp = formatJustCallTimestamp(msg.sms_user_date, msg.sms_user_time);
+                  } 
+                  // Then try the server timezone values
+                  else if (msg.sms_date && msg.sms_time) {
+                    timestamp = formatJustCallTimestamp(msg.sms_date, msg.sms_time);
+                  }
+                  // Use the created_at field if available
+                  else if (msg.created_at) {
+                    timestamp = msg.created_at;
+                  }
+                  // Fallback to current time
+                  else {
+                    timestamp = new Date().toISOString();
+                  }
+                  
+                  // Log the resulting timestamp for debugging
+                  console.log(`Final timestamp for message ${msg.id}: ${timestamp}`);
                   
                   return {
                     id: msg.id,
