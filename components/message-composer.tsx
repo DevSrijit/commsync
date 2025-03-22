@@ -178,6 +178,11 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
             setAttachments([]);
             setSelectedAccountId("");
             onOpenChange(false);
+            
+            // Trigger a sync of all platforms to fetch the latest messages
+            setTimeout(() => {
+                useEmailStore.getState().syncAllPlatforms(session?.user?.accessToken || null);
+            }, 1000); // Small delay to ensure message delivery is processed
 
             return true;
         } catch (error) {

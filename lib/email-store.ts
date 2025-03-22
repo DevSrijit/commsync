@@ -30,6 +30,7 @@ interface EmailStore {
   syncImapAccounts: () => Promise<number>;
   syncTwilioAccounts: () => Promise<number>;
   syncJustcallAccounts: (isLoadingMore?: boolean) => Promise<number>;
+  syncAllPlatforms: (gmailToken?: string | null) => Promise<void>;
   setImapAccounts: (accounts: ImapAccount[]) => void;
   setTwilioAccounts: (accounts: any[]) => void;
   setJustcallAccounts: (accounts: any[]) => void;
@@ -1052,6 +1053,29 @@ export const useEmailStore = create<EmailStore>((set, get) => {
     updateContacts: (emails) => {
       const contacts = generateContactsFromEmails(emails);
       set({ contacts });
+    },
+
+    syncAllPlatforms: async (gmailToken: string | null = null) => {
+      console.log("Syncing all messaging platforms...");
+      try {
+        // Run sync operations in parallel
+        const [gmailResult, imapResult, twilioResult, justcallResult] = await Promise.allSettled([
+          get().syncEmails(gmailToken),
+          get().syncImapAccounts(),
+          get().syncTwilioAccounts(),
+          get().syncJustcallAccounts(false) // false = not "load more", but fresh sync
+        ]);
+        
+        // Log results for debugging
+        console.log("Sync results:", {
+          gmail: gmailResult.status,
+          imap: imapResult.status === 'fulfilled' ? `Found ${imapResult.value} messages` : 'failed',
+          twilio: twilioResult.status === 'fulfilled' ? `Found ${twilioResult.value} messages` : 'failed',
+          justcall: justcallResult.status === 'fulfilled' ? `Found ${justcallResult.value} messages` : 'failed'
+        });
+      } catch (error) {
+        console.error("Error in syncAllPlatforms:", error);
+      }
     },
   };
 });

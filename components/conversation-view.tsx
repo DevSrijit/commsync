@@ -7,17 +7,15 @@ import { useEmailStore } from "@/lib/email-store";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useSession } from "next-auth/react";
-import { sendEmail } from "@/lib/gmail-api";
 import { useToast } from "@/hooks/use-toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Paperclip, Image, FileText, File, Users } from "lucide-react";
+import { Image, FileText, File, Users } from "lucide-react";
 import DOMPurify from "isomorphic-dompurify";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
-import { fetchEmails } from "@/lib/gmail-api";
 import { AlertTriangle, MessageSquare } from "lucide-react";
 import { Email } from "@/lib/types";
 import { useSendMessage } from "@/lib/messaging";
@@ -694,6 +692,11 @@ export function ConversationView({
                             title: "Message sent",
                             description: `Your message has been sent to ${group.addresses.length} recipients`,
                           });
+                          
+                          // Trigger sync after message is sent
+                          setTimeout(() => {
+                            useEmailStore.getState().syncAllPlatforms(session.user.accessToken);
+                          }, 1000); // Small delay to ensure message is processed
                         }
                       }
                     });
@@ -724,6 +727,11 @@ export function ConversationView({
                       title: "Messages sent",
                       description: `Your message has been sent to ${phoneNumbers.length} recipients`,
                     });
+                    
+                    // Trigger sync after all messages are sent
+                    setTimeout(() => {
+                      useEmailStore.getState().syncAllPlatforms(session.user.accessToken);
+                    }, 1000); // Small delay to ensure messages are processed
                   }
                 }
               } else {
@@ -753,6 +761,11 @@ export function ConversationView({
                           title: "Message sent",
                           description: "Your reply has been sent successfully",
                         });
+                        
+                        // Trigger sync after message is sent
+                        setTimeout(() => {
+                          useEmailStore.getState().syncAllPlatforms(session.user.accessToken);
+                        }, 1000); // Small delay to ensure message is processed
                       }
                     }
                   });
@@ -782,6 +795,11 @@ export function ConversationView({
                           title: "Message sent",
                           description: "Your message has been sent successfully",
                         });
+                        
+                        // Trigger sync after message is sent
+                        setTimeout(() => {
+                          useEmailStore.getState().syncAllPlatforms(session.user.accessToken);
+                        }, 1000); // Small delay to ensure message is processed
                       }
                     }
                   });
