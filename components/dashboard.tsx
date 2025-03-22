@@ -15,13 +15,14 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "./ui/resizable";
+import { getCacheValue, setCacheValue, removeCacheValue } from "@/lib/client-cache-browser";
 
 export function EmailDashboard() {
   const { data: session } = useSession();
   const [selectedContact, setSelectedContact] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [isGroupSelected, setIsGroupSelected] = useState(false);
-  const { setEmails, contacts } = useEmailStore();
+  const { setEmails, contacts, syncTwilioAccounts, syncJustcallAccounts } = useEmailStore();
   const [isLoading, setIsLoading] = useState(true);
   const [isBackgroundSync, setIsBackgroundSync] = useState(false);
   const initialLoadComplete = useRef(false);
@@ -39,17 +40,21 @@ export function EmailDashboard() {
 
   useEffect(() => {
     // Try to load cached emails first for immediate display
-    const cachedEmails = localStorage.getItem("emails");
-    if (cachedEmails) {
-      setEmails(JSON.parse(cachedEmails));
-      setIsLoading(false);
-      initialLoadComplete.current = true;
-    }
+    const loadCachedEmails = async () => {
+      const cachedEmails = await getCacheValue<Email[]>("emails");
+      if (cachedEmails) {
+        setEmails(cachedEmails);
+        setIsLoading(false);
+        initialLoadComplete.current = true;
+      }
+    };
+    
+    loadCachedEmails();
 
     // Only clear cache if explicitly logged out
     if (session === null) {
-      localStorage.removeItem("emails");
-      localStorage.removeItem("emailsTimestamp");
+      removeCacheValue("emails");
+      removeCacheValue("emailsTimestamp");
       setEmails([]);
       return;
     }
@@ -127,6 +132,20 @@ export function EmailDashboard() {
           }
         }
         
+        // Sync Twilio accounts
+        try {
+          await syncTwilioAccounts();
+        } catch (error) {
+          console.error("Failed to sync Twilio accounts:", error);
+        }
+        
+        // Sync JustCall accounts
+        try {
+          await syncJustcallAccounts();
+        } catch (error) {
+          console.error("Failed to sync JustCall accounts:", error);
+        }
+        
         // Wait for all syncs to complete
         const results = await Promise.allSettled(syncPromises);
         
@@ -147,9 +166,9 @@ export function EmailDashboard() {
         const mergedEmails = Array.from(emailMap.values());
         setEmails(mergedEmails);
         
-        // Cache the emails
-        localStorage.setItem("emails", JSON.stringify(mergedEmails));
-        localStorage.setItem("emailsTimestamp", Date.now().toString());
+        // Cache the emails in the database
+        await setCacheValue("emails", mergedEmails);
+        await setCacheValue("emailsTimestamp", Date.now().toString());
         
         // Load content for emails that don't have it
         const contentLoader = EmailContentLoader.getInstance();
@@ -179,10 +198,10 @@ export function EmailDashboard() {
       // For interval syncs, always use background mode
       setIsBackgroundSync(true);
       loadEmails();
-    }, 0.5 * 60 * 1000);
+    }, 5 * 60 * 1000);
     
     return () => clearInterval(intervalId);
-  }, [session, setEmails]);
+  }, [session, setEmails, syncTwilioAccounts, syncJustcallAccounts]);
 
   // Set the first contact as selected by default when contacts load
   useEffect(() => {

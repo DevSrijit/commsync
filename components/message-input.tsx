@@ -16,6 +16,10 @@ import {
   Highlighter,
   Strikethrough,
   X,
+  Mail,
+  Phone,
+  MessageSquare,
+  ChevronDown,
 } from "lucide-react";
 import Placeholder from "@tiptap/extension-placeholder";
 import Link from "@tiptap/extension-link";
@@ -34,6 +38,15 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useEmailStore } from "@/lib/email-store";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+
+// Add MessagePlatform type
+export type MessagePlatform = "gmail" | "imap" | "twilio" | "justcall";
 
 interface MessageInputProps {
   onSend: (content: string, attachments: File[]) => void;
@@ -41,6 +54,13 @@ interface MessageInputProps {
   placeholder?: string;
   showSend?: boolean;
   customSend?: (content: string, attachments: File[]) => Promise<boolean> | void;
+  // Add new props for platform support
+  platform?: MessagePlatform | string;
+  accountId?: string;
+  isGroup?: boolean;
+  groupId?: string | null;
+  platformOptions?: string[];
+  onPlatformChange?: (platform: string, accountId?: string) => void;
 }
 
 export function MessageInput({
@@ -49,11 +69,20 @@ export function MessageInput({
   placeholder,
   showSend = true,
   customSend,
+  platform = "gmail",
+  accountId,
+  isGroup = false,
+  groupId = null,
+  platformOptions = [],
+  onPlatformChange,
 }: MessageInputProps) {
   const [attachments, setAttachments] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isLinkDialogOpen, setIsLinkDialogOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
+
+  // Get accounts for platform selection
+  const { imapAccounts, twilioAccounts, justcallAccounts } = useEmailStore();
 
   const editor = useEditor({
     extensions: [
@@ -162,6 +191,76 @@ export function MessageInput({
     setAttachments([]);
   }, [editor]);
 
+  // Get platform icon and color
+  const getPlatformIcon = (platform: string) => {
+    switch (platform) {
+      case "gmail":
+      case "imap":
+        return <Mail className="h-4 w-4" />;
+      case "twilio":
+        return <Phone className="h-4 w-4" />;
+      case "justcall":
+        return <MessageSquare className="h-4 w-4" />;
+      default:
+        return <Mail className="h-4 w-4" />;
+    }
+  };
+
+  // Get readable platform name
+  const getPlatformName = (platform: string) => {
+    switch (platform) {
+      case "gmail":
+        return "Gmail";
+      case "imap":
+        return "Email";
+      case "twilio":
+        return "Twilio SMS";
+      case "justcall":
+        return "JustCall SMS";
+      default:
+        return platform.charAt(0).toUpperCase() + platform.slice(1);
+    }
+  };
+
+  // Get platform account name or ID
+  const getAccountName = (platform: string, accountId?: string) => {
+    if (!accountId) {
+      return null;
+    }
+
+    if (platform === "imap") {
+      const account = imapAccounts.find(acc => acc.id === accountId);
+      return account?.label || account?.username || "IMAP Account";
+    } else if (platform === "twilio") {
+      const account = twilioAccounts.find(acc => acc.id === accountId);
+      return account?.label || account?.phoneNumber || "Twilio Account";
+    } else if (platform === "justcall") {
+      const account = justcallAccounts.find(acc => acc.id === accountId);
+      return account?.accountIdentifier || "JustCall Account";
+    }
+
+    return null;
+  };
+
+  // Handle platform change
+  const handlePlatformChange = (newPlatform: string) => {
+    if (!onPlatformChange) return;
+
+    // Find a default account for the new platform
+    let newAccountId;
+    if (newPlatform === "gmail") {
+      newAccountId = undefined;
+    } else if (newPlatform === "imap" && imapAccounts.length > 0) {
+      newAccountId = imapAccounts[0].id;
+    } else if (newPlatform === "twilio" && twilioAccounts.length > 0) {
+      newAccountId = twilioAccounts[0].id;
+    } else if (newPlatform === "justcall" && justcallAccounts.length > 0) {
+      newAccountId = justcallAccounts[0].id;
+    }
+
+    onPlatformChange(newPlatform, newAccountId);
+  };
+
   return (
     <>
       <div
@@ -264,114 +363,147 @@ export function MessageInput({
           </BubbleMenu>
         )}
 
-        <div className="flex items-center gap-2 border-b p-2 flex-shrink-0 overflow-x-auto">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor?.chain().focus().toggleBold().run()}
-            className={cn(
-              "flex-shrink-0",
-              editor?.isActive("bold") && "bg-muted"
-            )}
-          >
-            <Bold className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor?.chain().focus().toggleItalic().run()}
-            className={cn(
-              "flex-shrink-0",
-              editor?.isActive("italic") && "bg-muted"
-            )}
-          >
-            <Italic className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor?.chain().focus().toggleUnderline().run()}
-            className={cn(
-              "flex-shrink-0",
-              editor?.isActive("underline") && "bg-muted"
-            )}
-          >
-            <UnderlineIcon className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor?.chain().focus().toggleStrike().run()}
-            className={cn(
-              "flex-shrink-0",
-              editor?.isActive("strike") && "bg-muted"
-            )}
-          >
-            <Strikethrough className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor?.chain().focus().toggleHighlight().run()}
-            className={cn(
-              "flex-shrink-0",
-              editor?.isActive("highlight") && "bg-muted"
-            )}
-          >
-            <Highlighter className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={openLinkDialog}
-            className={cn(
-              "flex-shrink-0",
-              editor?.isActive("link") && "bg-muted"
-            )}
-          >
-            <LinkIcon className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor?.chain().focus().toggleBulletList().run()}
-            className={cn(
-              "flex-shrink-0",
-              editor?.isActive("bulletList") && "bg-muted"
-            )}
-          >
-            <List className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor?.chain().focus().toggleOrderedList().run()}
-            className={cn(
-              "flex-shrink-0",
-              editor?.isActive("orderedList") && "bg-muted"
-            )}
-          >
-            <ListOrdered className="h-4 w-4" />
-          </Button>
-          <div className="h-6 w-px bg-border mx-2" />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor?.chain().focus().undo().run()}
-            disabled={!editor?.can().undo()}
-            className="flex-shrink-0"
-          >
-            <Undo className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => editor?.chain().focus().redo().run()}
-            disabled={!editor?.can().redo()}
-            className="flex-shrink-0"
-          >
-            <Redo className="h-4 w-4" />
-          </Button>
+        <div className="flex items-center justify-between gap-2 border-b p-2 flex-shrink-0">
+          <div className="flex items-center gap-2 overflow-x-auto">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => editor?.chain().focus().toggleBold().run()}
+              className={cn(
+                "flex-shrink-0",
+                editor?.isActive("bold") && "bg-muted"
+              )}
+            >
+              <Bold className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => editor?.chain().focus().toggleItalic().run()}
+              className={cn(
+                "flex-shrink-0",
+                editor?.isActive("italic") && "bg-muted"
+              )}
+            >
+              <Italic className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => editor?.chain().focus().toggleUnderline().run()}
+              className={cn(
+                "flex-shrink-0",
+                editor?.isActive("underline") && "bg-muted"
+              )}
+            >
+              <UnderlineIcon className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => editor?.chain().focus().toggleStrike().run()}
+              className={cn(
+                "flex-shrink-0",
+                editor?.isActive("strike") && "bg-muted"
+              )}
+            >
+              <Strikethrough className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => editor?.chain().focus().toggleHighlight().run()}
+              className={cn(
+                "flex-shrink-0",
+                editor?.isActive("highlight") && "bg-muted"
+              )}
+            >
+              <Highlighter className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={openLinkDialog}
+              className={cn(
+                "flex-shrink-0",
+                editor?.isActive("link") && "bg-muted"
+              )}
+            >
+              <LinkIcon className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => editor?.chain().focus().toggleBulletList().run()}
+              className={cn(
+                "flex-shrink-0",
+                editor?.isActive("bulletList") && "bg-muted"
+              )}
+            >
+              <List className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => editor?.chain().focus().toggleOrderedList().run()}
+              className={cn(
+                "flex-shrink-0",
+                editor?.isActive("orderedList") && "bg-muted"
+              )}
+            >
+              <ListOrdered className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {/* Platform indicator/selector if options are available */}
+          {platformOptions.length > 0 && onPlatformChange ? (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="sm" className="flex items-center gap-1.5">
+                  {getPlatformIcon(platform)}
+                  <span className="text-xs font-medium">{getPlatformName(platform)}</span>
+                  {getAccountName(platform, accountId) && (
+                    <span className="text-xs text-muted-foreground ml-1">
+                      ({getAccountName(platform, accountId)})
+                    </span>
+                  )}
+                  <ChevronDown className="h-3 w-3 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-48 p-0" align="end">
+                <div className="flex flex-col py-1">
+                  {platformOptions.map((option) => (
+                    <Button
+                      key={option}
+                      variant="ghost"
+                      size="sm"
+                      className={cn(
+                        "justify-start rounded-none",
+                        platform === option && "bg-muted"
+                      )}
+                      onClick={() => handlePlatformChange(option)}
+                    >
+                      <div className="flex items-center gap-2">
+                        {getPlatformIcon(option)}
+                        <span>{getPlatformName(option)}</span>
+                      </div>
+                    </Button>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+          ) : (
+            /* Static platform indicator if no options */
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-muted/30 text-xs">
+              {getPlatformIcon(platform)}
+              <span className="font-medium">{getPlatformName(platform)}</span>
+              {getAccountName(platform, accountId) && (
+                <span className="text-muted-foreground">
+                  ({getAccountName(platform, accountId)})
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex-1 min-h-0 p-2 overflow-y-auto">

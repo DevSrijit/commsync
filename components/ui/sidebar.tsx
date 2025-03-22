@@ -18,9 +18,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { setCacheValue, getCacheValue } from "@/lib/client-cache-browser"
 
-const SIDEBAR_COOKIE_NAME = "sidebar:state"
-const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
+const SIDEBAR_CACHE_KEY = "sidebar:state"
 const SIDEBAR_WIDTH = "16rem"
 const SIDEBAR_WIDTH_MOBILE = "18rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
@@ -70,6 +70,22 @@ const SidebarProvider = React.forwardRef<
     const isMobile = useIsMobile()
     const [openMobile, setOpenMobile] = React.useState(false)
 
+    // Load the saved state from cache when component mounts
+    React.useEffect(() => {
+      async function loadSavedState() {
+        try {
+          const savedState = await getCacheValue<string>(SIDEBAR_CACHE_KEY);
+          if (savedState !== null && !openProp) {
+            _setOpen(savedState === 'true');
+          }
+        } catch (error) {
+          console.error("Failed to load sidebar state from cache:", error);
+        }
+      }
+      
+      loadSavedState();
+    }, [openProp]);
+    
     // This is the internal state of the sidebar.
     // We use openProp and setOpenProp for control from outside the component.
     const [_open, _setOpen] = React.useState(defaultOpen)
@@ -83,8 +99,10 @@ const SidebarProvider = React.forwardRef<
           _setOpen(openState)
         }
 
-        // This sets the cookie to keep the sidebar state.
-        document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`
+        // Store the sidebar state in the database instead of using cookies
+        setCacheValue(SIDEBAR_CACHE_KEY, openState.toString()).catch(error => {
+          console.error("Failed to save sidebar state to cache:", error);
+        });
       },
       [setOpenProp, open]
     )

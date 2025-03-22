@@ -103,6 +103,10 @@ export async function POST(req: NextRequest) {
           user: account.username,
           password: account.password,
           secure: account.secure,
+          // Store SMTP configuration
+          smtpHost: account.smtpHost || account.host,
+          smtpPort: account.smtpPort || (account.secure ? 465 : 587),
+          smtpSecure: account.smtpSecure !== undefined ? account.smtpSecure : account.secure
         };
 
         const accountJson = JSON.stringify(processedAccount);
@@ -158,7 +162,7 @@ export async function POST(req: NextRequest) {
 
     // Fetch emails
     if (action === "fetchEmails") {
-      const { page = 1, pageSize = 20, filter = {} } = data || {};
+      const { page = 1, pageSize = 10000, filter = {} } = data || {};
       const emails: ImapFetchResult = await fetchImapEmails(account, {
         page,
         pageSize,
@@ -180,25 +184,108 @@ export async function POST(req: NextRequest) {
 
     // Send email
     if (action === "sendEmail") {
-      const { to, subject, body, html, attachments, cc, bcc } = data;
-      const email = await sendImapEmail({
-        account,
-        to,
-        subject,
-        body,
-        html,
-        attachments,
-        cc,
-        bcc,
-      });
+      // Check if accountId was provided instead of full account object
+      let imap_account = account;
+      if (!imap_account && data.accountId) {
+        // Fetch the account by ID
+        imap_account = await db.imapAccount.findFirst({
+          where: {
+            id: data.accountId,
+            userId: session.user.id
+          }
+        });
 
-      // Standardize the sent email format
-      const standardizedEmail = standardizeEmailFormat(
-        email,
-        "imap",
-        account.id
-      );
-      return NextResponse.json({ success: true, email: standardizedEmail });
+        if (!imap_account) {
+          return NextResponse.json({ error: "IMAP account not found" }, { status: 404 });
+        }
+      }
+
+      // Ensure we have a valid account
+      if (!imap_account) {
+        return NextResponse.json({ error: "Missing IMAP account" }, { status: 400 });
+      }
+
+      const { to, subject, body, html, attachments, cc, bcc } = data;
+      
+      try {
+        // Decrypt the credentials from the database
+        const decryptedCreds = decryptData(imap_account.credentials);
+        const credsObject = JSON.parse(decryptedCreds);
+        
+        // Create ImapAccount object with decrypted credentials and including SMTP details
+        const imapAccount: ImapAccount = {
+          ...imap_account,
+          host: credsObject.host || imap_account.host,
+          port: credsObject.port || imap_account.port,
+          password: credsObject.password,
+          secure: credsObject.secure !== undefined ? credsObject.secure : (imap_account.port === 465 || imap_account.port === 993),
+          username: credsObject.user || credsObject.username,
+          // Include SMTP configuration if available
+          smtpHost: credsObject.smtpHost,
+          smtpPort: credsObject.smtpPort,
+          smtpSecure: credsObject.smtpSecure
+        };
+        
+        console.log(`Using email configuration: IMAP host=${imapAccount.host}:${imapAccount.port}, SMTP host=${imapAccount.smtpHost || imapAccount.host}:${imapAccount.smtpPort || "default"}`);
+      
+        const email = await sendImapEmail({
+          account: imapAccount,
+          to,
+          subject,
+          body,
+          html,
+          attachments,
+          cc,
+          bcc,
+        });
+
+        // Standardize the sent email format
+        const standardizedEmail = standardizeEmailFormat(
+          {
+            id: email.messageId || `sent-${Date.now()}`,
+            threadId: email.messageId || `sent-${Date.now()}`,
+            from: { 
+              name: imap_account.label || imap_account.username || "", 
+              email: imap_account.username || "" 
+            },
+            to: Array.isArray(to) 
+              ? to.map((recipient: string) => ({ 
+                  name: recipient.split('@')[0] || recipient, 
+                  email: recipient 
+                }))
+              : [{ 
+                  name: to.split('@')[0] || to, 
+                  email: to 
+                }],
+            subject: subject || "(No Subject)",
+            body: html || body || "",
+            date: new Date().toISOString(),
+            labels: ["sent"],
+            attachments: attachments || []
+          },
+          "imap",
+          imap_account.id
+        );
+        
+        return NextResponse.json({ success: true, email: standardizedEmail });
+      } catch (error: any) {
+        console.error("Error in sendEmail:", {
+          message: error.message,
+          name: error.name,
+          code: error.code,
+          meta: error.meta,
+          stack: error.stack,
+        });
+
+        return NextResponse.json(
+          {
+            error: "Failed to send email",
+            message: error.message,
+            code: error.code,
+          },
+          { status: 500 }
+        );
+      }
     }
 
     // Delete emails

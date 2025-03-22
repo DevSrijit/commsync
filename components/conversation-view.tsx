@@ -7,21 +7,18 @@ import { useEmailStore } from "@/lib/email-store";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useSession } from "next-auth/react";
-import { sendEmail } from "@/lib/gmail-api";
 import { useToast } from "@/hooks/use-toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Paperclip, Image, FileText, File, Users, Mail, Phone, MessageSquare } from "lucide-react";
+import { Image, FileText, File, Users } from "lucide-react";
 import DOMPurify from "isomorphic-dompurify";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
-import { fetchEmails } from "@/lib/gmail-api";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, MessageSquare } from "lucide-react";
 import { Email } from "@/lib/types";
-import { cn } from "@/lib/utils";
-import React from "react";
+import { useSendMessage } from "@/lib/messaging";
 
 interface ConversationViewProps {
   contactEmail: string | null;
@@ -50,32 +47,7 @@ const formatFileSize = (bytes: number): string => {
   const sizes = ["Bytes", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
 
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-};
-
-const getPlatformIcon = (platform: string | undefined) => {
-  switch (platform?.toLowerCase()) {
-    case 'gmail':
-    case 'imap':
-      return <Mail className="h-3 w-3" />;
-    case 'justcall':
-      return <Phone className="h-3 w-3" />;
-    default:
-      return <MessageSquare className="h-3 w-3" />;
-  }
-};
-
-const getPlatformColor = (platform: string | undefined) => {
-  switch (platform?.toLowerCase()) {
-    case 'gmail':
-      return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300";
-    case 'imap':
-      return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300";
-    case 'justcall':
-      return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300";
-    default:
-      return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300";
-  }
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
 };
 
 export function ConversationView({
@@ -94,8 +66,11 @@ export function ConversationView({
     addEmail,
     setEmails,
     imapAccounts,
+    twilioAccounts,
+    justcallAccounts,
   } = useEmailStore();
   const { toast } = useToast();
+  const { sendMessage } = useSendMessage();
 
   // Filter emails based on active filter and group
   const filteredEmails = useMemo(() => {
@@ -140,6 +115,9 @@ export function ConversationView({
   const [isRefetching, setIsRefetching] = useState(false);
   const [messageContent, setMessageContent] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
+  // State for selected platform and account when multiple are available
+  const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
 
   const contact = contacts.find((c) => c.email === contactEmail);
 
@@ -158,8 +136,11 @@ export function ConversationView({
     }
   }, [contactEmail, contact, imapAccounts]);
 
+  // Always use all emails to ensure conversations include both sent and received emails
+  const allEmails = emails;
+
   // Filter all emails related to this conversation, considering account IDs
-  const conversation = filteredEmails
+  const conversation = allEmails
     .filter((email) => {
       if (contactEmail === null) return false;
 
@@ -167,7 +148,9 @@ export function ConversationView({
       console.log(
         `Checking email: ${email.id}, from: ${email.from.email}, accountId: ${
           email.accountId
-        }, type: ${email.accountType || "unknown"}`
+        }, type: ${email.accountType || "unknown"}, labels: ${
+          email.labels?.join(", ") || "none"
+        }`
       );
 
       // For group conversations
@@ -188,6 +171,19 @@ export function ConversationView({
           }
         }
         return false;
+      }
+
+      // Special handling for SENT emails
+      if (email.labels?.includes("SENT") && session?.user?.email) {
+        // For SENT emails, check if the current contact is in the recipients
+        const isSentToContact = email.to.some(
+          (to) => to.email === contactEmail
+        );
+
+        if (isSentToContact) {
+          console.log(`Including SENT email to contact: ${email.id}`);
+          return true;
+        }
       }
 
       // For Gmail emails (from the user's Gmail account)
@@ -251,11 +247,12 @@ export function ConversationView({
             // Show Gmail access limitation message instead of attempting to fetch
             toast({
               title: "Gmail conversation unavailable",
-              description: "We cannot display this conversation due to Gmail API limitations.",
+              description:
+                "We cannot display this conversation due to Gmail API limitations.",
               variant: "destructive",
               duration: 5000,
             });
-            
+
             setIsRefetching(false);
             return;
           }
@@ -332,6 +329,47 @@ export function ConversationView({
 
   // Update loading state to include refetching
   const isLoadingState = isLoading;
+
+  // Detect platform from conversation
+  useEffect(() => {
+    if (conversation.length > 0) {
+      // Sort conversation to get the most recent message
+      const latestEmail = [...conversation].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      )[0];
+      
+      // Set platform based on latest message
+      if (latestEmail.accountType) {
+        setSelectedPlatform(latestEmail.accountType);
+        if (latestEmail.accountId) {
+          setSelectedAccountId(latestEmail.accountId);
+        }
+        console.log(`Detected platform: ${latestEmail.accountType}, Account ID: ${latestEmail.accountId || 'none'}`);
+      } else if (latestEmail.platform) {
+        setSelectedPlatform(latestEmail.platform);
+        if (latestEmail.accountId) {
+          setSelectedAccountId(latestEmail.accountId);
+        }
+        console.log(`Detected platform: ${latestEmail.platform}, Account ID: ${latestEmail.accountId || 'none'}`);
+      } else {
+        // Default to Gmail if no platform detected
+        setSelectedPlatform('gmail');
+        setSelectedAccountId(null);
+        console.log('No platform detected, defaulting to Gmail');
+      }
+    } else if (contact?.accountType) {
+      // If no conversation but contact has accountType, use that
+      setSelectedPlatform(contact.accountType);
+      if (contact.accountId) {
+        setSelectedAccountId(contact.accountId);
+      }
+      console.log(`Using contact platform: ${contact.accountType}, Account ID: ${contact.accountId || 'none'}`);
+    } else {
+      // Default to Gmail
+      setSelectedPlatform('gmail');
+      setSelectedAccountId(null);
+    }
+  }, [conversation, contact]);
 
   if (!contactEmail) {
     return (
@@ -444,35 +482,21 @@ export function ConversationView({
                     >
                       <div className="flex flex-col gap-1">
                         <div className="flex justify-between items-baseline gap-4">
-                          <div className="flex items-start space-x-2">
-                            <Avatar className="h-8 w-8">
-                              <AvatarImage
-                                src={getGravatarUrl(email.from.email)}
-                                alt={email.from.name || ""}
-                              />
-                              <AvatarFallback>
-                                {(email.from.name?.charAt(0) || "U").toUpperCase()}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div className="flex-1 space-y-1">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center space-x-2">
-                                  <p className="font-medium">
-                                    {email.from.name || email.from.email}
-                                  </p>
-                                  <div className={`px-1.5 py-0.5 rounded-full text-xs inline-flex items-center mx-2 ${getPlatformColor(email.accountType || email.platform)}`}>
-                                    {getPlatformIcon(email.accountType || email.platform)}
-                                    <span className="ml-1">{email.accountType || email.platform || "Email"}</span>
-                                  </div>
-                                </div>
-                                <p className="text-xs text-muted-foreground">
-                                  {formatDistanceToNow(new Date(email.date), {
-                                    addSuffix: true,
-                                  })}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
+                          <span className="font-medium text-sm">
+                            {email.subject}
+                          </span>
+                          <span className="text-xs opacity-70">
+                            {formatDistanceToNow(new Date(email.date || ""), {
+                              addSuffix: true,
+                              includeSeconds: true,
+                            })}
+                            {email.accountType === "justcall" && (
+                              <span className="ml-1">
+                                [Debug:{" "}
+                                {new Date(email.date || "").toISOString()}]
+                              </span>
+                            )}
+                          </span>
                         </div>
                         <div
                           className="prose prose-sm dark:prose-invert max-w-none overflow-hidden"
@@ -599,10 +623,13 @@ export function ConversationView({
                   // Gmail-specific message
                   <div className="max-w-md">
                     <AlertTriangle className="h-12 w-12 text-amber-500 mx-auto mb-4" />
-                    <h3 className="text-lg font-medium mb-2">Gmail Conversation Unavailable</h3>
+                    <h3 className="text-lg font-medium mb-2">
+                      Gmail Conversation Unavailable
+                    </h3>
                     <p className="text-muted-foreground mb-4">
-                      We cannot display this conversation due to Gmail API limitations. 
-                      This may be due to security restrictions or access permissions.
+                      We cannot display this conversation due to Gmail API
+                      limitations. This may be due to security restrictions or
+                      access permissions.
                     </p>
                     <p className="text-sm text-muted-foreground">
                       Try using an IMAP account for full conversation support.
@@ -612,7 +639,9 @@ export function ConversationView({
                   // Generic empty conversation message for IMAP
                   <div className="max-w-md">
                     <MessageSquare className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                    <h3 className="text-lg font-medium mb-2">No Messages Found</h3>
+                    <h3 className="text-lg font-medium mb-2">
+                      No Messages Found
+                    </h3>
                     <p className="text-muted-foreground">
                       Start a new conversation with this contact.
                     </p>
@@ -642,42 +671,144 @@ export function ConversationView({
               // Handle group emails
               if (isGroup && groupId) {
                 const group = groups.find((g) => g.id === groupId);
-                if (group && group.addresses.length > 0) {
-                  // Send email to all addresses in the group
-                  const newEmail = await sendEmail({
-                    accessToken: session.user.accessToken,
-                    to: group.addresses.join(","),
-                    subject: `Re: Group: ${group.name}`,
-                    body: content,
-                    attachments: uploadedAttachments,
-                  });
-
-                  addEmail(newEmail);
-                  toast({
-                    title: "Group email sent",
-                    description: `Your message has been sent to ${group.addresses.length} recipients`,
-                  });
+                
+                if (group) {
+                  if (selectedPlatform === "gmail" || selectedPlatform === "imap") {
+                    // For email platforms with group
+                    const recipients = group.addresses.join(",");
+                    await sendMessage({
+                      platform: selectedPlatform,
+                      recipients,
+                      subject: `Re: Group: ${group.name}`,
+                      content,
+                      attachments: uploadedAttachments,
+                      accountId: selectedAccountId || undefined
+                    }, {
+                      accessToken: session.user.accessToken,
+                      onSuccess: (newMessage) => {
+                        if (newMessage) {
+                          addEmail(newMessage);
+                          toast({
+                            title: "Message sent",
+                            description: `Your message has been sent to ${group.addresses.length} recipients`,
+                          });
+                          
+                          // Trigger sync after message is sent
+                          setTimeout(() => {
+                            useEmailStore.getState().syncAllPlatforms(session.user.accessToken);
+                          }, 1000); // Small delay to ensure message is processed
+                        }
+                      }
+                    });
+                  } else if (selectedPlatform === "twilio" || selectedPlatform === "justcall") {
+                    // For SMS platforms with group, send individual messages
+                    const phoneNumbers = group.phoneNumbers.length > 0 
+                      ? group.phoneNumbers
+                      : group.addresses; // Fallback to addresses if no phone numbers
+                      
+                    for (const phoneNumber of phoneNumbers) {
+                      await sendMessage({
+                        platform: selectedPlatform,
+                        recipients: phoneNumber,
+                        content,
+                        attachments: uploadedAttachments,
+                        accountId: selectedAccountId || undefined
+                      }, {
+                        accessToken: session.user.accessToken,
+                        onSuccess: (newMessage) => {
+                          if (newMessage) {
+                            addEmail(newMessage);
+                          }
+                        }
+                      });
+                    }
+                    
+                    toast({
+                      title: "Messages sent",
+                      description: `Your message has been sent to ${phoneNumbers.length} recipients`,
+                    });
+                    
+                    // Trigger sync after all messages are sent
+                    setTimeout(() => {
+                      useEmailStore.getState().syncAllPlatforms(session.user.accessToken);
+                    }, 1000); // Small delay to ensure messages are processed
+                  }
                 }
               } else {
-                // Regular single-recipient email
-                const newEmail = await sendEmail({
-                  accessToken: session.user.accessToken,
-                  to: contactEmail,
-                  subject: `Re: ${contact?.lastMessageSubject || "No subject"}`,
-                  body: content,
-                  attachments: uploadedAttachments, // Pass the attachments
-                });
-
-                addEmail(newEmail);
-                toast({
-                  title: "Email sent",
-                  description: "Your reply has been sent successfully",
-                });
+                // Regular single-recipient message
+                if (selectedPlatform === "gmail" || selectedPlatform === "imap") {
+                  // For email platforms
+                  // Get threadId for proper threading if available
+                  const latestEmailInConversation = conversation.length > 0
+                    ? conversation.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
+                    : null;
+                  const threadId = latestEmailInConversation?.threadId || null;
+                  
+                  await sendMessage({
+                    platform: selectedPlatform,
+                    recipients: contactEmail,
+                    subject: `Re: ${latestEmailInConversation?.subject || contact?.lastMessageSubject || "No subject"}`,
+                    content,
+                    attachments: uploadedAttachments,
+                    accountId: selectedAccountId || undefined,
+                    threadId
+                  }, {
+                    accessToken: session.user.accessToken,
+                    onSuccess: (newMessage) => {
+                      if (newMessage) {
+                        addEmail(newMessage);
+                        toast({
+                          title: "Message sent",
+                          description: "Your reply has been sent successfully",
+                        });
+                        
+                        // Trigger sync after message is sent
+                        setTimeout(() => {
+                          useEmailStore.getState().syncAllPlatforms(session.user.accessToken);
+                        }, 1000); // Small delay to ensure message is processed
+                      }
+                    }
+                  });
+                } else if (selectedPlatform === "twilio" || selectedPlatform === "justcall") {
+                  // For SMS platforms
+                  let justcallNumber = undefined;
+                  
+                  // Get JustCall phone number if needed
+                  if (selectedPlatform === "justcall" && selectedAccountId) {
+                    const account = justcallAccounts.find(a => a.id === selectedAccountId);
+                    justcallNumber = account?.accountIdentifier || undefined;
+                  }
+                  
+                  await sendMessage({
+                    platform: selectedPlatform,
+                    recipients: contactEmail,
+                    content,
+                    attachments: uploadedAttachments,
+                    accountId: selectedAccountId || undefined,
+                    justcallNumber
+                  }, {
+                    accessToken: session.user.accessToken,
+                    onSuccess: (newMessage) => {
+                      if (newMessage) {
+                        addEmail(newMessage);
+                        toast({
+                          title: "Message sent",
+                          description: "Your message has been sent successfully",
+                        });
+                        
+                        // Trigger sync after message is sent
+                        setTimeout(() => {
+                          useEmailStore.getState().syncAllPlatforms(session.user.accessToken);
+                        }, 1000); // Small delay to ensure message is processed
+                      }
+                    }
+                  });
+                }
               }
             } catch (error) {
-              console.error("Failed to send email:", error);
+              console.error("Failed to send message:", error);
               toast({
-                title: "Failed to send email",
+                title: "Failed to send message",
                 description: "Please try again later",
                 variant: "destructive",
               });
@@ -691,6 +822,24 @@ export function ConversationView({
               ? `Reply to group...`
               : `Reply to ${contact?.name || contactEmail}...`
           }
+          platform={selectedPlatform || "gmail"}
+          accountId={selectedAccountId || undefined}
+          isGroup={isGroup}
+          groupId={groupId}
+          platformOptions={conversation.reduce((options, email) => {
+            if (email.accountType && !options.includes(email.accountType)) {
+              options.push(email.accountType);
+            }
+            return options;
+          }, [] as string[])}
+          onPlatformChange={(platform: string, accountId?: string) => {
+            setSelectedPlatform(platform);
+            if (accountId === undefined) {
+              setSelectedAccountId(null);
+            } else {
+              setSelectedAccountId(accountId);
+            }
+          }}
         />
       </ResizablePanel>
     </ResizablePanelGroup>

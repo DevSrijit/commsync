@@ -23,6 +23,7 @@ interface Group {
   id: string;
   name: string;
   addresses: string[];
+  phoneNumbers: string[];
 }
 
 interface EmailStoreWithGroups {
@@ -40,6 +41,7 @@ interface GroupDialogProps {
     id: string;
     name: string;
     addresses: string[];
+    phoneNumbers: string[];
   };
 }
 
@@ -50,23 +52,29 @@ export default function GroupDialog({ open, onOpenChange, groupToEdit }: GroupDi
   const [activeTab, setActiveTab] = useState<string>("create");
   const [groupName, setGroupName] = useState("");
   const [addresses, setAddresses] = useState<string[]>([]);
+  const [phoneNumbers, setPhoneNumbers] = useState<string[]>([]);
   const [newAddress, setNewAddress] = useState("");
-  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [newPhoneNumber, setNewPhoneNumber] = useState("");
+  const [emailSuggestions, setEmailSuggestions] = useState<string[]>([]);
+  const [phoneSuggestions, setPhoneSuggestions] = useState<string[]>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [contactType, setContactType] = useState<"email" | "phone">("email");
 
   // Initialize form when editing an existing group
   useEffect(() => {
     if (groupToEdit) {
       setGroupName(groupToEdit.name);
       setAddresses(groupToEdit.addresses);
+      setPhoneNumbers(groupToEdit.phoneNumbers || []);
       setIsEditing(true);
       setSelectedGroupId(groupToEdit.id);
       setActiveTab("create");
     } else {
       setGroupName("");
       setAddresses([]);
+      setPhoneNumbers([]);
       setIsEditing(false);
       setSelectedGroupId(null);
     }
@@ -106,11 +114,58 @@ export default function GroupDialog({ open, onOpenChange, groupToEdit }: GroupDi
         )
         .slice(0, 5);
 
-      setSuggestions(filtered);
+      setEmailSuggestions(filtered);
     } else {
-      setSuggestions([]);
+      setEmailSuggestions([]);
     }
   }, [newAddress, emails, addresses]);
+
+  // Generate phone number suggestions based on existing emails
+  useEffect(() => {
+    if (newPhoneNumber.length > 2) {
+      // Extract unique phone numbers from emails
+      const allPhoneNumbers = new Set<string>();
+
+      emails.forEach(email => {
+        // For SMS messages, phone numbers are in the email field
+        const isSMS = email.accountType === 'twilio' || 
+                     email.accountType === 'justcall' || 
+                     (email.labels && email.labels.includes('SMS'));
+        
+        if (isSMS) {
+          // Add from phone numbers
+          if (email.from) {
+            const fromPhone = email.from.email;
+            if (fromPhone && !fromPhone.includes('@')) {
+              allPhoneNumbers.add(fromPhone);
+            }
+          }
+
+          // Add to phone numbers
+          if (email.to) {
+            email.to.forEach(recipient => {
+              const toPhone = recipient.email;
+              if (toPhone && !toPhone.includes('@')) {
+                allPhoneNumbers.add(toPhone);
+              }
+            });
+          }
+        }
+      });
+
+      // Filter suggestions based on input
+      const filtered = Array.from(allPhoneNumbers)
+        .filter(phone =>
+          phone.includes(newPhoneNumber) &&
+          !phoneNumbers.includes(phone)
+        )
+        .slice(0, 5);
+
+      setPhoneSuggestions(filtered);
+    } else {
+      setPhoneSuggestions([]);
+    }
+  }, [newPhoneNumber, emails, phoneNumbers]);
 
   const handleAddAddress = () => {
     if (newAddress && newAddress.includes('@') && !addresses.includes(newAddress)) {
@@ -127,13 +182,33 @@ export default function GroupDialog({ open, onOpenChange, groupToEdit }: GroupDi
     if (!addresses.includes(suggestion)) {
       setAddresses([...addresses, suggestion]);
       setNewAddress("");
-      setSuggestions([]);
+      setEmailSuggestions([]);
+    }
+  };
+
+  const handleAddPhoneNumber = () => {
+    if (newPhoneNumber && !phoneNumbers.includes(newPhoneNumber)) {
+      setPhoneNumbers([...phoneNumbers, newPhoneNumber]);
+      setNewPhoneNumber("");
+    }
+  };
+
+  const handleRemovePhoneNumber = (phone: string) => {
+    setPhoneNumbers(phoneNumbers.filter(p => p !== phone));
+  };
+
+  const handleSelectPhoneSuggestion = (suggestion: string) => {
+    if (!phoneNumbers.includes(suggestion)) {
+      setPhoneNumbers([...phoneNumbers, suggestion]);
+      setNewPhoneNumber("");
+      setPhoneSuggestions([]);
     }
   };
 
   const handleEditGroup = (group: Group) => {
     setGroupName(group.name);
     setAddresses([...group.addresses]);
+    setPhoneNumbers(group.phoneNumbers ? [...group.phoneNumbers] : []);
     setIsEditing(true);
     setSelectedGroupId(group.id);
     setActiveTab("create");
@@ -185,6 +260,7 @@ export default function GroupDialog({ open, onOpenChange, groupToEdit }: GroupDi
           id: selectedGroupId,
           name: groupName,
           addresses,
+          phoneNumbers,
         });
         toast({
           title: "Group updated",
@@ -197,6 +273,7 @@ export default function GroupDialog({ open, onOpenChange, groupToEdit }: GroupDi
           id: tempId,
           name: groupName,
           addresses,
+          phoneNumbers,
         });
         toast({
           title: "Group created",
@@ -207,6 +284,7 @@ export default function GroupDialog({ open, onOpenChange, groupToEdit }: GroupDi
       // Reset form
       setGroupName("");
       setAddresses([]);
+      setPhoneNumbers([]);
       setIsEditing(false);
       setSelectedGroupId(null);
       
@@ -229,6 +307,7 @@ export default function GroupDialog({ open, onOpenChange, groupToEdit }: GroupDi
   const resetForm = () => {
     setGroupName("");
     setAddresses([]);
+    setPhoneNumbers([]);
     setIsEditing(false);
     setSelectedGroupId(null);
   };
@@ -238,7 +317,7 @@ export default function GroupDialog({ open, onOpenChange, groupToEdit }: GroupDi
       <DialogContent className="max-w-md">
         <DialogHeader className="px-4 py-3 border-b flex flex-row items-center justify-between">
           <DialogTitle className="text-lg font-medium">
-            Email Groups
+            Contact Groups
           </DialogTitle>
           <DialogClose asChild>
             <Button variant="ghost" size="icon">
@@ -248,162 +327,263 @@ export default function GroupDialog({ open, onOpenChange, groupToEdit }: GroupDi
         </DialogHeader>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid grid-cols-2 mb-4">
-            <TabsTrigger value="create" onClick={() => resetForm()}>
-              {isEditing ? "Edit Group" : "Create Group"}
+          <TabsList className="grid grid-cols-2 mx-4 my-2">
+            <TabsTrigger value="create">
+              {isEditing ? "Edit Contact" : "Create Contact"}
             </TabsTrigger>
-            <TabsTrigger value="manage">Manage Groups</TabsTrigger>
+            <TabsTrigger value="view">View Contacts</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="create" className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="group-name">Group Name</Label>
-              <Input
-                id="group-name"
-                value={groupName}
-                onChange={(e) => setGroupName(e.target.value)}
-                placeholder="Enter group name"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="email-address">Email Addresses</Label>
-              <div className="flex gap-2">
+          <TabsContent value="create" className="px-4 py-4">
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="groupName">Group Name</Label>
                 <Input
-                  id="email-address"
-                  value={newAddress}
-                  onChange={(e) => setNewAddress(e.target.value)}
-                  placeholder="Add email address"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleAddAddress();
-                    }
-                  }}
+                  id="groupName"
+                  placeholder="Enter group name"
+                  value={groupName}
+                  onChange={(e) => setGroupName(e.target.value)}
+                  className="mt-1"
                 />
-                <Button onClick={handleAddAddress} type="button">
-                  <Plus className="h-4 w-4" />
-                </Button>
               </div>
 
-              {/* Suggestions */}
-              {suggestions.length > 0 && (
-                <div className="mt-1 border rounded-md overflow-hidden">
-                  {suggestions.map((suggestion) => (
-                    <button
-                      key={suggestion}
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                      onClick={() => handleSelectSuggestion(suggestion)}
-                    >
-                      {suggestion}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* List of added addresses */}
-              {addresses.length > 0 && (
-                <ScrollArea className="h-[150px] border rounded-md p-2">
-                  <div className="space-y-2">
-                    {addresses.map((address) => (
-                      <div
-                        key={address}
-                        className="flex items-center justify-between bg-neutral-50 dark:bg-neutral-900 p-2 rounded-md"
+              <div className="space-y-2">
+                <Tabs className="w-full" value={contactType} onValueChange={(v) => setContactType(v as "email" | "phone")}>
+                  <TabsList className="grid grid-cols-2">
+                    <TabsTrigger value="email">Email Addresses</TabsTrigger>
+                    <TabsTrigger value="phone">Phone Numbers</TabsTrigger>
+                  </TabsList>
+                  
+                  <TabsContent value="email" className="pt-4">
+                    <Label htmlFor="newAddress">Add Email Addresses</Label>
+                    <div className="flex mt-1">
+                      <Input
+                        id="newAddress"
+                        placeholder="Enter email address"
+                        value={newAddress}
+                        onChange={(e) => setNewAddress(e.target.value)}
+                        className="flex-1"
+                      />
+                      <Button
+                        onClick={handleAddAddress}
+                        type="button"
+                        className="ml-2"
+                        size="sm"
                       >
-                        <span className="text-sm truncate">{address}</span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6"
-                          onClick={() => handleRemoveAddress(address)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    {/* Email Suggestions */}
+                    {emailSuggestions.length > 0 && (
+                      <div className="mt-1 border rounded-md overflow-hidden">
+                        {emailSuggestions.map((suggestion) => (
+                          <button
+                            key={suggestion}
+                            onClick={() => handleSelectSuggestion(suggestion)}
+                            className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm"
+                          >
+                            {suggestion}
+                          </button>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-              )}
+                    )}
+
+                    {/* Added Email Addresses */}
+                    {addresses.length > 0 && (
+                      <div className="mt-4">
+                        <Label>Added Email Addresses</Label>
+                        <ScrollArea className="h-28 mt-1 border rounded-md p-2">
+                          <div className="space-y-2">
+                            {addresses.map((address) => (
+                              <div
+                                key={address}
+                                className="flex items-center justify-between bg-gray-50 rounded p-2"
+                              >
+                                <span className="text-sm truncate">{address}</span>
+                                <Button
+                                  onClick={() => handleRemoveAddress(address)}
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-6 w-6"
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      </div>
+                    )}
+                  </TabsContent>
+                  
+                  <TabsContent value="phone" className="pt-4">
+                    <Label htmlFor="newPhoneNumber">Add Phone Numbers</Label>
+                    <div className="flex mt-1">
+                      <Input
+                        id="newPhoneNumber"
+                        placeholder="Enter phone number"
+                        value={newPhoneNumber}
+                        onChange={(e) => setNewPhoneNumber(e.target.value)}
+                        className="flex-1"
+                      />
+                      <Button
+                        onClick={handleAddPhoneNumber}
+                        type="button"
+                        className="ml-2"
+                        size="sm"
+                      >
+                        <Plus className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    {/* Phone Suggestions */}
+                    {phoneSuggestions.length > 0 && (
+                      <div className="mt-1 border rounded-md overflow-hidden">
+                        {phoneSuggestions.map((suggestion) => (
+                          <button
+                            key={suggestion}
+                            onClick={() => handleSelectPhoneSuggestion(suggestion)}
+                            className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm"
+                          >
+                            {suggestion}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Added Phone Numbers */}
+                    {phoneNumbers.length > 0 && (
+                      <div className="mt-4">
+                        <Label>Added Phone Numbers</Label>
+                        <ScrollArea className="h-28 mt-1 border rounded-md p-2">
+                          <div className="space-y-2">
+                            {phoneNumbers.map((phone) => (
+                              <div
+                                key={phone}
+                                className="flex items-center justify-between bg-gray-50 rounded p-2"
+                              >
+                                <span className="text-sm truncate">{phone}</span>
+                                <Button
+                                  onClick={() => handleRemovePhoneNumber(phone)}
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-6 w-6"
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      </div>
+                    )}
+                  </TabsContent>
+                </Tabs>
+              </div>
             </div>
-
-            <DialogFooter className="pt-4">
-              <Button variant="outline" onClick={() => {
-                resetForm();
-                if (isEditing) {
-                  setActiveTab("manage");
-                }
-              }}>
-                Cancel
-              </Button>
-              <Button onClick={handleSubmit} disabled={isSubmitting}>
-                {isSubmitting ? "Saving..." : (isEditing ? "Update Group" : "Create Group")}
-              </Button>
-            </DialogFooter>
           </TabsContent>
-
-          <TabsContent value="manage">
-            {groups.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                <p>No groups created yet</p>
-                <Button 
-                  variant="outline" 
-                  className="mt-2"
-                  onClick={() => setActiveTab("create")}
-                >
-                  Create your first group
-                </Button>
+          
+          {/* View Groups Tab - Need to update to display phone numbers too */}
+          <TabsContent value="view" className="px-4 py-2 pb-4">
+            {!groups || groups.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <p>No groups created yet.</p>
               </div>
             ) : (
-              <ScrollArea className="h-[300px] pr-4">
+              <ScrollArea className="h-[300px]">
                 <div className="space-y-3">
                   {groups.map((group) => (
-                    <div 
+                    <div
                       key={group.id}
-                      className="border rounded-lg p-3 hover:bg-neutral-50 dark:hover:bg-neutral-900 transition-colors"
+                      className="border rounded-md p-3 hover:border-gray-400 transition-colors"
                     >
                       <div className="flex items-center justify-between mb-2">
                         <h3 className="font-medium">{group.name}</h3>
-                        <div className="flex gap-1">
+                        <div className="flex space-x-1">
                           <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
                             onClick={() => handleEditGroup(group)}
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
                           >
-                            <Pencil className="h-4 w-4" />
+                            <Pencil className="h-3.5 w-3.5" />
                           </Button>
                           <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive"
                             onClick={() => handleDeleteGroup(group.id)}
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
                       </div>
-                      <div className="text-sm text-muted-foreground">
-                        {group.addresses.length} {group.addresses.length === 1 ? 'address' : 'addresses'}
-                      </div>
-                      <div className="mt-2 text-xs text-muted-foreground truncate">
-                        {group.addresses.slice(0, 2).join(", ")}
-                        {group.addresses.length > 2 && ` and ${group.addresses.length - 2} more`}
-                      </div>
+                      
+                      {group.addresses.length > 0 && (
+                        <div className="mb-2">
+                          <p className="text-xs text-gray-500 mb-1">Email Addresses:</p>
+                          <ScrollArea className="h-16 border rounded-sm p-1">
+                            <div className="space-y-1">
+                              {group.addresses.map((address) => (
+                                <div
+                                  key={address}
+                                  className="text-xs bg-gray-50 px-2 py-1 rounded"
+                                >
+                                  {address}
+                                </div>
+                              ))}
+                            </div>
+                          </ScrollArea>
+                        </div>
+                      )}
+                      
+                      {group.phoneNumbers && group.phoneNumbers.length > 0 && (
+                        <div>
+                          <p className="text-xs text-gray-500 mb-1">Phone Numbers:</p>
+                          <ScrollArea className="h-16 border rounded-sm p-1">
+                            <div className="space-y-1">
+                              {group.phoneNumbers.map((phone) => (
+                                <div
+                                  key={phone}
+                                  className="text-xs bg-gray-50 px-2 py-1 rounded"
+                                >
+                                  {phone}
+                                </div>
+                              ))}
+                            </div>
+                          </ScrollArea>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
               </ScrollArea>
             )}
-            <DialogFooter className="pt-4">
-              <Button 
-                variant="default" 
-                onClick={() => setActiveTab("create")}
-              >
-                Create New Group
-              </Button>
-            </DialogFooter>
           </TabsContent>
         </Tabs>
+
+        <DialogFooter className="px-4 py-3 border-t">
+          {activeTab === "create" && (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={resetForm}
+                disabled={isSubmitting}
+              >
+                Reset
+              </Button>
+              <Button
+                type="button"
+                disabled={isSubmitting}
+                onClick={handleSubmit}
+              >
+                {isEditing ? "Update Group" : "Create Group"}
+              </Button>
+            </>
+          )}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

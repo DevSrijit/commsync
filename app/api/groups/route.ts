@@ -40,10 +40,18 @@ export async function POST(req: NextRequest) {
         data: {
           name: group.name,
           addresses: group.addresses,
+          phoneNumbers: group.phoneNumbers || [],
           userId
         }
       });
-      return NextResponse.json({ success: true, group: newGroup });
+
+      // Return all groups for the user after creation
+      const groups = await db.group.findMany({
+        where: { userId },
+        orderBy: { updatedAt: 'desc' }
+      });
+
+      return NextResponse.json({ success: true, groups });
     }
 
     // Update an existing group
@@ -56,10 +64,18 @@ export async function POST(req: NextRequest) {
         data: {
           name: group.name,
           addresses: group.addresses,
+          phoneNumbers: group.phoneNumbers || [],
           updatedAt: new Date()
         }
       });
-      return NextResponse.json({ success: true, group: updatedGroup });
+
+      // Return all groups for the user after update
+      const groups = await db.group.findMany({
+        where: { userId },
+        orderBy: { updatedAt: 'desc' }
+      });
+
+      return NextResponse.json({ success: true, groups });
     }
 
     // Delete a group
@@ -70,7 +86,14 @@ export async function POST(req: NextRequest) {
           userId // Ensure user owns this group
         }
       });
-      return NextResponse.json({ success: true });
+      
+      // Return all groups for the user after deletion
+      const groups = await db.group.findMany({
+        where: { userId },
+        orderBy: { updatedAt: 'desc' }
+      });
+      
+      return NextResponse.json({ success: true, groups });
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });

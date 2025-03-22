@@ -64,6 +64,8 @@ import { Badge } from "./ui/badge";
 import { ImapAccountCard } from "./imap-account-card";
 import GroupDialog from "./group-dialog";
 import { TwilioAccountDialog } from "./twilio-account-dialog";
+import { useToast } from "@/components/ui/use-toast";
+import { EmailContentLoader } from "@/lib/email-content-loader";
 
 export type MessageCategory =
   | "inbox"
@@ -72,12 +74,14 @@ export type MessageCategory =
   | "starred"
   | "trash"
   | "archive"
+  | "sms"
   | "all";
 
 export function Sidebar() {
   const { data: session } = useSession();
   const { emails, setActiveFilter, activeFilter, imapAccounts } =
     useEmailStore();
+  const { toast } = useToast();
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [isImapDialogOpen, setIsImapDialogOpen] = useState(false);
   const [isJustCallDialogOpen, setIsJustCallDialogOpen] = useState(false);
@@ -88,6 +92,8 @@ export function Sidebar() {
   const [justCallAccounts, setJustCallAccounts] = useState<any[]>([]);
   const [twilioAccounts, setTwilioAccounts] = useState<any[]>([]);
   const [isTwilioDialogOpen, setIsTwilioDialogOpen] = useState(false);
+  const [isSyncingSMS, setIsSyncingSMS] = useState(false);
+  const [isSyncingEmail, setIsSyncingEmail] = useState(false);
 
   // Fetch JustCall accounts
   useEffect(() => {
@@ -121,6 +127,14 @@ export function Sidebar() {
       fetchTwilioAccounts();
     }
   }, [session?.user]);
+
+  // Log IMAP accounts when they change
+  useEffect(() => {
+    console.log(`Sidebar: IMAP accounts updated - ${imapAccounts.length} accounts found`);
+    if (imapAccounts.length > 0) {
+      console.log('IMAP account labels:', imapAccounts.map(acc => acc.label));
+    }
+  }, [imapAccounts]);
 
   const inboxCount = emails.filter(
     (email) =>
@@ -180,7 +194,7 @@ export function Sidebar() {
           <PenSquare className="h-4 w-4 mr-2" />
           Compose
         </Button>
-        
+
         <Separator className="my-4" />
       </div>
       
@@ -189,85 +203,125 @@ export function Sidebar() {
           <Button
             variant="ghost"
             className={cn(
-              "w-full justify-start mb-1 px-2",
-              activeFilter === "inbox" && "bg-muted"
+              "w-full justify-start mb-1 px-3 py-2 text-sm font-medium",
+              activeFilter === "inbox" && "bg-accent text-accent-foreground"
             )}
-            size="sm"
             onClick={() => setActiveFilter("inbox")}
           >
             <Inbox className="h-4 w-4 mr-2" />
             <span className="flex-1 text-left">Inbox</span>
-            <span className="ml-auto">{inboxCount}</span>
+            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{inboxCount}</span>
           </Button>
           
           <Button
             variant="ghost"
             className={cn(
-              "w-full justify-start mb-1 px-2",
-              activeFilter === "draft" && "bg-muted"
+              "w-full justify-start mb-1 px-3 py-2 text-sm font-medium",
+              activeFilter === "draft" && "bg-accent text-accent-foreground"
             )}
-            size="sm"
             onClick={() => setActiveFilter("draft")}
           >
             <PenSquare className="h-4 w-4 mr-2" />
             <span className="flex-1 text-left">Drafts</span>
-            <span className="ml-auto">{draftCount}</span>
+            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{draftCount}</span>
           </Button>
           
           <Button
             variant="ghost"
             className={cn(
-              "w-full justify-start mb-1 px-2",
-              activeFilter === "sent" && "bg-muted"
+              "w-full justify-start mb-1 px-3 py-2 text-sm font-medium",
+              activeFilter === "sent" && "bg-accent text-accent-foreground"
             )}
-            size="sm"
             onClick={() => setActiveFilter("sent")}
           >
             <Send className="h-4 w-4 mr-2" />
             <span className="flex-1 text-left">Sent</span>
-            <span className="ml-auto">{sentCount}</span>
+            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{sentCount}</span>
           </Button>
           
           <Button
             variant="ghost"
             className={cn(
-              "w-full justify-start mb-1 px-2",
-              activeFilter === "starred" && "bg-muted"
+              "w-full justify-start mb-1 px-3 py-2 text-sm font-medium",
+              activeFilter === "starred" && "bg-accent text-accent-foreground"
             )}
-            size="sm"
             onClick={() => setActiveFilter("starred")}
           >
             <Star className="h-4 w-4 mr-2" />
             <span className="flex-1 text-left">Starred</span>
-            <span className="ml-auto">{starredCount}</span>
+            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{starredCount}</span>
           </Button>
           
           <Button
             variant="ghost"
             className={cn(
-              "w-full justify-start mb-1 px-2",
-              activeFilter === "trash" && "bg-muted"
+              "w-full justify-start mb-1 px-3 py-2 text-sm font-medium",
+              activeFilter === "trash" && "bg-accent text-accent-foreground"
             )}
-            size="sm"
             onClick={() => setActiveFilter("trash")}
           >
             <Trash className="h-4 w-4 mr-2" />
             <span className="flex-1 text-left">Trash</span>
-            <span className="ml-auto">{trashCount}</span>
+            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{trashCount}</span>
           </Button>
           
           <Button
             variant="ghost"
             className={cn(
-              "w-full justify-start mb-1 px-2",
-              activeFilter === "archive" && "bg-muted"
+              "w-full justify-start mb-1 px-3 py-2 text-sm font-medium",
+              activeFilter === "archive" && "bg-accent text-accent-foreground"
             )}
-            size="sm"
             onClick={() => setActiveFilter("archive")}
           >
             <Archive className="h-4 w-4 mr-2" />
             <span className="flex-1 text-left">Archive</span>
-            <span className="ml-auto">{archiveCount}</span>
+            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{archiveCount}</span>
+          </Button>
+          
+          <Button
+            variant="ghost"
+            className={cn(
+              "w-full justify-start mb-1 px-3 py-2 text-sm font-medium",
+              activeFilter === "sms" && "bg-accent text-accent-foreground"
+            )}
+            onClick={() => setActiveFilter("sms")}
+          >
+            <MessageSquare className="h-4 w-4 mr-2" />
+            <span className="flex-1 text-left">SMS</span>
+            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">
+              {emails.filter(email => 
+                email.accountType === 'twilio' || 
+                email.accountType === 'justcall' || 
+                (email.labels && email.labels.includes('SMS'))
+              ).length}
+            </span>
+          </Button>
+          
+          <Button
+            variant="ghost"
+            className="w-full justify-start mb-1 px-3 py-2 text-sm font-medium"
+            disabled={isSyncingSMS}
+            onClick={async () => {
+              try {
+                setIsSyncingSMS(true);
+                await Promise.all([
+                  useEmailStore.getState().syncTwilioAccounts(),
+                  useEmailStore.getState().syncJustcallAccounts()
+                ]);
+              } catch (error) {
+                console.error("Error syncing SMS messages:", error);
+              } finally {
+                setIsSyncingSMS(false);
+              }
+            }}
+          >
+            <div className="flex items-center w-full">
+              <MessageSquare className="h-4 w-4 mr-2" />
+              <span className="flex-1 text-left">Sync SMS</span>
+              {isSyncingSMS && (
+                <span className="ml-2 animate-spin">⟳</span>
+              )}
+            </div>
           </Button>
         </div>
 
@@ -295,7 +349,7 @@ export function Sidebar() {
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => setIsGroupDialogOpen(true)}>
                   <Users className="h-4 w-4 mr-2" />
-                  <span>Add Group</span>
+                  <span>Add Contact</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -305,35 +359,156 @@ export function Sidebar() {
         <div className="px-2">
           <Button
             variant="ghost"
-            className="w-full justify-start mb-1 px-2"
-            size="sm"
+            className="w-full justify-start mb-1 px-3 py-2 text-sm font-medium"
             onClick={() => setIsImapListOpen(true)}
           >
             <Mail className="h-4 w-4 mr-2" />
             <span className="flex-1 text-left">Email Accounts</span>
-            <span className="ml-auto">{imapAccounts.length}</span>
+            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{imapAccounts.length}</span>
           </Button>
 
           <Button
             variant="ghost"
-            className="w-full justify-start mb-1 px-2"
-            size="sm"
+            className="w-full justify-start mb-1 px-3 py-2 text-sm font-medium"
+            disabled={isSyncingEmail}
+            onClick={async () => {
+              try {
+                setIsSyncingEmail(true);
+                
+                // Sync all IMAP accounts
+                const { imapAccounts } = useEmailStore.getState();
+                const contentLoader = EmailContentLoader.getInstance();
+                let totalEmailsLoaded = 0;
+                
+                for (const account of imapAccounts) {
+                  try {
+                    console.log(`Syncing account: ${account.label}`);
+                    
+                    // Fetch emails for this account
+                    const response = await fetch("/api/imap", {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                      },
+                      body: JSON.stringify({
+                        action: "fetchEmails",
+                        account,
+                        data: {
+                          page: 1,
+                          pageSize: 100,
+                        },
+                      }),
+                    });
+                    
+                    if (!response.ok) {
+                      console.error(`Failed to sync emails for ${account.label}`);
+                      continue; // Skip to next account on error
+                    }
+                    
+                    const data = await response.json();
+                    
+                    // Format emails to ensure they have required properties
+                    const formattedEmails = data.emails.map((email: any) => ({
+                      ...email,
+                      labels: email.labels || [],
+                      from: email.from || { name: '', email: '' },
+                      to: email.to || [],
+                      date: email.date || new Date().toISOString(),
+                      subject: email.subject || '(No Subject)',
+                      accountType: 'imap',
+                      accountId: account.id,
+                    }));
+                    
+                    // Update the email store with fetched emails
+                    const store = useEmailStore.getState();
+                    store.setEmails([...store.emails, ...formattedEmails]);
+                    totalEmailsLoaded += formattedEmails.length;
+                    
+                    // Update last sync time
+                    if (account.id) {
+                      await fetch("/api/imap", {
+                        method: "POST",
+                        headers: {
+                          "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({
+                          action: "updateLastSync",
+                          data: {
+                            accountId: account.id,
+                          }
+                        }),
+                      });
+                    }
+                    
+                    // Load content for emails that don't have it
+                    const emailsWithoutContent = formattedEmails.filter((email: any) => !email.body || email.body.length === 0);
+                    
+                    // Load content for up to 5 emails at a time
+                    if (emailsWithoutContent.length > 0) {
+                      const batchSize = 5;
+                      for (let i = 0; i < emailsWithoutContent.length; i += batchSize) {
+                        const batch = emailsWithoutContent.slice(i, i + batchSize);
+                        await Promise.allSettled(
+                          batch.map((email: any) => contentLoader.loadEmailContent(email))
+                        );
+                      }
+                    }
+                  } catch (error) {
+                    console.error(`Error syncing account ${account.label}:`, error);
+                  }
+                }
+                
+                // Show toast notification with results
+                if (totalEmailsLoaded > 0) {
+                  toast({
+                    title: "Sync successful",
+                    description: `Synced ${totalEmailsLoaded} emails from ${imapAccounts.length} accounts`,
+                  });
+                } else {
+                  toast({
+                    title: "Sync complete",
+                    description: "No new emails found",
+                  });
+                }
+              } catch (error) {
+                console.error("Error syncing IMAP accounts:", error);
+                toast({
+                  title: "Sync failed",
+                  description: "Failed to sync emails. Please try again.",
+                  variant: "destructive",
+                });
+              } finally {
+                setIsSyncingEmail(false);
+              }
+            }}
+          >
+            <div className="flex items-center w-full">
+              <Mail className="h-4 w-4 mr-2" />
+              <span className="flex-1 text-left">Sync Email</span>
+              {isSyncingEmail && (
+                <span className="ml-2 animate-spin">⟳</span>
+              )}
+            </div>
+          </Button>
+
+          <Button
+            variant="ghost"
+            className="w-full justify-start mb-1 px-3 py-2 text-sm font-medium"
             onClick={() => setIsJustCallListOpen(true)}
           >
             <MessageSquare className="h-4 w-4 mr-2" />
             <span className="flex-1 text-left">JustCall Accounts</span>
-            <span className="ml-auto">{justCallAccounts.length}</span>
+            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{justCallAccounts.length}</span>
           </Button>
 
           <Button
             variant="ghost"
-            className="w-full justify-start mb-1 px-2"
-            size="sm"
+            className="w-full justify-start mb-1 px-3 py-2 text-sm font-medium"
             onClick={() => setIsTwilioListOpen(true)}
           >
             <SiTwilio className="h-4 w-4 mr-2" />
             <span className="flex-1 text-left">Twilio Accounts</span>
-            <span className="ml-auto">{twilioAccounts.length}</span>
+            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{twilioAccounts.length}</span>
           </Button>
         </div>
       </ScrollArea>

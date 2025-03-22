@@ -1,5 +1,6 @@
 import { Email } from "@/lib/types";
 import { useEmailStore } from "@/lib/email-store";
+import { getCacheValue } from './client-cache-browser';
 
 interface EmailLoadOptions {
   maxRetries?: number;
@@ -127,8 +128,8 @@ export class EmailContentLoader {
   }
 
   private async loadGmailEmailContent(email: Email): Promise<Email | null> {
-    // Get access token from localStorage or wherever it's stored
-    const accessToken = localStorage.getItem("gmailAccessToken");
+    // Get access token from database instead of localStorage 
+    const accessToken = await getCacheValue<string>("gmailAccessToken");
     if (!accessToken) return null;
 
     const response = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${email.id}?format=full`, {
@@ -144,8 +145,6 @@ export class EmailContentLoader {
     const data = await response.json();
     
     // Parse the Gmail message format into our Email type
-    // This would need to match your existing Gmail parsing logic
-    // Simplified example:
     const parsedEmail = {
       ...email,
       body: this.extractBodyFromGmailMessage(data),
@@ -156,21 +155,16 @@ export class EmailContentLoader {
   }
 
   private extractBodyFromGmailMessage(message: any): string {
-    // Implementation depends on your Gmail message parsing logic
-    // This is a placeholder
     return message.payload?.body?.data 
       ? atob(message.payload.body.data.replace(/-/g, '+').replace(/_/g, '/'))
       : '';
   }
 
   private extractAttachmentsFromGmailMessage(message: any): any[] {
-    // Implementation depends on your Gmail message parsing logic
-    // This is a placeholder
     return message.payload?.parts?.filter((part: any) => part.filename && part.filename.length > 0) || [];
   }
 
   private getEmailKey(email: Email): string {
-    // Use a consistent key format that doesn't depend on accountType/accountId
     // This ensures the same email is recognized regardless of how it was fetched
     return `${email.id}`;
   }

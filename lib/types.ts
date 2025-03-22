@@ -30,9 +30,18 @@ export interface Email {
   labels: string[]; // Keep this required
   attachments?: EmailAttachment[];
   accountId?: string;
-  accountType?: 'gmail' | 'imap' | 'justcall';
+  accountType?: 'gmail' | 'imap' | 'justcall' | 'twilio';
   read?: boolean;
   platform?: string; // Added for platform indication
+  source?: string; // Added to track data source (gmail-api, imap, etc.)
+  phoneNumber?: string;
+  justcallTimes?: {
+    sms_user_time?: string;
+    sms_time?: string;
+    sms_user_date?: string;
+    sms_date?: string;
+    formatted?: string;
+  };
 }
 
 // Legacy interface - will be replaced by the new ContactModel
@@ -43,13 +52,14 @@ export interface Contact {
   lastMessageSubject: string;
   labels: string[]; // Keep this required
   accountId?: string;
-  accountType?: 'gmail' | 'imap' | 'justcall';
+  accountType?: 'gmail' | 'imap' | 'justcall' | 'twilio';
 }
 
 export interface Group {
   id: string;
   name: string;
   addresses: string[];
+  phoneNumbers: string[];
 }
 
 // New interfaces for phase 2
@@ -62,6 +72,7 @@ export interface SyncAccountModel {
   lastSync: Date;
   createdAt: Date;
   updatedAt: Date;
+  credentials: string;
 }
 
 export interface ContactModel {
@@ -125,11 +136,18 @@ export interface JustCallMessage {
   agent_id?: string;
   contact_id?: string;
   contact_name?: string;
-  media?: {
-    url: string;
-    type: string;
-    name: string;
-  }[];
+  media?: any[];
+  threadId?: string;
+  // New fields for JustCall V2 API
+  sms_info?: any;
+  justcall_number?: string;
+  justcall_line_name?: string;
+  delivery_status?: string;
+  // Time fields
+  sms_user_time?: string;
+  sms_time?: string;
+  sms_user_date?: string;
+  sms_date?: string;
 }
 
 export interface JustCallWebhookPayload {

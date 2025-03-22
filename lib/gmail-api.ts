@@ -1,4 +1,7 @@
+"use client";
+
 import type { Email } from "@/lib/types";
+import { getCacheValue, setCacheValue } from './client-cache-browser';
 
 // Helper function to refresh session
 async function refreshSession() {
@@ -22,14 +25,34 @@ async function refreshSession() {
   }
 }
 
-export async function fetchEmails(accessToken: string): Promise<Email[]> {
+export async function fetchEmails(
+  token: string,
+  page: number = 1,
+  pageSize: number = 100000, // Increased from default value
+  query: string = ""
+): Promise<Email[]> {
   try {
+    // Calculate pagination parameters
+    const maxResults = pageSize;
+    
+    // Remove any pagination limits for Gmail API
+    const params = new URLSearchParams({
+      maxResults: maxResults.toString(),
+      q: query,
+      includeSpamTrash: "false",
+    });
+
+    // If we want all emails, don't use pageToken
+    const url = `https://www.googleapis.com/gmail/v1/users/me/messages?${params}`;
+    
+    console.log(`Fetching Gmail emails with params: maxResults=${maxResults}, page=${page}`);
+    
     // Fetch list of messages
     let response = await fetch(
-      "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=100",
+      url,
       {
         headers: {
-          Authorization: `Bearer ${accessToken}`,
+          Authorization: `Bearer ${token}`,
         },
       }
     );
@@ -40,68 +63,108 @@ export async function fetchEmails(accessToken: string): Promise<Email[]> {
       const newAccessToken = await refreshSession();
 
       if (newAccessToken) {
+        console.log("Token refreshed successfully, retrying fetch");
         // Retry the request with the new token
         response = await fetch(
-          "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=100",
+          url,
           {
             headers: {
               Authorization: `Bearer ${newAccessToken}`,
             },
           }
         );
-        accessToken = newAccessToken; // Update the token for subsequent requests
+      } else {
+        console.error("Failed to refresh token");
       }
     }
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch message list: ${response.statusText}`);
+      console.error(`Failed to fetch Gmail messages: ${response.status} ${response.statusText}`);
+      // Try to get response text for more details on error
+      try {
+        const errorText = await response.text();
+        console.error(`Gmail API error response: ${errorText}`);
+      } catch (e) {
+        console.error("Could not get error response text");
+      }
+      return []; // Return empty array on error to prevent data loss
     }
 
     const data = await response.json();
-    const messageIds = data.messages?.map((msg: any) => msg.id) || [];
+    
+    // Store the nextPageToken in the database if available
+    if (data.nextPageToken) {
+      const tokensString = await getCacheValue<string>('gmail_page_tokens');
+      const tokens = tokensString ? JSON.parse(tokensString) : {};
+      tokens[`page_${page}`] = data.nextPageToken;
+      await setCacheValue('gmail_page_tokens', JSON.stringify(tokens));
+    }
 
+    const messages = data.messages || [];
+    console.log(`Fetched ${messages.length} Gmail message IDs for page ${page}`);
+
+    // If no messages found, return empty array immediately to prevent wiping out existing data
+    if (messages.length === 0) {
+      console.log("No Gmail messages found, returning empty array");
+      return [];
+    }
+
+    // Track processed message IDs to prevent duplicates
+    const processedIds = new Set<string>();
+    
     // Fetch full details for each message
     const emails = await Promise.allSettled(
-      messageIds.map(async (id: string) => {
+      messages.map(async (message: any) => {
         try {
+          // Skip if we've already processed this ID in the current batch
+          if (processedIds.has(message.id)) {
+            console.log(`Skipping duplicate message ID: ${message.id}`);
+            return null;
+          }
+          
+          // Mark this ID as processed
+          processedIds.add(message.id);
+          
           let msgResponse = await fetch(
-            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}`,
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${message.id}`,
             {
               headers: {
-                Authorization: `Bearer ${accessToken}`,
+                Authorization: `Bearer ${token}`,
               },
             }
           );
 
           // Handle 401 errors for individual message fetches
           if (msgResponse.status === 401) {
-            console.log(`Token expired while fetching message ${id}, attempting to refresh...`);
+            console.log(`Token expired while fetching message ${message.id}, attempting to refresh...`);
             const newAccessToken = await refreshSession();
             
             if (newAccessToken) {
               // Retry the request with the new token
               msgResponse = await fetch(
-                `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}`,
+                `https://gmail.googleapis.com/gmail/v1/users/me/messages/${message.id}`,
                 {
                   headers: {
                     Authorization: `Bearer ${newAccessToken}`,
                   },
                 }
               );
-              accessToken = newAccessToken; // Update the token for subsequent requests
             }
           }
 
           if (!msgResponse.ok) {
-            throw new Error(
-              `Failed to fetch message ${id}: ${msgResponse.statusText}`
-            );
+            console.warn(`Failed to fetch message ${message.id}: ${msgResponse.status} ${msgResponse.statusText}`);
+            return null;
           }
 
           const msgData = await msgResponse.json();
-          return parseGmailMessage(msgData);
+          const parsedEmail = parseGmailMessage(msgData);
+          
+          // Add a data source flag to track origin
+          parsedEmail.source = 'gmail-api';
+          return parsedEmail;
         } catch (error) {
-          console.warn(`Failed to fetch message ${id}:`, error);
+          console.warn(`Failed to fetch message ${message.id}:`, error);
           return null;
         }
       })
@@ -115,68 +178,141 @@ export async function fetchEmails(accessToken: string): Promise<Email[]> {
       )
       .map((result) => result.value);
 
-    // Sync with local storage
-    syncWithLocalStorage(fetchedEmails);
+    console.log(`Successfully parsed ${fetchedEmails.length} Gmail messages`);
+
+    // Add safety check for zero fetched emails
+    if (fetchedEmails.length === 0) {
+      console.warn("No Gmail messages were successfully fetched, skipping database sync to prevent data loss");
+      return [];
+    }
+
+    // Sync with database only if we have successfully fetched emails
+    await syncWithDatabase(fetchedEmails);
 
     return fetchedEmails;
   } catch (error) {
-    console.error("Error fetching emails:", error);
+    console.error("Error fetching emails from Gmail API:", error);
+    // Log detailed error info for debugging
+    if (error instanceof Error) {
+      console.error(`Error details: ${error.name}: ${error.message}`);
+      console.error(`Error stack: ${error.stack}`);
+    }
+    // Return empty array to prevent data loss
     return [];
   }
 }
 
-// Add new sync function
-function syncWithLocalStorage(gmailEmails: Email[]) {
+// Update sync function to use database with improved duplicate detection
+async function syncWithDatabase(gmailEmails: Email[]) {
   try {
+    // Don't proceed with updating the database if no emails were fetched
+    if (!gmailEmails || gmailEmails.length === 0) {
+      console.log("No Gmail emails to sync with database - skipping update to prevent data loss");
+      return;
+    }
+
+    console.log(`Starting database sync with ${gmailEmails.length} new Gmail emails`);
+
     // Create a map of fetched emails for quick lookup
     const gmailEmailMap = new Map(
       gmailEmails.map((email) => [email.id, email])
     );
 
-    // Get current local storage
-    const localStorageEmails = localStorage.getItem("emails");
-    let currentEmails: Email[] = localStorageEmails
-      ? JSON.parse(localStorageEmails)
-      : [];
-
-    // Filter out emails that no longer exist in Gmail
-    currentEmails = currentEmails.filter((email) =>
-      gmailEmailMap.has(email.id)
-    );
-
-    // Update or add new emails from Gmail
-    gmailEmails.forEach((gmailEmail) => {
-      const existingIndex = currentEmails.findIndex(
-        (e) => e.id === gmailEmail.id
-      );
-      if (existingIndex !== -1) {
-        // Update existing email if content is different
-        if (
-          JSON.stringify(currentEmails[existingIndex]) !==
-          JSON.stringify(gmailEmail)
-        ) {
-          currentEmails[existingIndex] = gmailEmail;
-        }
-      } else {
-        // Add new email
-        currentEmails.push(gmailEmail);
+    // Get existing emails from database
+    const currentEmails = await getCacheValue<Email[]>("emails") || [];
+    
+    // Create new map that combines existing emails and new emails
+    const emailMap = new Map();
+    
+    // First identify error emails to be replaced
+    const errorEmails = new Set<string>();
+    currentEmails.forEach((email) => {
+      if (email.source === "gmail-api-error") {
+        // Use thread ID + subject as key for better matching
+        const key = generateEmailKey(email);
+        errorEmails.add(key);
       }
     });
-
-    // Sort by date (newest first)
-    currentEmails.sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+    
+    // First add all existing emails that aren't duplicates from Gmail
+    currentEmails.forEach((email) => {
+      // Gmail emails should be uniquely identified by ID
+      // Skip existing Gmail emails that might be duplicates of what we're adding
+      const isGmailEmail = !email.accountId || email.accountType === "gmail" || email.source === "gmail-api";
+      const isInCurrentBatch = isGmailEmail && gmailEmailMap.has(email.id);
+      const key = generateEmailKey(email);
+      
+      // Skip error emails that will be replaced by real ones
+      if (email.source === "gmail-api-error" && errorEmails.has(key)) {
+        const hasRealVersion = gmailEmails.some(newEmail => 
+          generateEmailKey(newEmail) === key && newEmail.source !== "gmail-api-error"
+        );
+        
+        if (hasRealVersion) {
+          console.log(`Skipping error email with key ${key} as it will be replaced`);
+          return;
+        }
+      }
+      
+      if (!isInCurrentBatch) {
+        emailMap.set(email.id, email);
+      } else {
+        console.log(`Skipping existing Gmail email with ID ${email.id} as it's in the current batch`);
+      }
+    });
+    
+    // Then add new Gmail emails
+    gmailEmails.forEach((email) => {
+      // Skip error emails if we already have a good version
+      if (email.source === "gmail-api-error") {
+        const key = generateEmailKey(email);
+        const existingEmails = Array.from(emailMap.values());
+        const hasGoodVersion = existingEmails.some(existing => 
+          generateEmailKey(existing) === key && existing.source !== "gmail-api-error"
+        );
+        
+        if (hasGoodVersion) {
+          console.log(`Skipping error email as we already have a good version: ${key}`);
+          return;
+        }
+      }
+      
+      if (!emailMap.has(email.id)) {
+        emailMap.set(email.id, email);
+      } else {
+        // Merge only if it's a non-Gmail existing email (unlikely scenario)
+        const existingEmail = emailMap.get(email.id);
+        if (existingEmail.accountId && existingEmail.accountType !== "gmail" && !existingEmail.source) {
+          // Keep account-specific fields from existing entry
+          emailMap.set(email.id, {
+            ...existingEmail,
+            ...email,
+            // Keep existing read status
+            read: existingEmail.read !== undefined ? existingEmail.read : false,
+          });
+        }
+      }
+    });
+    
+    // Convert back to array
+    const mergedEmails = Array.from(emailMap.values());
+    
+    // Sort by date, newest first
+    mergedEmails.sort((a, b) => 
+      new Date(b.date).getTime() - new Date(a.date).getTime()
     );
-
-    // Update local storage
-    localStorage.setItem("emails", JSON.stringify(currentEmails));
-
-    // Update timestamp
-    localStorage.setItem("emailsTimestamp", Date.now().toString());
-
-    console.log(`Synced ${gmailEmails.length} emails with local storage`);
+    
+    // Store in database - only if we have emails to store
+    if (mergedEmails.length > 0) {
+      await setCacheValue("emails", mergedEmails);
+      await setCacheValue("emailsTimestamp", Date.now().toString());
+      console.log(`Synced ${mergedEmails.length} emails with database`);
+    } else {
+      console.warn("No emails to store in database after merge - keeping existing data");
+    }
   } catch (error) {
-    console.error("Error syncing with local storage:", error);
+    console.error("Error syncing emails with database:", error);
+    // Don't update the cache on error to prevent data loss
   }
 }
 
@@ -186,63 +322,20 @@ export async function sendEmail({
   subject,
   body,
   attachments = [],
+  threadId = null, // Add optional threadId parameter
 }: {
   accessToken: string;
   to: string;
   subject: string;
   body: string;
   attachments?: File[];
+  threadId?: string | null; // Add this parameter to associate with existing thread
 }): Promise<Email> {
   try {
-    // Create a proper MIME message
-    const message = new FormData();
-
-    // Create metadata part
-    const metadata = {
-      to: to,
-      subject: subject,
-    };
-
-    // Define a type for message parts
-    type MessagePart = {
-      mimeType: string;
-      body: string;
-      filename?: string;
-      headers?: Record<string, string>;
-    };
-
-    // Create message parts array
-    const parts: MessagePart[] = [
-      {
-        mimeType: "text/html",
-        body: body,
-      },
-    ];
-
-    // Add attachments to parts
-    for (const file of attachments) {
-      // Convert file to base64
-      const fileArrayBuffer = await file.arrayBuffer();
-      const fileBase64 = btoa(
-        new Uint8Array(fileArrayBuffer).reduce(
-          (data, byte) => data + String.fromCharCode(byte),
-          ""
-        )
-      );
-
-      parts.push({
-        filename: file.name,
-        mimeType: file.type || "application/octet-stream",
-        body: fileBase64,
-        headers: {
-          "Content-Disposition": `attachment; filename="${file.name}"`,
-          "Content-Transfer-Encoding": "base64",
-        },
-      });
-    }
-
+    console.log("Sending email via Gmail API...");
+    
     // Create the request body
-    const requestBody = {
+    const requestBody: any = {
       raw: btoa(
         `From: me\r\n` +
           `To: ${to}\r\n` +
@@ -268,6 +361,11 @@ export async function sendEmail({
         .replace(/[/]/g, "_")
         .replace(/=+$/, ""),
     };
+
+    // If threadId is provided, include it in the request to maintain threading
+    if (threadId) {
+      requestBody.threadId = threadId;
+    }
 
     // For each attachment, we need to replace the placeholder with actual base64 data
     for (const file of attachments) {
@@ -318,7 +416,6 @@ export async function sendEmail({
             body: JSON.stringify(requestBody),
           }
         );
-        accessToken = newAccessToken; // Update the token for subsequent requests
       }
     }
 
@@ -355,6 +452,21 @@ export async function sendEmail({
 }
 
 function parseGmailMessage(message: any): Email {
+  if (!message || !message.payload || !message.payload.headers) {
+    console.warn("Invalid message structure from Gmail API:", message?.id);
+    return {
+      id: message?.id || `invalid-${Date.now()}`,
+      threadId: message?.threadId || "",
+      from: { name: "Unknown", email: "" },
+      to: [{ name: "Unknown", email: "" }],
+      subject: "Unable to load message",
+      body: "This message couldn't be properly loaded from Gmail.",
+      date: new Date().toISOString(),
+      labels: message?.labelIds || [],
+      source: "gmail-api-error"
+    };
+  }
+
   const headers = message.payload.headers;
 
   const getHeader = (name: string) => {
@@ -364,63 +476,100 @@ function parseGmailMessage(message: any): Email {
     return header ? header.value : "";
   };
 
-  const from = parseEmailAddress(getHeader("From"));
+  // Parse sender information
+  const fromHeader = getHeader("From");
+  const from = parseEmailAddress(fromHeader);
+  
+  // Validate and fix from field
+  if (!from.email) {
+    console.warn(`Invalid From header in message ${message.id}: "${fromHeader}"`);
+    from.name = "Unknown Sender";
+    from.email = "unknown@gmail.com";
+  }
 
+  // Parse recipients
   const toAddresses = getHeader("To");
-  const to = toAddresses
-    ? toAddresses
-        .split(",")
-        .map((addr: string) => parseEmailAddress(addr.trim()))
-    : [];
+  let to: Array<{name: string, email: string}> = [];
+  
+  if (toAddresses) {
+    // Split multiple recipients and parse each one
+    to = toAddresses
+      .split(",")
+      .map((addr: string) => {
+        const parsed = parseEmailAddress(addr.trim());
+        // Validate each recipient
+        if (!parsed.email) {
+          console.warn(`Invalid To address in message ${message.id}: "${addr}"`);
+          return { name: "Unknown", email: "unknown@gmail.com" };
+        }
+        return parsed;
+      });
+  }
+  
+  // If no valid recipients were found, add a fallback
+  if (to.length === 0) {
+    to = [{ name: "Unknown", email: "unknown@gmail.com" }];
+  }
 
-  const subject = getHeader("Subject");
-  const date = getHeader("Date");
+  const subject = getHeader("Subject") || "(No Subject)";
+  const date = getHeader("Date") || new Date().toISOString();
 
   // Extract body content and attachments
   let body = "";
   let htmlBody = "";
   const attachments: {
     id: string;
-    name: string;
-    mimeType: string;
-    size: number;
-    url: string;
+    filename?: string;
+    mimeType?: string;
+    size?: number;
+    url?: string;
   }[] = [];
 
+  // Safely process message parts
   const processPart = (part: any) => {
-    if (part.mimeType === "text/plain" && part.body.data) {
-      body = decodeBase64(part.body.data);
-    } else if (part.mimeType === "text/html" && part.body.data) {
-      htmlBody = decodeBase64(part.body.data);
-    } else if (part.filename && part.body.attachmentId) {
-      attachments.push({
-        id: part.body.attachmentId,
-        name: part.filename,
-        mimeType: part.mimeType,
-        size: parseInt(part.body.size) || 0,
-        url: `https://gmail.googleapis.com/gmail/v1/users/me/messages/${message.id}/attachments/${part.body.attachmentId}`,
-      });
-    }
+    if (!part) return;
 
-    // Recursively process nested parts
-    if (part.parts) {
-      part.parts.forEach(processPart);
+    try {
+      if (part.mimeType === "text/plain" && part.body?.data) {
+        body = decodeBase64(part.body.data);
+      } else if (part.mimeType === "text/html" && part.body?.data) {
+        htmlBody = decodeBase64(part.body.data);
+      } else if (part.filename && part.body?.attachmentId) {
+        attachments.push({
+          id: part.body.attachmentId,
+          filename: part.filename,
+          mimeType: part.mimeType,
+          size: parseInt(part.body.size) || 0,
+          url: `https://gmail.googleapis.com/gmail/v1/users/me/messages/${message.id}/attachments/${part.body.attachmentId}`,
+        });
+      }
+
+      // Recursively process nested parts
+      if (Array.isArray(part.parts)) {
+        part.parts.forEach(processPart);
+      }
+    } catch (error) {
+      console.warn(`Error processing message part in ${message.id}:`, error);
     }
   };
 
-  if (message.payload.parts) {
+  // Process message parts
+  if (Array.isArray(message.payload.parts)) {
     message.payload.parts.forEach(processPart);
   } else if (message.payload.body) {
-    if (message.payload.mimeType === "text/html") {
-      htmlBody = decodeBase64(message.payload.body.data || "");
-    } else {
-      body = decodeBase64(message.payload.body.data || "");
+    try {
+      if (message.payload.mimeType === "text/html" && message.payload.body.data) {
+        htmlBody = decodeBase64(message.payload.body.data || "");
+      } else if (message.payload.body.data) {
+        body = decodeBase64(message.payload.body.data || "");
+      }
+    } catch (error) {
+      console.warn(`Error processing message body in ${message.id}:`, error);
     }
   }
 
   // Prefer HTML content if available
-  const finalBody = htmlBody || body;
-
+  const finalBody = htmlBody || body || "No content available";
   const labels = message.labelIds || [];
 
   return {
@@ -432,7 +581,9 @@ function parseGmailMessage(message: any): Email {
     body: finalBody,
     date,
     labels,
+    accountType: "gmail",
     attachments: attachments.length > 0 ? attachments : undefined,
+    source: "gmail-api"
   };
 }
 
@@ -456,4 +607,179 @@ function parseEmailAddress(address: string) {
 function decodeBase64(data: string) {
   const text = atob(data.replace(/-/g, "+").replace(/_/g, "/"));
   return decodeURIComponent(escape(text));
+}
+
+function generateEmailKey(email: Email): string {
+  // Use threadId + subject as a more reliable key for deduplication
+  return `${email.threadId || ''}-${email.subject || ''}`;
+}
+
+/**
+ * Identifies and re-fetches problematic emails from Gmail
+ * @param token Access token for Gmail API
+ * @returns Array of fixed emails
+ */
+export async function repairErrorEmails(token: string): Promise<Email[]> {
+  try {
+    console.log("Starting repair of error emails...");
+    
+    // Get existing emails from cache
+    const currentEmails = await getCacheValue<Email[]>("emails") || [];
+    
+    // Identify problematic emails
+    const errorEmails = currentEmails.filter(email => 
+      // Check for emails with Gmail API errors
+      email.source === "gmail-api-error" || 
+      // Check for emails with empty bodies that should have content
+      ((!email.accountId || email.accountType === "gmail") && 
+       (!email.body || email.body.trim() === "") && 
+       !email.labels?.includes("DRAFT"))
+    );
+    
+    if (errorEmails.length === 0) {
+      console.log("No error emails found to repair");
+      return [];
+    }
+    
+    console.log(`Found ${errorEmails.length} emails to repair`);
+    
+    // Group by threadId to avoid duplicate fetches for the same thread
+    const threadGroups = new Map<string, Email[]>();
+    errorEmails.forEach(email => {
+      if (email.threadId) {
+        const group = threadGroups.get(email.threadId) || [];
+        group.push(email);
+        threadGroups.set(email.threadId, group);
+      } else {
+        // Handle emails without threadId
+        const key = `no-thread-${email.id}`;
+        threadGroups.set(key, [email]);
+      }
+    });
+    
+    console.log(`Grouped into ${threadGroups.size} threads to fetch`);
+    
+    // Fetch and repair emails thread by thread
+    const repairedEmails: Email[] = [];
+    
+    for (const [threadId, emails] of threadGroups.entries()) {
+      try {
+        if (threadId.startsWith('no-thread-')) {
+          // Handle individual emails without threadId
+          const email = emails[0];
+          const messageId = email.id;
+          
+          console.log(`Fetching individual message ${messageId}`);
+          
+          // Fetch the individual message
+          const msgResponse = await fetch(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${messageId}`,
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
+          
+          if (!msgResponse.ok) {
+            console.warn(`Failed to fetch message ${messageId}: ${msgResponse.status}`);
+            continue;
+          }
+          
+          const msgData = await msgResponse.json();
+          const parsedEmail = parseGmailMessage(msgData);
+          parsedEmail.source = 'gmail-api';
+          
+          repairedEmails.push(parsedEmail);
+        } else {
+          // Fetch the entire thread
+          console.log(`Fetching thread ${threadId}`);
+          
+          const threadResponse = await fetch(
+            `https://gmail.googleapis.com/gmail/v1/users/me/threads/${threadId}`,
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
+          
+          if (!threadResponse.ok) {
+            console.warn(`Failed to fetch thread ${threadId}: ${threadResponse.status}`);
+            continue;
+          }
+          
+          const threadData = await threadResponse.json();
+          
+          // Process all messages in the thread
+          if (threadData.messages && threadData.messages.length > 0) {
+            for (const message of threadData.messages) {
+              const parsedEmail = parseGmailMessage(message);
+              parsedEmail.source = 'gmail-api';
+              repairedEmails.push(parsedEmail);
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`Error repairing thread ${threadId}:`, error);
+      }
+    }
+    
+    console.log(`Successfully repaired ${repairedEmails.length} emails`);
+    
+    // Update the email store with repaired emails
+    if (repairedEmails.length > 0) {
+      await updateEmailStore(repairedEmails);
+    }
+    
+    return repairedEmails;
+  } catch (error) {
+    console.error("Error repairing emails:", error);
+    return [];
+  }
+}
+
+/**
+ * Updates the email store with repaired emails
+ */
+async function updateEmailStore(repairedEmails: Email[]): Promise<void> {
+  try {
+    // Get current emails
+    const currentEmails = await getCacheValue<Email[]>("emails") || [];
+    
+    // Create a map for quick lookup
+    const emailMap = new Map(currentEmails.map(email => [email.id, email]));
+    
+    // Update or add repaired emails
+    let updatedCount = 0;
+    let addedCount = 0;
+    
+    repairedEmails.forEach(email => {
+      if (emailMap.has(email.id)) {
+        // Update existing email
+        emailMap.set(email.id, {
+            ...emailMap.get(email.id),
+            ...email,
+            body: email.body || emailMap.get(email.id)?.body || "No content available",
+            attachments: email.attachments || emailMap.get(email.id)?.attachments,
+            source: 'gmail-api'
+          });
+        updatedCount++;
+      } else {
+        // Add new email
+        emailMap.set(email.id, email);
+        addedCount++;
+      }
+    });
+    
+    // Convert map back to array
+    const updatedEmails = Array.from(emailMap.values());
+    
+    // Save to cache
+    await setCacheValue("emails", updatedEmails);
+    
+    console.log(`Email store updated: ${updatedCount} emails updated, ${addedCount} emails added`);
+  } catch (error) {
+    console.error("Error updating email store:", error);
+  }
 }

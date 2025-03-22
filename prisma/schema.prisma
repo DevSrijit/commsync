@@ -43,7 +43,7 @@ model User {
   email         String?       @unique
   emailVerified DateTime?
   image         String?
-  createdAt     DateTime      @default(now())
+  createdAt     DateTime      @default(now())  //or set as null 
   updatedAt     DateTime      @updatedAt
   accounts      Account[]
   sessions      Session[]
@@ -52,6 +52,7 @@ model User {
   syncAccounts  SyncAccount[]
   contacts      Contact[]
   twilioAccounts TwilioAccount[]
+  clientCache   ClientCache[]
 }
 
 model VerificationToken {
@@ -92,6 +93,7 @@ model Group {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   name      String
   addresses String[] // Array of email addresses in the group
+  phoneNumbers String[] // Array of phone numbers in the group
   userId    String   @db.ObjectId
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -109,7 +111,7 @@ model SyncAccount {
   accountIdentifier String   // Username or account identifier for the platform
   lastSync         DateTime  @default(now())
   createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  updatedAt        DateTime  @updatedAt 
   messages         Message[]
 
   @@index([userId])
@@ -213,4 +215,17 @@ model TwilioMessage {
 
   @@index([twilioAccountId])
   @@index([from, to])
+}
+
+model ClientCache {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String   @db.ObjectId
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key        String   // Cache key (e.g., "emails", "gmail_page_tokens", "sidebar:state", etc.)
+  value      String   // JSON stringified data
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, key])
+  @@index([userId])
 }

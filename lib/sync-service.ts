@@ -23,7 +23,9 @@ export class SyncService {
 
   async syncAllEmails(
     gmailToken: string | null,
-    imapAccounts: ImapAccount[]
+    imapAccounts: ImapAccount[],
+    page: number = 1,
+    pageSize: number = 100000 // Increased from 100 to 100000
   ): Promise<void> {
     if (this.syncInProgress) {
       console.log("Sync already in progress");
@@ -37,7 +39,7 @@ export class SyncService {
 
       // Add Gmail sync if token is available
       if (gmailToken) {
-        syncPromises.push(fetchGmailEmails(gmailToken));
+        syncPromises.push(fetchGmailEmails(gmailToken, page, pageSize));
       }
 
       // Add IMAP sync for each account
@@ -52,11 +54,12 @@ export class SyncService {
               action: "fetchEmails",
               account,
               data: {
-                page: 1,
-                pageSize: 50,
+                page: page,
+                pageSize: pageSize,
+                fetchAll: true // Add a flag to fetch all emails
               },
             }),
-          }).then((res) => res.json().then((data) => data.emails))
+          }).then((response) => response.json().then((data) => data.emails))
         );
       });
 
@@ -155,12 +158,27 @@ export const syncImapAccounts = async (userId?: string): Promise<{ success: numb
 };
 
 // Add JustCall sync functionality to the existing sync service
-export const syncJustCallAccounts = async (userId?: string): Promise<{ success: number; failed: number; results: any[] }> => {
+export const syncJustCallAccounts = async (
+  userId?: string,
+  options?: { 
+    phoneNumber?: string; 
+    accountId?: string;
+    pageSize?: number;
+    lastSmsIdFetched?: string;
+    sortDirection?: 'asc' | 'desc';
+  }
+): Promise<{ success: number; failed: number; results: any[] }> => {
   try {
-    // Query for all active JustCall accounts, optionally filtered by userId
-    const query = userId 
-      ? { userId, platform: 'justcall' }
-      : { platform: 'justcall' };
+    // Query for all active JustCall accounts, optionally filtered by userId and accountId
+    let query: any = { platform: 'justcall' };
+    
+    if (userId) {
+      query.userId = userId;
+    }
+    
+    if (options?.accountId) {
+      query.id = options.accountId;
+    }
     
     const accounts = await db.syncAccount.findMany({
       where: query,
@@ -173,32 +191,92 @@ export const syncJustCallAccounts = async (userId?: string): Promise<{ success: 
         try {
           const justCallService = new JustCallService(account);
           
-          // Get messages since last sync
-          const messages = await justCallService.getMessages(undefined, account.lastSync);
+          // Get the phone number from either the options or the accountIdentifier field
+          const phoneNumber = options?.phoneNumber || account.accountIdentifier;
+          
+          if (!phoneNumber) {
+            console.warn(`No phone number specified for JustCall account ${account.id}, skipping`);
+            return { accountId: account.id, processed: 0, skipped: 0, error: 'No phone number specified' };
+          }
+          
+          console.log(`Syncing messages for JustCall account ${account.id} with phone number: ${phoneNumber}`);
+          
+          // Use cursor-based pagination with lastSmsIdFetched
+          console.log(`JustCall sync for account ${account.id}:`);
+          console.log(`- Phone: ${phoneNumber}`);
+          console.log(`- Sort: ${options?.sortDirection || 'desc'}`);
+          console.log(`- Pagination cursor: ${options?.lastSmsIdFetched || 'none'}`);
+          
+          // Get messages using the lastSmsIdFetched for pagination instead of date-based filtering
+          const messages = await justCallService.getMessages(
+            phoneNumber, 
+            undefined, // No date filtering needed
+            options?.pageSize || 100,
+            options?.lastSmsIdFetched,
+            options?.sortDirection || 'desc'  // Default to desc for newest first
+          );
+          
+          // Add debug logging to inspect the retrieved messages
+          if (messages.length > 0) {
+            console.log(`Retrieved ${messages.length} JustCall messages for account ${account.id}.`);
+            console.log(`Message ID range: ${messages[0].id} - ${messages[messages.length-1].id}`);
+            
+            // Remember the oldest message ID for returning to the caller
+            const oldestMessageId = messages[messages.length-1].id;
+            
+            // Log a sample of messages
+            const sampleSize = Math.min(3, messages.length);
+            console.log(`Sample of ${sampleSize} messages (showing IDs):`);
+            messages.slice(0, sampleSize).forEach((msg, idx) => {
+              console.log(`- ${msg.id}`);
+            });
+          } else {
+            console.log(`No messages retrieved for account ${account.id}`);
+          }
           
           let processedCount = 0;
+          let skippedCount = 0;
           
           // Process each message
           for (const message of messages) {
-            // Skip outbound messages as they were likely sent from our system
-            if (message.direction === 'outbound') {
-              continue;
-            }
+            try {
+              // Skip outbound messages as they were likely sent from our system
+              if (!message || message.direction === 'outbound') {
+                skippedCount++;
+                continue;
+              }
             
-            await justCallService.processIncomingMessage(message);
-            processedCount++;
+              await justCallService.processIncomingMessage(message);
+              processedCount++;
+            } catch (messageError) {
+              console.error(`Error processing message in JustCall account ${account.id}:`, 
+                messageError, 'Message:', JSON.stringify(message));
+              skippedCount++;
+            }
           }
           
-          // Update last sync time
-          await db.syncAccount.update({
-            where: { id: account.id },
-            data: { lastSync: new Date() },
-          });
+          // Only update last sync time if we're not using pagination for loading more messages
+          // This way we don't affect the sync time when just loading more historical messages
+          if (!options?.lastSmsIdFetched) {
+            // Store the sync time but don't affect message timestamps
+            await db.syncAccount.update({
+              where: { id: account.id },
+              data: { lastSync: new Date() },
+            });
+          }
           
-          return { accountId: account.id, processed: processedCount };
+          // Return data including the oldest message ID for pagination
+          const oldestMessageId = messages.length > 0 ? messages[messages.length-1].id : null;
+          
+          return { 
+            accountId: account.id, 
+            processed: processedCount, 
+            skipped: skippedCount, 
+            lastMessageId: oldestMessageId // Return the oldest message ID for pagination
+          };
         } catch (error) {
           console.error(`Error syncing JustCall account ${account.id}:`, error);
-          return { accountId: account.id, error: error instanceof Error ? error.message : 'Unknown error' };
+          throw error;
         }
       })
     );
@@ -234,19 +312,30 @@ export const syncTwilioAccounts = async (userId?: string): Promise<{ success: nu
           const twilioService = new TwilioService(account);
           
           // Get messages since last sync
+          console.log(`Fetching Twilio messages for account ${account.id} since ${account.lastSync}`);
           const messages = await twilioService.getMessages(account.lastSync);
+          console.log(`Retrieved ${messages.length} Twilio messages for account ${account.id}`);
           
           let processedCount = 0;
+          let skippedCount = 0;
           
           // Process each message
           for (const message of messages) {
-            // Skip outbound messages as they were likely sent from our system
-            if (message.direction !== 'inbound') {
-              continue;
+            try {
+              // Skip outbound messages as they were likely sent from our system
+              if (!message || message.direction !== 'inbound') {
+                console.log(`Skipping outbound or null Twilio message: ${message?.sid || 'N/A'}`);
+                skippedCount++;
+                continue;
+              }
+              
+              await twilioService.processIncomingMessage(message);
+              processedCount++;
+            } catch (messageError) {
+              console.error(`Error processing message in Twilio account ${account.id}:`, 
+                messageError, 'Message:', JSON.stringify(message));
+              skippedCount++;
             }
-            
-            await twilioService.processIncomingMessage(message);
-            processedCount++;
           }
           
           // Update last sync time
@@ -255,10 +344,10 @@ export const syncTwilioAccounts = async (userId?: string): Promise<{ success: nu
             data: { lastSync: new Date() },
           });
           
-          return { accountId: account.id, processed: processedCount };
+          return { accountId: account.id, processed: processedCount, skipped: skippedCount };
         } catch (error) {
           console.error(`Error syncing Twilio account ${account.id}:`, error);
-          return { accountId: account.id, error: error instanceof Error ? error.message : 'Unknown error' };
+          throw error;
         }
       })
     );
