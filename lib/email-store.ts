@@ -500,7 +500,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                 subject: 'SMS Message',
                 body: msg.body || '',
                 date: msg.created_at || msg.date_created || new Date().toISOString(),
-                labels: ['SMS'],
+                labels: ['TWILIO'],
                 accountType: 'twilio',
                 accountId: msg.accountId,
                 platform: 'twilio',
@@ -693,7 +693,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                     body: msg.sms_info?.body || msg.body || '',
                     // Use the properly formatted timestamp
                     date: timestamp,
-                    labels: ['SMS'],
+                    labels: ['JUSTCALL'],
                     accountType: 'justcall',
                     accountId: account.id,
                     platform: 'justcall',
