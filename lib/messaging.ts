@@ -23,6 +23,7 @@ export interface MessageData {
   accountId?: string; // Added accountId for platform-specific accounts
   justcallNumber?: string;
   restrictOnce?: "Yes" | "No"; // JustCall API requires "Yes" or "No"
+  threadId?: string | null; // Added for Gmail threading support
 }
 
 export interface SendOptions {

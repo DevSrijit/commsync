@@ -20,6 +20,7 @@ import {
 import { fetchEmails } from "@/lib/gmail-api";
 import { AlertTriangle, MessageSquare } from "lucide-react";
 import { Email } from "@/lib/types";
+import { useSendMessage } from "@/lib/messaging";
 
 interface ConversationViewProps {
   contactEmail: string | null;
@@ -67,8 +68,11 @@ export function ConversationView({
     addEmail,
     setEmails,
     imapAccounts,
+    twilioAccounts,
+    justcallAccounts,
   } = useEmailStore();
   const { toast } = useToast();
+  const { sendMessage } = useSendMessage();
 
   // Filter emails based on active filter and group
   const filteredEmails = useMemo(() => {
@@ -113,6 +117,9 @@ export function ConversationView({
   const [isRefetching, setIsRefetching] = useState(false);
   const [messageContent, setMessageContent] = useState("");
   const [attachments, setAttachments] = useState<File[]>([]);
+  // State for selected platform and account when multiple are available
+  const [selectedPlatform, setSelectedPlatform] = useState<string | null>(null);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
 
   const contact = contacts.find((c) => c.email === contactEmail);
 
@@ -324,6 +331,47 @@ export function ConversationView({
 
   // Update loading state to include refetching
   const isLoadingState = isLoading;
+
+  // Detect platform from conversation
+  useEffect(() => {
+    if (conversation.length > 0) {
+      // Sort conversation to get the most recent message
+      const latestEmail = [...conversation].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      )[0];
+      
+      // Set platform based on latest message
+      if (latestEmail.accountType) {
+        setSelectedPlatform(latestEmail.accountType);
+        if (latestEmail.accountId) {
+          setSelectedAccountId(latestEmail.accountId);
+        }
+        console.log(`Detected platform: ${latestEmail.accountType}, Account ID: ${latestEmail.accountId || 'none'}`);
+      } else if (latestEmail.platform) {
+        setSelectedPlatform(latestEmail.platform);
+        if (latestEmail.accountId) {
+          setSelectedAccountId(latestEmail.accountId);
+        }
+        console.log(`Detected platform: ${latestEmail.platform}, Account ID: ${latestEmail.accountId || 'none'}`);
+      } else {
+        // Default to Gmail if no platform detected
+        setSelectedPlatform('gmail');
+        setSelectedAccountId(null);
+        console.log('No platform detected, defaulting to Gmail');
+      }
+    } else if (contact?.accountType) {
+      // If no conversation but contact has accountType, use that
+      setSelectedPlatform(contact.accountType);
+      if (contact.accountId) {
+        setSelectedAccountId(contact.accountId);
+      }
+      console.log(`Using contact platform: ${contact.accountType}, Account ID: ${contact.accountId || 'none'}`);
+    } else {
+      // Default to Gmail
+      setSelectedPlatform('gmail');
+      setSelectedAccountId(null);
+    }
+  }, [conversation, contact]);
 
   if (!contactEmail) {
     return (
@@ -625,56 +673,124 @@ export function ConversationView({
               // Handle group emails
               if (isGroup && groupId) {
                 const group = groups.find((g) => g.id === groupId);
-                if (group && group.addresses.length > 0) {
-                  // Send email to all addresses in the group
-                  const newEmail = await sendEmail({
-                    accessToken: session.user.accessToken,
-                    to: group.addresses.join(","),
-                    subject: `Re: Group: ${group.name}`,
-                    body: content,
-                    attachments: uploadedAttachments,
-                  });
-
-                  addEmail(newEmail);
-                  toast({
-                    title: "Group email sent",
-                    description: `Your message has been sent to ${group.addresses.length} recipients`,
-                  });
+                
+                if (group) {
+                  if (selectedPlatform === "gmail" || selectedPlatform === "imap") {
+                    // For email platforms with group
+                    const recipients = group.addresses.join(",");
+                    await sendMessage({
+                      platform: selectedPlatform,
+                      recipients,
+                      subject: `Re: Group: ${group.name}`,
+                      content,
+                      attachments: uploadedAttachments,
+                      accountId: selectedAccountId || undefined
+                    }, {
+                      accessToken: session.user.accessToken,
+                      onSuccess: (newMessage) => {
+                        if (newMessage) {
+                          addEmail(newMessage);
+                          toast({
+                            title: "Message sent",
+                            description: `Your message has been sent to ${group.addresses.length} recipients`,
+                          });
+                        }
+                      }
+                    });
+                  } else if (selectedPlatform === "twilio" || selectedPlatform === "justcall") {
+                    // For SMS platforms with group, send individual messages
+                    const phoneNumbers = group.phoneNumbers.length > 0 
+                      ? group.phoneNumbers
+                      : group.addresses; // Fallback to addresses if no phone numbers
+                      
+                    for (const phoneNumber of phoneNumbers) {
+                      await sendMessage({
+                        platform: selectedPlatform,
+                        recipients: phoneNumber,
+                        content,
+                        attachments: uploadedAttachments,
+                        accountId: selectedAccountId || undefined
+                      }, {
+                        accessToken: session.user.accessToken,
+                        onSuccess: (newMessage) => {
+                          if (newMessage) {
+                            addEmail(newMessage);
+                          }
+                        }
+                      });
+                    }
+                    
+                    toast({
+                      title: "Messages sent",
+                      description: `Your message has been sent to ${phoneNumbers.length} recipients`,
+                    });
+                  }
                 }
               } else {
-                // Get the latest conversation email to use its threadId if available
-                const latestEmailInConversation =
-                  conversation.length > 0
-                    ? conversation.sort(
-                        (a, b) =>
-                          new Date(b.date).getTime() -
-                          new Date(a.date).getTime()
-                      )[0]
+                // Regular single-recipient message
+                if (selectedPlatform === "gmail" || selectedPlatform === "imap") {
+                  // For email platforms
+                  // Get threadId for proper threading if available
+                  const latestEmailInConversation = conversation.length > 0
+                    ? conversation.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
                     : null;
-
-                const threadId = latestEmailInConversation?.threadId || null;
-                console.log(`Replying using threadId: ${threadId || "none"}`);
-
-                // Regular single-recipient email with threadId for proper threading
-                const newEmail = await sendEmail({
-                  accessToken: session.user.accessToken,
-                  to: contactEmail,
-                  subject: `Re: ${contact?.lastMessageSubject || "No subject"}`,
-                  body: content,
-                  attachments: uploadedAttachments,
-                  threadId: threadId, // Pass the threadId for proper threading
-                });
-
-                addEmail(newEmail);
-                toast({
-                  title: "Email sent",
-                  description: "Your reply has been sent successfully",
-                });
+                  const threadId = latestEmailInConversation?.threadId || null;
+                  
+                  await sendMessage({
+                    platform: selectedPlatform,
+                    recipients: contactEmail,
+                    subject: `Re: ${latestEmailInConversation?.subject || contact?.lastMessageSubject || "No subject"}`,
+                    content,
+                    attachments: uploadedAttachments,
+                    accountId: selectedAccountId || undefined,
+                    threadId
+                  }, {
+                    accessToken: session.user.accessToken,
+                    onSuccess: (newMessage) => {
+                      if (newMessage) {
+                        addEmail(newMessage);
+                        toast({
+                          title: "Message sent",
+                          description: "Your reply has been sent successfully",
+                        });
+                      }
+                    }
+                  });
+                } else if (selectedPlatform === "twilio" || selectedPlatform === "justcall") {
+                  // For SMS platforms
+                  let justcallNumber = undefined;
+                  
+                  // Get JustCall phone number if needed
+                  if (selectedPlatform === "justcall" && selectedAccountId) {
+                    const account = justcallAccounts.find(a => a.id === selectedAccountId);
+                    justcallNumber = account?.accountIdentifier || undefined;
+                  }
+                  
+                  await sendMessage({
+                    platform: selectedPlatform,
+                    recipients: contactEmail,
+                    content,
+                    attachments: uploadedAttachments,
+                    accountId: selectedAccountId || undefined,
+                    justcallNumber
+                  }, {
+                    accessToken: session.user.accessToken,
+                    onSuccess: (newMessage) => {
+                      if (newMessage) {
+                        addEmail(newMessage);
+                        toast({
+                          title: "Message sent",
+                          description: "Your message has been sent successfully",
+                        });
+                      }
+                    }
+                  });
+                }
               }
             } catch (error) {
-              console.error("Failed to send email:", error);
+              console.error("Failed to send message:", error);
               toast({
-                title: "Failed to send email",
+                title: "Failed to send message",
                 description: "Please try again later",
                 variant: "destructive",
               });
@@ -688,6 +804,24 @@ export function ConversationView({
               ? `Reply to group...`
               : `Reply to ${contact?.name || contactEmail}...`
           }
+          platform={selectedPlatform || "gmail"}
+          accountId={selectedAccountId || undefined}
+          isGroup={isGroup}
+          groupId={groupId}
+          platformOptions={conversation.reduce((options, email) => {
+            if (email.accountType && !options.includes(email.accountType)) {
+              options.push(email.accountType);
+            }
+            return options;
+          }, [] as string[])}
+          onPlatformChange={(platform: string, accountId?: string) => {
+            setSelectedPlatform(platform);
+            if (accountId === undefined) {
+              setSelectedAccountId(null);
+            } else {
+              setSelectedAccountId(accountId);
+            }
+          }}
         />
       </ResizablePanel>
     </ResizablePanelGroup>
