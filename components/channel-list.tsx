@@ -175,7 +175,7 @@ export function EmailList({
 
   const handleGroupSelect = (group: Group) => {
     setSelectedGroupId(group.id);
-    onSelectContact(group.addresses.join(", "), true, group.id);
+    onSelectContact(`group:${group.id}`, true, group.id);
   };
 
   // Only show SMS contacts when SMS filter is active
@@ -191,19 +191,25 @@ export function EmailList({
     return (
       <div
         className={cn(
-          "flex items-center p-3 hover:bg-muted/50 rounded-lg cursor-pointer",
-          isSelected && "bg-muted"
+          "p-4 cursor-pointer hover:bg-accent/50 rounded-lg border m-2",
+          isSelected && "bg-accent"
         )}
         onClick={onClick}
       >
-        <div className="rounded-full h-10 w-10 flex items-center justify-center bg-primary/10 text-primary">
-          <Users className="h-5 w-5" />
-        </div>
-        <div className="ml-3 overflow-hidden">
-          <div className="font-medium truncate">{group.name}</div>
-          <div className="text-sm text-muted-foreground truncate">
-            {group.addresses.length} addresses
+        <div className="flex justify-between items-start mb-1">
+          <div className="flex items-center">
+            <Users className="h-4 w-4 mr-2 text-muted-foreground" />
+            <h3 className="font-medium">{group.name}</h3>
           </div>
+        </div>
+        <div className="text-xs text-muted-foreground mt-1">
+          {group.addresses.length > 0 && (
+            <p>{group.addresses.length} email{group.addresses.length !== 1 ? 's' : ''}</p>
+          )}
+          {group.phoneNumbers.length > 0 && (
+            <p>{group.phoneNumbers.length} phone number{group.phoneNumbers.length !== 1 ? 's' : ''}</p>
+          )}
+          <p>{group.addresses.length + group.phoneNumbers.length} total contact{group.addresses.length + group.phoneNumbers.length !== 1 ? 's' : ''}</p>
         </div>
       </div>
     );

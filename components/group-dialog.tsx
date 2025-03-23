@@ -381,7 +381,7 @@ export default function GroupDialog({ open, onOpenChange, groupToEdit }: GroupDi
                           <button
                             key={suggestion}
                             onClick={() => handleSelectSuggestion(suggestion)}
-                            className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm"
+                            className="w-full text-left px-3 py-2 hover:bg-neutral-900 text-sm"
                           >
                             {suggestion}
                           </button>
@@ -398,7 +398,7 @@ export default function GroupDialog({ open, onOpenChange, groupToEdit }: GroupDi
                             {addresses.map((address) => (
                               <div
                                 key={address}
-                                className="flex items-center justify-between bg-gray-50 rounded p-2"
+                                className="flex items-center justify-between bg-neutral-900 rounded p-2"
                               >
                                 <span className="text-sm truncate">{address}</span>
                                 <Button
@@ -444,7 +444,7 @@ export default function GroupDialog({ open, onOpenChange, groupToEdit }: GroupDi
                           <button
                             key={suggestion}
                             onClick={() => handleSelectPhoneSuggestion(suggestion)}
-                            className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm"
+                            className="w-full text-left px-3 py-2 hover:bg-neutral-900 text-sm"
                           >
                             {suggestion}
                           </button>
@@ -461,7 +461,7 @@ export default function GroupDialog({ open, onOpenChange, groupToEdit }: GroupDi
                             {phoneNumbers.map((phone) => (
                               <div
                                 key={phone}
-                                className="flex items-center justify-between bg-gray-50 rounded p-2"
+                                className="flex items-center justify-between bg-neutral-900 rounded p-2"
                               >
                                 <span className="text-sm truncate">{phone}</span>
                                 <Button
@@ -528,7 +528,7 @@ export default function GroupDialog({ open, onOpenChange, groupToEdit }: GroupDi
                               {group.addresses.map((address) => (
                                 <div
                                   key={address}
-                                  className="text-xs bg-gray-50 px-2 py-1 rounded"
+                                  className="text-xs bg-neutral-900 px-2 py-1 rounded"
                                 >
                                   {address}
                                 </div>
@@ -546,7 +546,7 @@ export default function GroupDialog({ open, onOpenChange, groupToEdit }: GroupDi
                               {group.phoneNumbers.map((phone) => (
                                 <div
                                   key={phone}
-                                  className="text-xs bg-gray-50 px-2 py-1 rounded"
+                                  className="text-xs bg-neutral-900 px-2 py-1 rounded"
                                 >
                                   {phone}
                                 </div>
