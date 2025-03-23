@@ -9,14 +9,14 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useSession } from "next-auth/react";
 import { useToast } from "@/hooks/use-toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Image, FileText, File, Users } from "lucide-react";
+import { Image, FileText, File, Users, MessageSquare } from "lucide-react";
 import DOMPurify from "isomorphic-dompurify";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
-import { AlertTriangle, MessageSquare } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { Email } from "@/lib/types";
 import { useSendMessage } from "@/lib/messaging";
 
@@ -72,22 +72,105 @@ export function ConversationView({
   const { toast } = useToast();
   const { sendMessage } = useSendMessage();
 
+  // Determine if we're dealing with a group based on contactEmail format
+  const isContactGroup = useMemo(() => {
+    return contactEmail?.startsWith('group:') || isGroup;
+  }, [contactEmail, isGroup]);
+
+  // Extract the groupId from the contactEmail if it's in the group:id format
+  const derivedGroupId = useMemo(() => {
+    if (contactEmail?.startsWith('group:')) {
+      return contactEmail.split(':')[1];
+    }
+    return groupId;
+  }, [contactEmail, groupId]);
+
+  // Find the group if we have a groupId
+  const selectedGroup = useMemo(() => {
+    if (derivedGroupId) {
+      return groups.find((g) => g.id === derivedGroupId);
+    }
+    return null;
+  }, [derivedGroupId, groups]);
+
   // Filter emails based on active filter and group
   const filteredEmails = useMemo(() => {
     if (activeFilter.startsWith("group:") && activeGroup) {
       // Find the active group
       const group = groups.find((g) => g.id === activeGroup);
       if (group) {
-        // Filter emails that involve any address in the group
-        return emails.filter((email) =>
-          group.addresses.some(
+        // Filter emails that involve any address or phone number in the group
+        return emails.filter((email) => {
+          // For email conversations
+          const emailMatches = group.addresses.some(
             (addr) =>
               email.from?.email === addr ||
               email.to?.some((to) => to.email === addr)
-          )
-        );
+          );
+          
+          // For SMS/phone conversations
+          const phoneMatches = group.phoneNumbers.some(
+            (phone) => {
+              // Handle different formats of phone numbers
+              const normalizedPhone = phone.replace(/\D/g, '');
+              const normalizedFrom = email.from?.email.replace(/\D/g, '');
+              const normalizedToPhones = email.to?.map(to => to.email.replace(/\D/g, ''));
+              
+              return (
+                // Check if the SMS is from this phone number
+                (normalizedFrom && normalizedFrom.includes(normalizedPhone)) ||
+                // Check if the SMS is to this phone number
+                (normalizedToPhones && normalizedToPhones.some(toPhone => 
+                  toPhone && toPhone.includes(normalizedPhone)
+                ))
+              );
+            }
+          );
+          
+          // Return emails that match either email addresses or phone numbers
+          return emailMatches || phoneMatches;
+        });
       }
       return [];
+    }
+
+    // If there's a contactEmail and it's a group
+    if (contactEmail && isGroup && groupId) {
+      // Find the group by ID
+      const group = groups.find((g) => g.id === groupId);
+      if (group) {
+        // Filter emails that involve any address or phone number in the group
+        return emails.filter((email) => {
+          // For email conversations
+          const emailMatches = group.addresses.some(
+            (addr) =>
+              email.from?.email === addr ||
+              email.to?.some((to) => to.email === addr)
+          );
+          
+          // For SMS/phone conversations
+          const phoneMatches = group.phoneNumbers.some(
+            (phone) => {
+              // Handle different formats of phone numbers
+              const normalizedPhone = phone.replace(/\D/g, '');
+              const normalizedFrom = email.from?.email.replace(/\D/g, '');
+              const normalizedToPhones = email.to?.map(to => to.email.replace(/\D/g, ''));
+              
+              return (
+                // Check if the SMS is from this phone number
+                (normalizedFrom && normalizedFrom.includes(normalizedPhone)) ||
+                // Check if the SMS is to this phone number
+                (normalizedToPhones && normalizedToPhones.some(toPhone => 
+                  toPhone && toPhone.includes(normalizedPhone)
+                ))
+              );
+            }
+          );
+          
+          // Return emails that match either email addresses or phone numbers
+          return emailMatches || phoneMatches;
+        });
+      }
     }
 
     // Original filtering logic for other filters
@@ -139,86 +222,76 @@ export function ConversationView({
   // Always use all emails to ensure conversations include both sent and received emails
   const allEmails = emails;
 
-  // Filter all emails related to this conversation, considering account IDs
-  const conversation = allEmails
-    .filter((email) => {
-      if (contactEmail === null) return false;
+  // Update conversation filtering to handle group conversations
+  const conversation = useMemo(() => 
+    emails
+      .filter((email) => {
+        // If we're looking at a group conversation
+        if (isContactGroup && selectedGroup) {
+          // Check if the email involves any address in the group
+          const emailMatches = selectedGroup.addresses.some(
+            (addr) =>
+              email.from?.email === addr ||
+              email.to?.some((to) => to.email === addr)
+          );
+          
+          // For SMS/phone conversations
+          const phoneMatches = selectedGroup.phoneNumbers.some(
+            (phone) => {
+              // Handle different formats of phone numbers
+              const normalizedPhone = phone.replace(/\D/g, '');
+              const normalizedFrom = email.from?.email.replace(/\D/g, '');
+              const normalizedToPhones = email.to?.map(to => to.email.replace(/\D/g, ''));
+              
+              return (
+                // Check if the SMS is from this phone number
+                (normalizedFrom && normalizedFrom.includes(normalizedPhone)) ||
+                // Check if the SMS is to this phone number
+                (normalizedToPhones && normalizedToPhones.some(toPhone => 
+                  toPhone && toPhone.includes(normalizedPhone)
+                ))
+              );
+            }
+          );
+          
+          return emailMatches || phoneMatches;
+        }
 
-      // Enhanced debugging
-      console.log(
-        `Checking email: ${email.id}, from: ${email.from.email}, accountId: ${
-          email.accountId
-        }, type: ${email.accountType || "unknown"}, labels: ${
-          email.labels?.join(", ") || "none"
-        }`
-      );
+        // Regular contact conversation (non-group)
+        const contact = contacts.find((c) => c.email === contactEmail);
 
-      // For group conversations
-      if (isGroup && groupId) {
-        // Find the group by ID
-        const group = groups.find((g) => g.id === groupId);
-        if (group) {
-          // Check if this email involves any address in the group
-          const isGroupConversation =
-            group.addresses.includes(email.from.email) ||
-            email.to.some((to) => group.addresses.includes(to.email)) ||
-            (email.from.email === session?.user?.email &&
-              email.to.some((to) => group.addresses.includes(to.email)));
+        // For Gmail emails (from the user's Gmail account)
+        if (
+          session?.user?.email &&
+          (!email.accountId || email.accountType === "gmail")
+        ) {
+          const isGmailConversation =
+            (email.from.email === contactEmail &&
+              email.to.some((to) => to.email === session.user.email)) ||
+            (email.from.email === session.user.email &&
+              email.to.some((to) => to.email === contactEmail));
 
-          if (isGroupConversation) {
-            console.log(`Including group email: ${email.id}`);
+          if (isGmailConversation) {
             return true;
           }
         }
+
+        // For IMAP emails
+        if (contact?.accountId && email.accountId === contact.accountId) {
+          // Fixed IMAP email filtering - don't check for account ID in the to/from fields
+          const isImapConversation =
+            email.from.email === contactEmail ||
+            email.to.some((to) => to.email === contactEmail);
+
+          if (isImapConversation) {
+            return true;
+          }
+        }
+
         return false;
-      }
-
-      // Special handling for SENT emails
-      if (email.labels?.includes("SENT") && session?.user?.email) {
-        // For SENT emails, check if the current contact is in the recipients
-        const isSentToContact = email.to.some(
-          (to) => to.email === contactEmail
-        );
-
-        if (isSentToContact) {
-          console.log(`Including SENT email to contact: ${email.id}`);
-          return true;
-        }
-      }
-
-      // For Gmail emails (from the user's Gmail account)
-      if (
-        session?.user?.email &&
-        (!email.accountId || email.accountType === "gmail")
-      ) {
-        const isGmailConversation =
-          (email.from.email === contactEmail &&
-            email.to.some((to) => to.email === session.user.email)) ||
-          (email.from.email === session.user.email &&
-            email.to.some((to) => to.email === contactEmail));
-
-        if (isGmailConversation) {
-          console.log(`Including Gmail email: ${email.id}`);
-          return true;
-        }
-      }
-
-      // For IMAP emails
-      if (contact?.accountId && email.accountId === contact.accountId) {
-        // Fixed IMAP email filtering - don't check for account ID in the to/from fields
-        const isImapConversation =
-          email.from.email === contactEmail ||
-          email.to.some((to) => to.email === contactEmail);
-
-        if (isImapConversation) {
-          console.log(`Including IMAP email: ${email.id}`);
-          return true;
-        }
-      }
-
-      return false;
-    })
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      })
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
+  [emails, contactEmail, session?.user?.email, contacts, isContactGroup, selectedGroup]);
 
   useEffect(() => {
     console.log(`Conversation contains ${conversation.length} emails`);
@@ -371,10 +444,58 @@ export function ConversationView({
     }
   }, [conversation, contact]);
 
+  // Get a displayable name for the current conversation
+  const conversationName = useMemo(() => {
+    if (isContactGroup && selectedGroup) {
+      return selectedGroup.name;
+    }
+    
+    if (contactEmail) {
+      const contact = contacts.find((c) => c.email === contactEmail);
+      return contact?.name || contactEmail.split('@')[0];
+    }
+    
+    return "Conversation";
+  }, [contactEmail, contacts, isContactGroup, selectedGroup]);
+
+  // Count of contacts in the group
+  const contactCount = useMemo(() => {
+    if (selectedGroup) {
+      return {
+        emails: selectedGroup.addresses.length,
+        phones: selectedGroup.phoneNumbers.length,
+        total: selectedGroup.addresses.length + selectedGroup.phoneNumbers.length
+      };
+    }
+    return null;
+  }, [selectedGroup]);
+
+  // Debug function for SMS message direction
+  function debugSmsMessageDirection(email: Email, isFromMe: boolean) {
+    if (email.accountType !== 'twilio' && email.accountType !== 'justcall') {
+      return; // Only debug SMS messages
+    }
+
+    console.log(`[SMS Debug] Message ID: ${email.id}`);
+    console.log(`[SMS Debug] Direction determined: ${isFromMe ? "FROM ME (outbound)" : "TO ME (inbound)"}`);
+    console.log(`[SMS Debug] Account type: ${email.accountType}`);
+    console.log(`[SMS Debug] From: ${email.from.email}`);
+    console.log(`[SMS Debug] To: ${email.to.map(t => t.email).join(', ')}`);
+    console.log(`[SMS Debug] Labels: ${email.labels?.join(', ') || 'none'}`);
+    console.log(`[SMS Debug] Account ID: ${email.accountId || 'none'}`);
+    console.log(`[SMS Debug] Subject: ${email.subject}`);
+    console.log(`[SMS Debug] Date: ${email.date}`);
+    console.log('----------------------');
+  }
+
   if (!contactEmail) {
     return (
-      <div className="flex-1 flex items-center justify-center p-8 text-muted-foreground">
-        Select a conversation to view
+      <div className="flex flex-col items-center justify-center h-full">
+        <MessageSquare className="h-16 w-16 text-primary/20" />
+        <h2 className="text-xl font-medium mt-4">No conversation selected</h2>
+        <p className="text-muted-foreground text-sm mt-2">
+          Select a conversation to view messages
+        </p>
       </div>
     );
   }
@@ -392,38 +513,33 @@ export function ConversationView({
         className="border-b border-border p-4 flex justify-between items-center bg-card/50 backdrop-blur supports-[backdrop-filter]:bg-background/60"
       >
         <div className="flex items-center">
-          <Avatar className="h-10 w-10 mr-4">
-            {isGroup && groupId ? (
-              <div className="h-full w-full flex items-center justify-center bg-primary/10">
-                <Users className="h-5 w-5" />
+          {isContactGroup && selectedGroup ? (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center justify-center h-9 w-9 rounded-full bg-primary/10">
+                <Users className="h-5 w-5 text-primary" />
               </div>
-            ) : (
-              <AvatarImage src={getGravatarUrl(contactEmail || "")} />
-            )}
-            <AvatarFallback>
-              {isGroup
-                ? groups.find((g) => g.id === groupId)?.name?.charAt(0) || "G"
-                : contact?.name?.charAt(0) || "?"}
-            </AvatarFallback>
-          </Avatar>
-          <div>
-            {isGroup && groupId ? (
-              <>
-                <h2 className="font-medium">
-                  {groups.find((g) => g.id === groupId)?.name || "Group"}
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  {groups.find((g) => g.id === groupId)?.addresses.length || 0}{" "}
-                  members
+              <div>
+                <h2 className="font-medium">{conversationName}</h2>
+                <p className="text-xs text-muted-foreground">
+                  {contactCount?.total} contacts ({contactCount?.emails} emails, {contactCount?.phones} phone numbers)
                 </p>
-              </>
-            ) : (
-              <>
-                <h2 className="font-medium">{contact?.name || contactEmail}</h2>
-                <p className="text-sm text-muted-foreground">{contactEmail}</p>
-              </>
-            )}
-          </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Avatar className="h-9 w-9">
+                <AvatarImage
+                  src={getGravatarUrl(contactEmail || "")}
+                  alt={conversationName}
+                />
+                <AvatarFallback>{conversationName[0]}</AvatarFallback>
+              </Avatar>
+              <div>
+                <h2 className="font-medium">{conversationName}</h2>
+                <p className="text-xs text-muted-foreground">{contactEmail}</p>
+              </div>
+            </div>
+          )}
         </div>
       </ResizablePanel>
 
@@ -448,13 +564,112 @@ export function ConversationView({
               </div>
             ) : conversation.length > 0 ? (
               conversation.map((email) => {
-                // For Gmail: check against session.user.email
-                // For IMAP: check if this is the account owner's email
-                const isFromMe =
-                  email.accountType === "gmail"
-                    ? email.from.email === session?.user?.email
-                    : email.accountId === contact?.accountId &&
-                      !email.from.email.includes(contactEmail);
+                // Determine if message is from the user (outbound) or to the user (inbound)
+                let isFromMe = false;
+                
+                // Check based on platform/account type
+                if (email.accountType === "gmail") {
+                  // For Gmail: check against session.user.email
+                  isFromMe = email.from.email === session?.user?.email;
+                } else if (email.accountType === "imap") {
+                  // For IMAP: check if this is the account owner's email
+                  isFromMe = email.accountId === contact?.accountId && 
+                    !email.from.email.includes(contactEmail);
+                } else if (email.accountType === "twilio" || email.accountType === "justcall") {
+                  // For SMS platforms: check direction property directly
+                  
+                  // First check if there's an explicit direction label
+                  if (email.labels?.includes("OUTBOUND")) {
+                    isFromMe = true;
+                  } else if (email.labels?.includes("INBOUND")) {
+                    isFromMe = false;
+                  } else {
+                    // For JustCall: messages they create have direction set to "inbound" when coming TO the user
+                    // and "outbound" when sent FROM the user
+                    const isOutbound = email.labels?.some(label => 
+                      label === "outbound" || 
+                      label === "OUTBOUND" || 
+                      label === "Outbound" || 
+                      label === "outbound-api" || 
+                      label === "outbound-reply"
+                    );
+                    
+                    const isInbound = email.labels?.some(label => 
+                      label === "inbound" || 
+                      label === "INBOUND" || 
+                      label === "Inbound"
+                    );
+                    
+                    if (isOutbound) {
+                      isFromMe = true;
+                    } else if (isInbound) {
+                      isFromMe = false;
+                    } else {
+                      // Check for typical JustCall pattern: 
+                      // If FROM.EMAIL contains an account phone number, it's outbound (from us)
+                      // If TO contains an account phone number, it's inbound (to us)
+                      
+                      const accountPhoneNumbers: string[] = [];
+                      
+                      // Get all phone numbers from Twilio accounts
+                      twilioAccounts.forEach(acc => {
+                        if (acc.phoneNumber) {
+                          accountPhoneNumbers.push(acc.phoneNumber.replace(/\D/g, ''));
+                        }
+                      });
+                      
+                      // Get all phone numbers from JustCall accounts
+                      justcallAccounts.forEach(acc => {
+                        if (acc.accountIdentifier) {
+                          accountPhoneNumbers.push(acc.accountIdentifier.replace(/\D/g, ''));
+                        }
+                      });
+                      
+                      // Clean phone numbers for comparison
+                      const fromPhone = email.from.email.replace(/\D/g, '');
+                      const toPhones = email.to.map(to => to.email.replace(/\D/g, ''));
+                      
+                      // If the message is FROM one of our account phone numbers, it's from us
+                      const isFromAccountPhone = accountPhoneNumbers.some(phone => 
+                        fromPhone.includes(phone) || phone.includes(fromPhone)
+                      );
+                      
+                      // If the message is TO one of our account phone numbers, it's to us
+                      const isToAccountPhone = accountPhoneNumbers.some(phone =>
+                        toPhones.some(toPhone => toPhone.includes(phone) || phone.includes(toPhone))
+                      );
+                      
+                      if (isFromAccountPhone) {
+                        isFromMe = true;
+                      } else if (isToAccountPhone) {
+                        isFromMe = false;
+                      } else {
+                        // Fall back to account-specific checks
+                        const twilioAccount = twilioAccounts.find(a => a.id === email.accountId);
+                        const justcallAccount = justcallAccounts.find(a => a.id === email.accountId);
+                        
+                        if (twilioAccount) {
+                          // In Twilio, if our phone number is the "from", it's an outbound message (from us)
+                          isFromMe = email.from.email.replace(/\D/g, '').includes(twilioAccount.phoneNumber.replace(/\D/g, ''));
+                        } else if (justcallAccount) {
+                          // In JustCall, similar logic applies
+                          isFromMe = email.from.email.replace(/\D/g, '').includes(justcallAccount.accountIdentifier.replace(/\D/g, ''));
+                        } else {
+                          // Last resort - If the contact's phone is in the "to" field, it's from us
+                          const contactPhone = contactEmail?.replace(/\D/g, '');
+                          
+                          if (contactPhone) {
+                            const toPhones = email.to.map(to => to.email.replace(/\D/g, ''));
+                            isFromMe = toPhones.some(toPhone => toPhone.includes(contactPhone) || contactPhone.includes(toPhone));
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+
+                // Debug function for SMS message direction
+                debugSmsMessageDirection(email, isFromMe);
 
                 return (
                   <div
