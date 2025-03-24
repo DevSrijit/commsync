@@ -8,12 +8,20 @@
  */
 export async function setCacheValue(key: string, value: any): Promise<void> {
   try {
+    if (!key) {
+      console.error("Cannot set cache value: key is required");
+      return;
+    }
+    
+    // Handle null or undefined values
+    const safeValue = value === null || value === undefined ? {} : value;
+    
     await fetch('/api/cache', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ key, value }),
+      body: JSON.stringify({ key, value: safeValue }),
       credentials: 'include',
     });
   } catch (error) {

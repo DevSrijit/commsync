@@ -263,8 +263,12 @@ export const useEmailStore = create<EmailStore>((set, get) => {
     syncEmails: async (gmailToken: string | null) => {
       const { imapAccounts } = get();
       try {
-        // Set very large page size to fetch all emails
-        await SyncService.getInstance().syncAllEmails(gmailToken, imapAccounts, 1, 100000);
+        if (!gmailToken) {
+          console.log("No Gmail token provided, skipping Gmail sync");
+        } else {
+          // Set very large page size to fetch all emails
+          await SyncService.getInstance().syncAllEmails(gmailToken, imapAccounts, 1, 100000);
+        }
       } catch (error: any) {
         // Handle auth errors
         console.error("Error syncing emails:", error);
@@ -272,7 +276,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
             (error?.error?.code === 401) ||
             (error?.message && error.message.includes('Invalid Credentials'))) {
           
-          // Instead of using the imported function, handle it here:
+          // Try to refresh the token
           try {
             const response = await fetch(`/api/auth/refresh?provider=google`, {
               method: 'POST',
@@ -857,8 +861,13 @@ export const useEmailStore = create<EmailStore>((set, get) => {
 
       set({ emails: uniqueEmails });
 
-      // Persist emails to the database
-      setCacheValue("emails", uniqueEmails);
+      // Persist emails to the database if we have valid data
+      if (uniqueEmails && uniqueEmails.length > 0) {
+        setCacheValue("emails", uniqueEmails);
+        setCacheValue("emailsTimestamp", Date.now().toString());
+      } else {
+        console.warn("Not persisting emails to cache: empty or invalid data");
+      }
       
       // Update contacts from the emails
       const generatedContacts = generateContactsFromEmails(uniqueEmails);

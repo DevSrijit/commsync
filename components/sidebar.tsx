@@ -20,6 +20,12 @@ import {
   MessageSquare,
   Phone,
   Users,
+  ChevronRight,
+  CreditCard,
+  LayoutDashboard,
+  ExternalLink,
+  BarChart3,
+  CircleAlert,
 } from "lucide-react";
 import { SiTwilio } from "@icons-pack/react-simple-icons";
 import { Button } from "@/components/ui/button";
@@ -66,6 +72,12 @@ import GroupDialog from "./group-dialog";
 import { TwilioAccountDialog } from "./twilio-account-dialog";
 import { useToast } from "@/components/ui/use-toast";
 import { EmailContentLoader } from "@/lib/email-content-loader";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { Progress } from "@/components/ui/progress";
 
 export type MessageCategory =
   | "inbox"
@@ -94,6 +106,16 @@ export function Sidebar() {
   const [isTwilioDialogOpen, setIsTwilioDialogOpen] = useState(false);
   const [isSyncingSMS, setIsSyncingSMS] = useState(false);
   const [isSyncingEmail, setIsSyncingEmail] = useState(false);
+  
+  // State for account collapsible sections
+  const [isEmailAccountsOpen, setIsEmailAccountsOpen] = useState(true);
+  const [isSMSAccountsOpen, setIsSMSAccountsOpen] = useState(true);
+
+  // Subscription mock data
+  const storageUsed = 3.2; // GB
+  const storageLimit = 5; // GB
+  const storagePercentage = (storageUsed / storageLimit) * 100;
+  const subscriptionTier = "Free"; // Free, Pro, Business
 
   // Fetch JustCall accounts
   useEffect(() => {
@@ -155,12 +177,51 @@ export function Sidebar() {
   const archiveCount = emails.filter((email) =>
     email.labels?.includes("ARCHIVE")
   ).length;
+  
+  const smsCount = emails.filter(email => 
+    email.accountType === 'twilio' || 
+    email.accountType === 'justcall' || 
+    (email.labels && email.labels.includes('SMS'))
+  ).length;
+
+  // Message filter buttons, extracted for cleaner code
+  const MessageFilterButton = ({ 
+    icon: Icon, 
+    label, 
+    filter, 
+    count 
+  }: { 
+    icon: React.ElementType, 
+    label: string, 
+    filter: MessageCategory, 
+    count: number 
+  }) => (
+    <Button
+      variant="ghost"
+      size="sm"
+      className={cn(
+        "w-full justify-start mb-0.5 px-2 py-1.5 text-sm font-medium rounded-md h-9",
+        activeFilter === filter 
+          ? "bg-accent text-accent-foreground" 
+          : "hover:bg-accent/50 hover:text-accent-foreground"
+      )}
+      onClick={() => setActiveFilter(filter)}
+    >
+      <Icon className="h-4 w-4 mr-2" />
+      <span className="flex-1 text-left">{label}</span>
+      {count > 0 && (
+        <Badge variant="secondary" className="ml-auto font-normal">
+          {count}
+        </Badge>
+      )}
+    </Button>
+  );
 
   return (
-    <div className="w-full border-r border-border bg-card flex flex-col h-full">
-      <div className="p-4 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <Avatar className="h-8 w-8">
+    <div className="h-full flex flex-col border-r border-border bg-card overflow-hidden">
+      <div className="p-4 pb-0 flex-shrink-0">
+        <div className="flex items-center gap-2 mb-3">
+          <Avatar className="h-9 w-9">
             <AvatarImage src={session?.user?.image || ""} />
             <AvatarFallback>
               {session?.user?.name?.[0] || "U"}
@@ -185,333 +246,412 @@ export function Sidebar() {
           </DropdownMenu>
         </div>
 
+        <div className="rounded-lg p-3 bg-muted/40 border border-border/50 mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-1.5">
+              <Badge variant={subscriptionTier === "Free" ? "secondary" : "default"} className="font-medium">
+                {subscriptionTier}
+              </Badge>
+              {subscriptionTier === "Free" && (
+                <span className="text-xs text-muted-foreground">
+                  {storageLimit}GB
+                </span>
+              )}
+            </div>
+            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs font-medium">
+              Upgrade <CreditCard />
+            </Button>
+          </div>
+
+          <div className="space-y-1.5">
+            <div className="flex justify-between text-xs">
+              <span className="text-muted-foreground">Storage</span>
+              <span className="font-medium">{storageUsed}/{storageLimit}GB</span>
+            </div>
+            <Progress 
+              value={storagePercentage} 
+              className={cn(
+                "h-1.5 rounded-sm", 
+                storagePercentage > 90 
+                  ? "bg-destructive/20" 
+                  : storagePercentage > 70 
+                    ? "bg-warning/20" 
+                    : "bg-primary/20"
+              )}
+            />
+          </div>
+        </div>
+
         <Button
-          variant="secondary"
-          className="w-full mt-4"
+          variant="default"
+          className="w-full mb-4"
           size="sm"
           onClick={() => setIsComposerOpen(true)}
         >
           <PenSquare className="h-4 w-4 mr-2" />
           Compose
         </Button>
-
-        <Separator className="my-4" />
       </div>
-      
+
       <ScrollArea className="flex-1">
-        <div className="px-2 mb-4">
-          <Button
-            variant="ghost"
-            className={cn(
-              "w-full justify-start mb-1 px-3 py-2 text-sm font-medium",
-              activeFilter === "inbox" && "bg-accent text-accent-foreground"
-            )}
-            onClick={() => setActiveFilter("inbox")}
-          >
-            <Inbox className="h-4 w-4 mr-2" />
-            <span className="flex-1 text-left">Inbox</span>
-            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{inboxCount}</span>
-          </Button>
-          
-          <Button
-            variant="ghost"
-            className={cn(
-              "w-full justify-start mb-1 px-3 py-2 text-sm font-medium",
-              activeFilter === "draft" && "bg-accent text-accent-foreground"
-            )}
-            onClick={() => setActiveFilter("draft")}
-          >
-            <PenSquare className="h-4 w-4 mr-2" />
-            <span className="flex-1 text-left">Drafts</span>
-            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{draftCount}</span>
-          </Button>
-          
-          <Button
-            variant="ghost"
-            className={cn(
-              "w-full justify-start mb-1 px-3 py-2 text-sm font-medium",
-              activeFilter === "sent" && "bg-accent text-accent-foreground"
-            )}
-            onClick={() => setActiveFilter("sent")}
-          >
-            <Send className="h-4 w-4 mr-2" />
-            <span className="flex-1 text-left">Sent</span>
-            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{sentCount}</span>
-          </Button>
-          
-          <Button
-            variant="ghost"
-            className={cn(
-              "w-full justify-start mb-1 px-3 py-2 text-sm font-medium",
-              activeFilter === "starred" && "bg-accent text-accent-foreground"
-            )}
-            onClick={() => setActiveFilter("starred")}
-          >
-            <Star className="h-4 w-4 mr-2" />
-            <span className="flex-1 text-left">Starred</span>
-            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{starredCount}</span>
-          </Button>
-          
-          <Button
-            variant="ghost"
-            className={cn(
-              "w-full justify-start mb-1 px-3 py-2 text-sm font-medium",
-              activeFilter === "trash" && "bg-accent text-accent-foreground"
-            )}
-            onClick={() => setActiveFilter("trash")}
-          >
-            <Trash className="h-4 w-4 mr-2" />
-            <span className="flex-1 text-left">Trash</span>
-            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{trashCount}</span>
-          </Button>
-          
-          <Button
-            variant="ghost"
-            className={cn(
-              "w-full justify-start mb-1 px-3 py-2 text-sm font-medium",
-              activeFilter === "archive" && "bg-accent text-accent-foreground"
-            )}
-            onClick={() => setActiveFilter("archive")}
-          >
-            <Archive className="h-4 w-4 mr-2" />
-            <span className="flex-1 text-left">Archive</span>
-            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{archiveCount}</span>
-          </Button>
-          
-          <Button
-            variant="ghost"
-            className={cn(
-              "w-full justify-start mb-1 px-3 py-2 text-sm font-medium",
-              activeFilter === "sms" && "bg-accent text-accent-foreground"
-            )}
-            onClick={() => setActiveFilter("sms")}
-          >
-            <MessageSquare className="h-4 w-4 mr-2" />
-            <span className="flex-1 text-left">SMS</span>
-            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">
-              {emails.filter(email => 
-                email.accountType === 'twilio' || 
-                email.accountType === 'justcall' || 
-                (email.labels && email.labels.includes('SMS'))
-              ).length}
-            </span>
-          </Button>
-          
-          <Button
-            variant="ghost"
-            className="w-full justify-start mb-1 px-3 py-2 text-sm font-medium"
-            disabled={isSyncingSMS}
-            onClick={async () => {
-              try {
-                setIsSyncingSMS(true);
-                await Promise.all([
-                  useEmailStore.getState().syncTwilioAccounts(),
-                  useEmailStore.getState().syncJustcallAccounts()
-                ]);
-              } catch (error) {
-                console.error("Error syncing SMS messages:", error);
-              } finally {
-                setIsSyncingSMS(false);
-              }
-            }}
-          >
-            <div className="flex items-center w-full">
-              <MessageSquare className="h-4 w-4 mr-2" />
-              <span className="flex-1 text-left">Sync SMS</span>
-              {isSyncingSMS && (
-                <span className="ml-2 animate-spin">⟳</span>
-              )}
+        <div className="py-1 px-2">
+          <div className="space-y-4">
+            {/* Primary Message Filters */}
+            <div className="space-y-0.5">
+              <MessageFilterButton 
+                icon={Inbox} 
+                label="Inbox" 
+                filter="inbox" 
+                count={inboxCount} 
+              />
+              <MessageFilterButton 
+                icon={Star} 
+                label="Starred" 
+                filter="starred" 
+                count={starredCount} 
+              />
+              <MessageFilterButton 
+                icon={Send} 
+                label="Sent" 
+                filter="sent" 
+                count={sentCount} 
+              />
+              <MessageFilterButton 
+                icon={PenSquare} 
+                label="Drafts" 
+                filter="draft" 
+                count={draftCount} 
+              />
+              <MessageFilterButton 
+                icon={MessageSquare} 
+                label="SMS" 
+                filter="sms" 
+                count={smsCount} 
+              />
+              <MessageFilterButton 
+                icon={Archive} 
+                label="Archive" 
+                filter="archive" 
+                count={archiveCount} 
+              />
+              <MessageFilterButton 
+                icon={Trash} 
+                label="Trash" 
+                filter="trash" 
+                count={trashCount} 
+              />
             </div>
-          </Button>
-        </div>
-
-        <div className="px-4 pt-2 pb-1">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold">Accounts</h2>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-6 w-6">
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setIsImapDialogOpen(true)}>
-                  <Mail className="h-4 w-4 mr-2" />
-                  <span>Email Account</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setIsJustCallDialogOpen(true)}>
-                  <Phone className="h-4 w-4 mr-2" />
-                  <span>JustCall Account</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setIsTwilioDialogOpen(true)}>
-                  <SiTwilio className="h-4 w-4 mr-2" />
-                  <span>Twilio Account</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setIsGroupDialogOpen(true)}>
-                  <Users className="h-4 w-4 mr-2" />
-                  <span>Add Contact</span>
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </div>
-        
-        <div className="px-2">
-          <Button
-            variant="ghost"
-            className="w-full justify-start mb-1 px-3 py-2 text-sm font-medium"
-            onClick={() => setIsImapListOpen(true)}
-          >
-            <Mail className="h-4 w-4 mr-2" />
-            <span className="flex-1 text-left">Email Accounts</span>
-            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{imapAccounts.length}</span>
-          </Button>
-
-          <Button
-            variant="ghost"
-            className="w-full justify-start mb-1 px-3 py-2 text-sm font-medium"
-            disabled={isSyncingEmail}
-            onClick={async () => {
-              try {
-                setIsSyncingEmail(true);
-                
-                // Sync all IMAP accounts
-                const { imapAccounts } = useEmailStore.getState();
-                const contentLoader = EmailContentLoader.getInstance();
-                let totalEmailsLoaded = 0;
-                
-                for (const account of imapAccounts) {
+            
+            {/* Sync Buttons */}
+            <div className="space-y-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full justify-start rounded-md"
+                disabled={isSyncingSMS}
+                onClick={async () => {
                   try {
-                    console.log(`Syncing account: ${account.label}`);
+                    setIsSyncingSMS(true);
+                    await Promise.all([
+                      useEmailStore.getState().syncTwilioAccounts(),
+                      useEmailStore.getState().syncJustcallAccounts()
+                    ]);
+                  } catch (error) {
+                    console.error("Error syncing SMS messages:", error);
+                  } finally {
+                    setIsSyncingSMS(false);
+                  }
+                }}
+              >
+                <div className="flex items-center w-full">
+                  <MessageSquare className="h-4 w-4 mr-2" />
+                  <span className="flex-1 text-left text-xs">Sync SMS</span>
+                  {isSyncingSMS && (
+                    <span className="ml-2 animate-spin">⟳</span>
+                  )}
+                </div>
+              </Button>
+              
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full justify-start rounded-md"
+                disabled={isSyncingEmail}
+                onClick={async () => {
+                  try {
+                    setIsSyncingEmail(true);
                     
-                    // Fetch emails for this account
-                    const response = await fetch("/api/imap", {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                      },
-                      body: JSON.stringify({
-                        action: "fetchEmails",
-                        account,
-                        data: {
-                          page: 1,
-                          pageSize: 100,
-                        },
-                      }),
-                    });
+                    // Sync all IMAP accounts
+                    const { imapAccounts } = useEmailStore.getState();
+                    const contentLoader = EmailContentLoader.getInstance();
+                    let totalEmailsLoaded = 0;
                     
-                    if (!response.ok) {
-                      console.error(`Failed to sync emails for ${account.label}`);
-                      continue; // Skip to next account on error
-                    }
-                    
-                    const data = await response.json();
-                    
-                    // Format emails to ensure they have required properties
-                    const formattedEmails = data.emails.map((email: any) => ({
-                      ...email,
-                      labels: email.labels || [],
-                      from: email.from || { name: '', email: '' },
-                      to: email.to || [],
-                      date: email.date || new Date().toISOString(),
-                      subject: email.subject || '(No Subject)',
-                      accountType: 'imap',
-                      accountId: account.id,
-                    }));
-                    
-                    // Update the email store with fetched emails
-                    const store = useEmailStore.getState();
-                    store.setEmails([...store.emails, ...formattedEmails]);
-                    totalEmailsLoaded += formattedEmails.length;
-                    
-                    // Update last sync time
-                    if (account.id) {
-                      await fetch("/api/imap", {
-                        method: "POST",
-                        headers: {
-                          "Content-Type": "application/json",
-                        },
-                        body: JSON.stringify({
-                          action: "updateLastSync",
-                          data: {
-                            accountId: account.id,
+                    for (const account of imapAccounts) {
+                      try {
+                        console.log(`Syncing account: ${account.label}`);
+                        
+                        // Fetch emails for this account
+                        const response = await fetch("/api/imap", {
+                          method: "POST",
+                          headers: {
+                            "Content-Type": "application/json",
+                          },
+                          body: JSON.stringify({
+                            action: "fetchEmails",
+                            account,
+                            data: {
+                              page: 1,
+                              pageSize: 100,
+                            },
+                          }),
+                        });
+                        
+                        if (!response.ok) {
+                          console.error(`Failed to sync emails for ${account.label}`);
+                          continue; // Skip to next account on error
+                        }
+                        
+                        const data = await response.json();
+                        
+                        // Format emails to ensure they have required properties
+                        const formattedEmails = data.emails.map((email: any) => ({
+                          ...email,
+                          labels: email.labels || [],
+                          from: email.from || { name: '', email: '' },
+                          to: email.to || [],
+                          date: email.date || new Date().toISOString(),
+                          subject: email.subject || '(No Subject)',
+                          accountType: 'imap',
+                          accountId: account.id,
+                        }));
+                        
+                        // Update the email store with fetched emails
+                        const store = useEmailStore.getState();
+                        store.setEmails([...store.emails, ...formattedEmails]);
+                        totalEmailsLoaded += formattedEmails.length;
+                        
+                        // Update last sync time
+                        if (account.id) {
+                          await fetch("/api/imap", {
+                            method: "POST",
+                            headers: {
+                              "Content-Type": "application/json",
+                            },
+                            body: JSON.stringify({
+                              action: "updateLastSync",
+                              data: {
+                                accountId: account.id,
+                              }
+                            }),
+                          });
+                        }
+                        
+                        // Load content for emails that don't have it
+                        const emailsWithoutContent = formattedEmails.filter((email: any) => !email.body || email.body.length === 0);
+                        
+                        // Load content for up to 5 emails at a time
+                        if (emailsWithoutContent.length > 0) {
+                          const batchSize = 5;
+                          for (let i = 0; i < emailsWithoutContent.length; i += batchSize) {
+                            const batch = emailsWithoutContent.slice(i, i + batchSize);
+                            await Promise.allSettled(
+                              batch.map((email: any) => contentLoader.loadEmailContent(email))
+                            );
                           }
-                        }),
-                      });
-                    }
-                    
-                    // Load content for emails that don't have it
-                    const emailsWithoutContent = formattedEmails.filter((email: any) => !email.body || email.body.length === 0);
-                    
-                    // Load content for up to 5 emails at a time
-                    if (emailsWithoutContent.length > 0) {
-                      const batchSize = 5;
-                      for (let i = 0; i < emailsWithoutContent.length; i += batchSize) {
-                        const batch = emailsWithoutContent.slice(i, i + batchSize);
-                        await Promise.allSettled(
-                          batch.map((email: any) => contentLoader.loadEmailContent(email))
-                        );
+                        }
+                      } catch (error) {
+                        console.error(`Error syncing account ${account.label}:`, error);
                       }
                     }
+                    
+                    // Show toast notification with results
+                    if (totalEmailsLoaded > 0) {
+                      toast({
+                        title: "Sync successful",
+                        description: `Synced ${totalEmailsLoaded} emails from ${imapAccounts.length} accounts`,
+                      });
+                    } else {
+                      toast({
+                        title: "Sync complete",
+                        description: "No new emails found",
+                      });
+                    }
                   } catch (error) {
-                    console.error(`Error syncing account ${account.label}:`, error);
+                    console.error("Error syncing IMAP accounts:", error);
+                    toast({
+                      title: "Sync failed",
+                      description: "Failed to sync emails. Please try again.",
+                      variant: "destructive",
+                    });
+                  } finally {
+                    setIsSyncingEmail(false);
                   }
-                }
-                
-                // Show toast notification with results
-                if (totalEmailsLoaded > 0) {
-                  toast({
-                    title: "Sync successful",
-                    description: `Synced ${totalEmailsLoaded} emails from ${imapAccounts.length} accounts`,
-                  });
-                } else {
-                  toast({
-                    title: "Sync complete",
-                    description: "No new emails found",
-                  });
-                }
-              } catch (error) {
-                console.error("Error syncing IMAP accounts:", error);
-                toast({
-                  title: "Sync failed",
-                  description: "Failed to sync emails. Please try again.",
-                  variant: "destructive",
-                });
-              } finally {
-                setIsSyncingEmail(false);
-              }
-            }}
-          >
-            <div className="flex items-center w-full">
-              <Mail className="h-4 w-4 mr-2" />
-              <span className="flex-1 text-left">Sync Email</span>
-              {isSyncingEmail && (
-                <span className="ml-2 animate-spin">⟳</span>
-              )}
+                }}
+              >
+                <div className="flex items-center w-full">
+                  <Mail className="h-4 w-4 mr-2" />
+                  <span className="flex-1 text-left text-xs">Sync Email</span>
+                  {isSyncingEmail && (
+                    <span className="ml-2 animate-spin">⟳</span>
+                  )}
+                </div>
+              </Button>
             </div>
-          </Button>
 
-          <Button
-            variant="ghost"
-            className="w-full justify-start mb-1 px-3 py-2 text-sm font-medium"
-            onClick={() => setIsJustCallListOpen(true)}
-          >
-            <MessageSquare className="h-4 w-4 mr-2" />
-            <span className="flex-1 text-left">JustCall Accounts</span>
-            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{justCallAccounts.length}</span>
-          </Button>
+            {/* Account Sections */}
+            <div className="space-y-3">
+              <div className="px-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Accounts
+                  </h3>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-6 w-6">
+                        <Plus className="h-3.5 w-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuItem onClick={() => setIsImapDialogOpen(true)} className="gap-2">
+                        <Mail className="h-4 w-4" />
+                        <span>Email Account</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setIsJustCallDialogOpen(true)} className="gap-2">
+                        <Phone className="h-4 w-4" />
+                        <span>JustCall Account</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setIsTwilioDialogOpen(true)} className="gap-2">
+                        <SiTwilio className="h-4 w-4" />
+                        <span>Twilio Account</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => setIsGroupDialogOpen(true)} className="gap-2">
+                        <Users className="h-4 w-4" />
+                        <span>Add Contact</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              </div>
 
-          <Button
-            variant="ghost"
-            className="w-full justify-start mb-1 px-3 py-2 text-sm font-medium"
-            onClick={() => setIsTwilioListOpen(true)}
-          >
-            <SiTwilio className="h-4 w-4 mr-2" />
-            <span className="flex-1 text-left">Twilio Accounts</span>
-            <span className="ml-auto text-xs font-medium bg-muted/80 px-2 py-0.5 rounded-full">{twilioAccounts.length}</span>
-          </Button>
+              {/* Email Accounts Collapsible */}
+              <Collapsible 
+                open={isEmailAccountsOpen} 
+                onOpenChange={setIsEmailAccountsOpen}
+                className="px-2"
+              >
+                <CollapsibleTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="flex w-full justify-between px-2 py-1 h-8 font-medium text-sm"
+                  >
+                    <div className="flex items-center">
+                      <Mail className="h-4 w-4 mr-2" />
+                      <span>Email Accounts</span>
+                    </div>
+                    <Badge variant="outline" className="ml-auto mr-2 font-normal">
+                      {imapAccounts.length}
+                    </Badge>
+                    <ChevronRight className={cn(
+                      "h-4 w-4 transition-transform duration-200",
+                      isEmailAccountsOpen ? "transform rotate-90" : ""
+                    )} />
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="pt-1 pb-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start mb-1 px-2 py-1 text-xs rounded-md"
+                    onClick={() => setIsImapListOpen(true)}
+                  >
+                    <span className="flex-1 text-left">Manage email accounts</span>
+                    <ExternalLink className="h-3 w-3 ml-1" />
+                  </Button>
+                  <div className="space-y-1">
+                    {imapAccounts.map((account) => (
+                      <div key={account.id} className="px-2 py-1 text-sm flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full bg-blue-400"></span>
+                        <span className="truncate text-xs">{account.label}</span>
+                      </div>
+                    ))}
+                    {imapAccounts.length === 0 && (
+                      <div className="px-2 py-1 text-xs text-muted-foreground italic">
+                        No accounts added
+                      </div>
+                    )}
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
+
+              {/* SMS Accounts Collapsible */}
+              <Collapsible 
+                open={isSMSAccountsOpen} 
+                onOpenChange={setIsSMSAccountsOpen}
+                className="px-2"
+              >
+                <CollapsibleTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="flex w-full justify-between px-2 py-1 h-8 font-medium text-sm"
+                  >
+                    <div className="flex items-center">
+                      <MessageSquare className="h-4 w-4 mr-2" />
+                      <span>SMS Accounts</span>
+                    </div>
+                    <Badge variant="outline" className="ml-auto mr-2 font-normal">
+                      {justCallAccounts.length + twilioAccounts.length}
+                    </Badge>
+                    <ChevronRight className={cn(
+                      "h-4 w-4 transition-transform duration-200",
+                      isSMSAccountsOpen ? "transform rotate-90" : ""
+                    )} />
+                  </Button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="pt-1 pb-2 space-y-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start px-2 py-1 text-xs rounded-md"
+                    onClick={() => setIsJustCallListOpen(true)}
+                  >
+                    <span className="flex-1 text-left">JustCall accounts</span>
+                    <Badge variant="outline" className="ml-auto font-normal">
+                      {justCallAccounts.length}
+                    </Badge>
+                  </Button>
+                  
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start px-2 py-1 text-xs rounded-md"
+                    onClick={() => setIsTwilioListOpen(true)}
+                  >
+                    <span className="flex-1 text-left">Twilio accounts</span>
+                    <Badge variant="outline" className="ml-auto font-normal">
+                      {twilioAccounts.length}
+                    </Badge>
+                  </Button>
+                </CollapsibleContent>
+              </Collapsible>
+            </div>
+          </div>
         </div>
       </ScrollArea>
+
+      <div className="p-3 border-t border-border flex-shrink-0 mt-auto">
+        <div className="w-full rounded-md border border-dashed p-2.5 flex items-center justify-between">
+          <div className="text-xs">
+            <p className="font-medium">Need help?</p>
+            <p className="text-muted-foreground" onClick={() => window.open("#", "_blank")}>Contact support</p>
+          </div>
+          <Button size="sm" variant="outline" className="h-7 text-xs">
+            Support
+          </Button>
+        </div>
+      </div>
 
       {/* IMAP Accounts Dialog */}
       <Dialog open={isImapListOpen} onOpenChange={setIsImapListOpen}>

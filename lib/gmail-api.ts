@@ -7,21 +7,49 @@ import { getCacheValue, setCacheValue } from './client-cache-browser';
 async function refreshSession() {
   try {
     // Force a session refresh by calling the NextAuth endpoint
-    const refreshResponse = await fetch("/api/auth/session", {
-      method: "GET",
+    const refreshResponse = await fetch("/api/auth/refresh?provider=google", {
+      method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
     });
 
     if (!refreshResponse.ok) {
+      console.error(`Refresh response not OK: ${refreshResponse.status} ${refreshResponse.statusText}`);
+      
+      // Check if we need to redirect to login
+      if (refreshResponse.status === 401) {
+        if (typeof window !== 'undefined') {
+          console.log("Redirecting to login page due to expired session");
+          window.location.href = `/login?error=token_expired&provider=google`;
+          return null;
+        }
+      }
       throw new Error("Failed to refresh session");
     }
 
-    const session = await refreshResponse.json();
-    return session?.user?.accessToken;
+    // Get new session with refreshed token
+    const sessionResponse = await fetch("/api/auth/session", {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+    });
+    
+    if (!sessionResponse.ok) {
+      throw new Error("Failed to get updated session");
+    }
+    
+    const session = await sessionResponse.json();
+    
+    // Check if we got a valid token
+    if (!session?.user?.accessToken) {
+      console.error("No access token found in refreshed session");
+      return null;
+    }
+    
+    return session.user.accessToken;
   } catch (error) {
     console.error("Error refreshing session:", error);
-    throw error;
+    return null; // Return null instead of throwing to prevent further errors
   }
 }
 
@@ -32,6 +60,11 @@ export async function fetchEmails(
   query: string = ""
 ): Promise<Email[]> {
   try {
+    if (!token) {
+      console.error("Cannot fetch emails: No access token provided");
+      return [];
+    }
+
     // Calculate pagination parameters
     const maxResults = pageSize;
     
@@ -74,7 +107,14 @@ export async function fetchEmails(
           }
         );
       } else {
-        console.error("Failed to refresh token");
+        console.error("Failed to refresh token. Authentication required.");
+        if (typeof window !== 'undefined') {
+          // Redirect to login page after delay to allow error to be seen
+          setTimeout(() => {
+            window.location.href = `/login?error=auth_required&provider=google`;
+          }, 1000);
+        }
+        return []; // Return empty array to prevent further errors
       }
     }
 
