@@ -233,7 +233,7 @@ export class TwilioService {
           content: message.body,
           contentType: 'text',
           metadata: JSON.stringify(message),
-          attachments,
+          attachments: attachments ? attachments : undefined,
           sentAt: new Date(message.date_created),
           isRead: false,
         },

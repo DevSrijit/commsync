@@ -124,7 +124,11 @@ export async function POST(
           name: `${user.name || session.user.email}'s Organization`,
           ownerId: user.id,
           stripeCustomerId: customerId,
-          memberIds: [user.id], // Ensure user is added as a member
+          members: {
+            connect: {
+              id: user.id
+            }
+          }
         },
       });
 
@@ -132,9 +136,11 @@ export async function POST(
       await db.user.update({
         where: { id: user.id },
         data: {
-          organizationIds: {
-            push: organization.id,
-          },
+          organizations: {
+            connect: {
+              id: organization.id
+            }
+          }
         },
       });
       logger.info('Organization created and linked to user', { orgId: organization.id, userId: user.id });

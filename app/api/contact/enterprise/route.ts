@@ -74,8 +74,10 @@ export async function POST(req: NextRequest) {
         await db.user.update({
           where: { id: user.id },
           data: {
-            organizationIds: {
-              push: organization.id,
+            organizations: {
+              connect: {
+                id: organization.id,
+              },
             },
           },
         });
@@ -93,7 +95,9 @@ export async function POST(req: NextRequest) {
             maxUsers: -1,
             maxStorage: -1,
             maxConnections: -1,
-            aiCredits: -1,
+            totalStorage: -1,
+            totalConnections: -1,
+            totalAiCredits: -1,
             customLimits: {
               requestedTeamSize: teamSize,
               connectedAccounts,

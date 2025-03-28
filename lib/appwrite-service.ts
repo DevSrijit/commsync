@@ -38,7 +38,7 @@ export async function uploadFilesToAppwrite(files: File[]): Promise<string[]> {
       // Get the public URL for the file
       const fileUrl = storage.getFileView(MEDIA_BUCKET_ID, fileId);
       
-      return fileUrl.href;
+      return fileUrl;
     });
     
     // Wait for all uploads to complete
