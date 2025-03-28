@@ -370,7 +370,7 @@ export function EmailList({
                 <p className="text-xs mt-1">Add contact groups from the sidebar menu.</p>
               </>
             ) : (
-              <p>No contacts found.</p>
+              <p>No conversations found.</p>
             )}
           </div>
         ) : (

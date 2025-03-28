@@ -8,19 +8,56 @@ import { LoadingSpinner } from "@/components/loading-spinner";
 import { useToast } from "@/components/ui/use-toast";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, RefreshCw } from "lucide-react";
+import { 
+  getStoredSubscriptionData, 
+  hasStoredActiveSubscription, 
+  updateSubscriptionDataInBackground 
+} from "@/lib/subscription";
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const { toast } = useToast();
-  const [isCheckingSubscription, setIsCheckingSubscription] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [verificationError, setVerificationError] = useState<string | null>(null);
 
+  // Background subscription check
+  const checkSubscriptionInBackground = async () => {
+    try {
+      const updated = await updateSubscriptionDataInBackground();
+      
+      // If update failed or no active subscription, show warning and redirect
+      if (!updated || !hasStoredActiveSubscription()) {
+        // Only redirect if we don't have an active subscription
+        if (!hasStoredActiveSubscription()) {
+          toast({
+            title: "Subscription Required",
+            description: "Please select a subscription plan to continue.",
+            variant: "destructive",
+          });
+          router.replace("/pricing");
+        }
+      }
+    } catch (error) {
+      console.error("Failed to check subscription status:", error);
+      // We don't redirect or show error UI in case of background check failure
+      // Just log it and let the user continue
+    }
+  };
+
+  // Regular subscription check with fallback for first load
   const checkSubscription = async () => {
-    setIsCheckingSubscription(true);
     setVerificationError(null);
     
     try {
+      // First check if we have cached data
+      if (hasStoredActiveSubscription()) {
+        setIsLoading(false);
+        // Update in background without blocking UI
+        checkSubscriptionInBackground();
+        return;
+      }
+      
       const response = await fetch("/api/auth/check-subscription", {
         method: "GET",
         credentials: "include",
@@ -32,6 +69,12 @@ export default function DashboardPage() {
       
       const data = await response.json();
       console.log("Subscription check response:", data);
+      
+      // Store subscription data for future use
+      if (data.subscription) {
+        // The updateSubscriptionDataInBackground function will store the data
+        await updateSubscriptionDataInBackground();
+      }
       
       // If no active subscription, redirect to pricing page
       if (!data.hasActiveSubscription) {
@@ -50,6 +93,7 @@ export default function DashboardPage() {
               duration: 10000,
             });
             setVerificationError("Your payment is still being processed. Please wait a moment and try again.");
+            setIsLoading(false);
             return;
           }
         }
@@ -60,18 +104,18 @@ export default function DashboardPage() {
           variant: "destructive",
         });
         router.replace("/pricing");
+      } else {
+        setIsLoading(false);
       }
     } catch (error) {
       console.error("Failed to check subscription status:", error);
-      // In case of error, show a toast but don't redirect
       toast({
         title: "Verification Error",
         description: "There was an issue verifying your subscription. Some features may be limited.",
         variant: "destructive",
       });
       setVerificationError("There was an issue verifying your subscription. Please try again or contact support.");
-    } finally {
-      setIsCheckingSubscription(false);
+      setIsLoading(false);
     }
   };
 
@@ -85,17 +129,19 @@ export default function DashboardPage() {
     // If the user is logged in, check subscription
     if (status === "authenticated" && session) {
       checkSubscription();
+    } else if (status !== "loading") {
+      setIsLoading(false);
     }
   }, [session, status, router]);
 
   // Show loading state while checking session
-  if (status === "loading" || isCheckingSubscription) {
+  if (status === "loading" || isLoading) {
     return (
       <div className="flex h-screen w-screen items-center justify-center">
         <div className="flex flex-col items-center gap-2">
           <LoadingSpinner className="h-8 w-8" />
           <p className="text-muted-foreground">
-            {isCheckingSubscription ? "Verifying subscription..." : "Loading your dashboard..."}
+            Loading your dashboard...
           </p>
         </div>
       </div>
