@@ -14,7 +14,7 @@ export function LoginForm() {
         <CardDescription className="text-center">Connect with your Gmail account to get started</CardDescription>
       </CardHeader>
       <CardContent className="flex justify-center">
-        <Button variant="outline" onClick={() => signIn("google", { callbackUrl: "/" })} className="w-full">
+        <Button variant="outline" onClick={() => signIn("google", { callbackUrl: "/pricing" })} className="w-full">
           <Mail className="mr-2 h-4 w-4" />
           Sign in with Google
         </Button>

@@ -34,8 +34,7 @@ export const authOptions: NextAuthOptions = {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       authorization: {
         params: {
-          scope:
-            "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://mail.google.com/",
+          scope: "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email",
           prompt: "consent",
           access_type: "offline",
           response_type: "code",
@@ -106,6 +105,31 @@ export const authOptions: NextAuthOptions = {
         accessToken: token.accessToken,
         refreshToken: token.refreshToken,
       }
+    },
+    async signIn({ user }) {
+      // Check if user has an active subscription
+      const dbUser = await db.user.findUnique({
+        where: { email: user.email! },
+        include: {
+          organizations: {
+            include: {
+              subscription: true,
+            },
+          },
+        },
+      });
+
+      // If user has no subscription or their organizations have no active subscriptions,
+      // redirect to pricing page
+      const hasActiveSubscription = dbUser?.organizations.some(
+        org => org.subscription?.status === "active"
+      );
+
+      if (!hasActiveSubscription) {
+        return "/pricing";
+      }
+
+      return true;
     },
   },
 }

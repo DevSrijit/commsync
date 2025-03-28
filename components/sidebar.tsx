@@ -656,7 +656,7 @@ export function Sidebar() {
             <p className="font-medium">Need help?</p>
             <p className="text-muted-foreground" onClick={() => window.open("#", "_blank")}>Contact support</p>
           </div>
-          <Button size="sm" variant="outline" className="h-7 text-xs">
+          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => window.open("mailto:commsync@havenmediasolutions.com", "_blank")}>
             Support
           </Button>
         </div>

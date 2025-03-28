@@ -43,7 +43,7 @@ model User {
   email         String?       @unique
   emailVerified DateTime?
   image         String?
-  createdAt     DateTime      @default(now())  //or set as null 
+  createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   accounts      Account[]
   sessions      Session[]
@@ -53,6 +53,10 @@ model User {
   contacts      Contact[]
   twilioAccounts TwilioAccount[]
   clientCache   ClientCache[]
+  organizationIds String[] @db.ObjectId // Organizations user belongs to
+  organizations Organization[] @relation(fields: [organizationIds], references: [id])
+  ownedOrganizations Organization[] @relation("OrganizationOwner")
+  stripeCustomerId String? // Stripe customer ID for individual subscriptions
 }
 
 model VerificationToken {
@@ -228,4 +232,51 @@ model ClientCache {
 
   @@unique([userId, key])
   @@index([userId])
+}
+
+// New models for subscription management
+model Organization {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  name            String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  ownerId         String   @db.ObjectId
+  owner           User     @relation("OrganizationOwner", fields: [ownerId], references: [id])
+  memberIds       String[] @db.ObjectId
+  members         User[]   @relation(fields: [memberIds], references: [id])
+  subscription    Subscription?
+  stripeCustomerId String? // Stripe customer ID for org subscriptions
+
+  @@index([ownerId])
+}
+
+model Subscription {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId  String   @db.ObjectId
+  organization    Organization @relation(fields: [organizationId], references: [id])
+  stripeSubscriptionId String
+  stripePriceId   String
+  status          String // active, canceled, past_due, etc.
+  currentPeriodStart DateTime
+  currentPeriodEnd DateTime
+  cancelAtPeriodEnd Boolean @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  // Plan limits - now shared across all users
+  planType        String  // lite, standard, business, enterprise
+  maxUsers        Int     // maximum number of users allowed
+  totalStorage    Int     // total storage in MB shared across all users
+  totalConnections Int    // total connected accounts shared across all users
+  totalAiCredits  Int     // total monthly AI credits shared across all users
+  usedStorage     Int     @default(0) // currently used storage
+  usedConnections Int     @default(0) // currently used connections
+  usedAiCredits   Int     @default(0) // used AI credits for current period
+  customLimits    Json?   // for enterprise plans with custom limits
+  // Trial-related fields
+  trialEndsAt     DateTime? // When the trial period ends, if applicable
+  trialStartedAt  DateTime? @default(now()) // When the trial started
+  hasTrialEnded   Boolean   @default(false) // Track if trial has ended
+
+  @@unique([organizationId])
+  @@unique([stripeSubscriptionId])
 }
