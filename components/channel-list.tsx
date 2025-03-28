@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 import { Group, Email } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { useSession } from "next-auth/react";
+import { MessageCategory } from "@/components/sidebar";
 
 interface EmailListProps {
   isLoading: boolean;
@@ -164,6 +165,9 @@ export function EmailList({
           email.accountType === 'justcall' ||
           (email.labels && email.labels.includes("SMS")))
         );
+      case "contacts":
+        // When on contacts filter, we don't show individual contacts
+        return false;
       default:
         return true;
     }
@@ -181,7 +185,9 @@ export function EmailList({
   // Only show SMS contacts when SMS filter is active
   const displayedContacts = activeFilter === 'sms'
     ? [...sortedSMSContacts, ...syntheticSMSContacts]
-    : filteredContacts;
+    : activeFilter === 'contacts'
+      ? [] // Show no regular contacts when on contacts filter
+      : filteredContacts;
 
   const GroupItem = ({ group, isSelected, onClick }: {
     group: Group;
@@ -358,6 +364,11 @@ export function EmailList({
                 <p>No SMS contacts found.</p>
                 {smsCount > 0 && <p className="text-xs mt-1">Found {smsCount} SMS messages, but couldn't associate with contacts.</p>}
               </>
+            ) : activeFilter === 'contacts' ? (
+              <>
+                <p>No contact groups found.</p>
+                <p className="text-xs mt-1">Add contact groups from the sidebar menu.</p>
+              </>
             ) : (
               <p>No contacts found.</p>
             )}
@@ -367,7 +378,9 @@ export function EmailList({
             {/* Show groups first */}
             {groups.length > 0 && activeFilter !== 'sms' && (
               <div className="px-3 mb-2">
-                <h2 className="text-sm font-medium text-muted-foreground mb-2">Contacts</h2>
+                <h2 className="text-sm font-medium text-muted-foreground mb-2">
+                  {activeFilter === 'contacts' ? 'Contact Groups' : 'Contacts'}
+                </h2>
                 <div className="space-y-1">
                   {groups.map(group => (
                     <GroupItem
@@ -382,7 +395,7 @@ export function EmailList({
             )}
 
             {/* Show contacts */}
-            {displayedContacts.length > 0 && (
+            {displayedContacts.length > 0 && activeFilter !== 'contacts' && (
               <div className="px-3">
                 <h2 className="text-sm font-medium text-muted-foreground mb-2">
                   {activeFilter === 'sms' ? 'SMS Conversations' : 'Conversations'}

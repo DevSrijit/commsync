@@ -87,11 +87,12 @@ export type MessageCategory =
   | "trash"
   | "archive"
   | "sms"
+  | "contacts"
   | "all";
 
 export function Sidebar() {
   const { data: session } = useSession();
-  const { emails, setActiveFilter, activeFilter, imapAccounts } =
+  const { emails, setActiveFilter, activeFilter, imapAccounts, groups } =
     useEmailStore();
   const { toast } = useToast();
   const [isComposerOpen, setIsComposerOpen] = useState(false);
@@ -183,6 +184,8 @@ export function Sidebar() {
     email.accountType === 'justcall' || 
     (email.labels && email.labels.includes('SMS'))
   ).length;
+
+  const contactsCount = groups?.length || 0;
 
   // Message filter buttons, extracted for cleaner code
   const MessageFilterButton = ({ 
@@ -327,6 +330,12 @@ export function Sidebar() {
                 label="SMS" 
                 filter="sms" 
                 count={smsCount} 
+              />
+              <MessageFilterButton 
+                icon={Users} 
+                label="Contacts" 
+                filter="contacts" 
+                count={contactsCount} 
               />
               <MessageFilterButton 
                 icon={Archive} 
@@ -527,7 +536,7 @@ export function Sidebar() {
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={() => setIsGroupDialogOpen(true)} className="gap-2">
                         <Users className="h-4 w-4" />
-                        <span>Add Contact</span>
+                        <span>Manage Contact</span>
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
