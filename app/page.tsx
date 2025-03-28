@@ -1,15 +1,36 @@
-import { getServerSession } from "next-auth"
-import { authOptions } from "@/lib/auth"
-import { EmailDashboard } from "@/components/dashboard"
-import Landing from "@/components/hero/landing"
+"use client";
 
-export default async function Home() {
-  const session = await getServerSession(authOptions)
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { LoadingSpinner } from "@/components/loading-spinner";
 
-  if (!session) {
-    return <Landing />
-  }
+export default function Home() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
 
-  return <EmailDashboard />
+  useEffect(() => {
+    // If the user is not logged in, redirect to login
+    if (status === "unauthenticated") {
+      router.replace("/login");
+      return;
+    }
+    
+    // If user is authenticated, send them to the dashboard
+    if (status === "authenticated") {
+      router.replace("/dashboard");
+      return;
+    }
+  }, [status, router]);
+
+  // Show loading state while checking session
+  return (
+    <div className="flex h-screen w-screen items-center justify-center">
+      <div className="flex flex-col items-center gap-2">
+        <LoadingSpinner className="h-8 w-8" />
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    </div>
+  );
 }
 

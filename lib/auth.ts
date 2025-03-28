@@ -24,9 +24,11 @@ export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(db),
   session: {
     strategy: "jwt",
+    maxAge: 30 * 24 * 60 * 60, // 30 days
   },
   pages: {
     signIn: "/login",
+    error: "/login",
   },
   providers: [
     GoogleProvider({
@@ -106,30 +108,35 @@ export const authOptions: NextAuthOptions = {
         refreshToken: token.refreshToken,
       }
     },
-    async signIn({ user }) {
-      // Check if user has an active subscription
-      const dbUser = await db.user.findUnique({
-        where: { email: user.email! },
-        include: {
-          organizations: {
-            include: {
-              subscription: true,
+    async signIn({ user, account }) {
+      try {
+        // Find the user in the database
+        const dbUser = await db.user.findUnique({
+          where: { email: user.email! },
+          include: {
+            organizations: {
+              include: {
+                subscription: true,
+              },
             },
           },
-        },
-      });
-
-      // If user has no subscription or their organizations have no active subscriptions,
-      // redirect to pricing page
-      const hasActiveSubscription = dbUser?.organizations.some(
-        org => org.subscription?.status === "active"
-      );
-
-      if (!hasActiveSubscription) {
-        return "/pricing";
+        });
+        
+        // Set email verification timestamp for all users
+        if (dbUser && !dbUser.emailVerified) {
+          await db.user.update({
+            where: { id: dbUser.id },
+            data: { emailVerified: new Date() }
+          });
+        }
+        
+        // Always return true to allow sign-in
+        // The dashboard page will handle subscription checks and redirects
+        return true;
+      } catch (error) {
+        console.error("Error in signIn callback:", error);
+        return true; // Allow sign-in even on error, to avoid blocking users
       }
-
-      return true;
     },
   },
 }
