@@ -3,10 +3,8 @@ import { NextResponse } from "next/server";
 import { stripe, STRIPE_PLANS } from "@/lib/stripe";
 import { db } from "@/lib/db";
 
-// Explicitly setting the webhook secret since the environment variable may not be working properly
-const webhookSecret = "whsec_a38632c432cd056cc13d89ea126a969efcfba20f5f8c41d09fa8fb5a0463a0f7";
 // Fallback to environment variable if needed
-// const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || 'whsec_baA0PbKmcjQccNGchBQGL6JNIgQ8JJWh';
+const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || 'whsec_baA0PbKmcjQccNGchBQGL6JNIgQ8JJWh';
 
 // Structured logger to prevent excessive console output
 const logger = {
