@@ -225,7 +225,7 @@ export function Sidebar() {
       <div className="p-4 pb-0 flex-shrink-0">
         <div className="flex items-center gap-2 mb-3">
           <Avatar className="h-9 w-9">
-            <AvatarImage src={session?.user?.image || ""} />
+            <AvatarImage src={session?.user?.image || `https://api.dicebear.com/9.x/glass/svg?radius=50&seed=${session?.user?.email}&randomizeIds=true`} />
             <AvatarFallback>
               {session?.user?.name?.[0] || "U"}
             </AvatarFallback>

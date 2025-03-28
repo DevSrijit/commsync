@@ -35,9 +35,8 @@ const getAttachmentIcon = (mimeType: string | undefined) => {
 };
 
 const getGravatarUrl = (email: string) => {
-  const firstChar = email.charAt(0).toLowerCase();
-  const img = `https://avatar.iran.liara.run/username?username=${firstChar}`;
-  return img;
+  const initial = email.charAt(0).toUpperCase();
+  return `https://api.dicebear.com/9.x/glass/svg?radius=50&seed=${initial}&randomizeIds=true`;
 };
 
 const formatFileSize = (bytes: number): string => {
@@ -822,7 +821,7 @@ export function ConversationView({
                     {/* Avatar on the right if it's from me */}
                     {isFromMe && (
                       <Avatar className="h-8 w-8">
-                        <AvatarImage src={session?.user?.image || ""} />
+                        <AvatarImage src={session?.user?.image || `https://api.dicebear.com/9.x/glass/svg?radius=50&seed=${session?.user?.email}&randomizeIds=true`} />
                         <AvatarFallback>
                           {session?.user?.name?.charAt(0) || "U"}
                         </AvatarFallback>
