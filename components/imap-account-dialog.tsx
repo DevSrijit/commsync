@@ -28,7 +28,8 @@ import { z } from "zod";
 import { Checkbox } from "@/components/ui/checkbox";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { formatDistanceToNow } from "date-fns";
-import { useSubscriptionUpdate } from "@/hooks/use-subscription";
+import { useSubscriptionUpdate, useConnectionLimits } from "@/hooks/use-subscription";
+import { LimitReachedOverlay } from "@/components/limit-reached-overlay";
 
 const imapFormSchema = z.object({
   label: z.string().min(1, "Label is required"),
@@ -68,6 +69,7 @@ export function ImapAccountDialog({
   const [lastSyncDate, setLastSyncDate] = useState<Date | null>(null);
   
   const updateSubscription = useSubscriptionUpdate();
+  const { limitReached, usedConnections, maxConnections, isLoading: isLoadingLimits } = useConnectionLimits();
 
   const form = useForm<ImapFormValues>({
     resolver: zodResolver(imapFormSchema),
@@ -207,6 +209,14 @@ export function ImapAccountDialog({
             Connect to any email provider that supports IMAP
           </DialogDescription>
         </DialogHeader>
+
+        {limitReached && !isLoadingLimits && (
+          <LimitReachedOverlay 
+            type="connections" 
+            used={usedConnections} 
+            limit={maxConnections} 
+          />
+        )}
 
         <Form {...form}>
           <form

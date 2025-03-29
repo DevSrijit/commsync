@@ -24,7 +24,8 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { LoadingSpinner } from "./loading-spinner";
-import { useSubscriptionUpdate } from "@/hooks/use-subscription";
+import { useSubscriptionUpdate, useConnectionLimits } from "@/hooks/use-subscription";
+import { LimitReachedOverlay } from "@/components/limit-reached-overlay";
 
 const justCallAccountSchema = z.object({
   label: z.string().min(1, "Label is required"),
@@ -60,6 +61,7 @@ export function JustCallAccountDialog({
   });
 
   const updateSubscription = useSubscriptionUpdate();
+  const { limitReached, usedConnections, maxConnections, isLoading: isLoadingLimits } = useConnectionLimits();
 
   const handleSubmit = async (values: JustCallAccountFormValues) => {
     setIsLoading(true);
@@ -193,6 +195,14 @@ export function JustCallAccountDialog({
             Connect your JustCall account to sync your messages
           </DialogDescription>
         </DialogHeader>
+
+        {limitReached && !isLoadingLimits && (
+          <LimitReachedOverlay 
+            type="connections" 
+            used={usedConnections} 
+            limit={maxConnections} 
+          />
+        )}
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">

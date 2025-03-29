@@ -41,7 +41,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "./ui/separator";
 import { cn } from "@/lib/utils";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { MessageComposer } from "./message-composer";
 import {
   Dialog,
@@ -115,14 +115,39 @@ export function Sidebar() {
   const [isEmailAccountsOpen, setIsEmailAccountsOpen] = useState(true);
   const [isSMSAccountsOpen, setIsSMSAccountsOpen] = useState(true);
 
-  // Subscription data state
+  // Use useRef to store subscription data and avoid re-renders
+  const subscriptionDataRef = useRef<StoredSubscriptionData | null>(null);
   const [subscriptionData, setSubscriptionData] = useState<StoredSubscriptionData | null>(null);
   const [isLoadingSubscription, setIsLoadingSubscription] = useState(true);
-  
+
   // Use the subscription hook
   const { fetchSubscription, updateSubscription } = useSubscription();
 
-  // Fetch subscription data on mount and whenever accounts are added/removed
+  // Function to fetch subscription data without causing re-renders
+  const updateSubscriptionDataBackground = useCallback(async () => {
+    if (!session?.user) return;
+    
+    try {
+      const data = await fetchSubscription();
+      if (data) {
+        // Store in ref
+        subscriptionDataRef.current = data;
+        
+        // Only update state if there are significant changes to minimize re-renders
+        if (!subscriptionData || 
+            data.usedStorage !== subscriptionData.usedStorage ||
+            data.usedConnections !== subscriptionData.usedConnections ||
+            data.usedAiCredits !== subscriptionData.usedAiCredits ||
+            data.status !== subscriptionData.status) {
+          setSubscriptionData(data);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching subscription data in background:', error);
+    }
+  }, [session?.user, fetchSubscription, subscriptionData]);
+
+  // Initial fetch of subscription data
   useEffect(() => {
     const getSubscriptionData = async () => {
       if (!session?.user) return;
@@ -132,6 +157,7 @@ export function Sidebar() {
         const data = await fetchSubscription();
         if (data) {
           setSubscriptionData(data);
+          subscriptionDataRef.current = data;
         }
       } catch (error) {
         console.error('Error fetching subscription data:', error);
@@ -141,7 +167,31 @@ export function Sidebar() {
     };
 
     getSubscriptionData();
-  }, [session?.user, imapAccounts, justCallAccounts, twilioAccounts, fetchSubscription]);
+  }, [session?.user, fetchSubscription]);
+
+  // Set up an interval to update subscription data in the background
+  useEffect(() => {
+    // Skip if no user session
+    if (!session?.user) return;
+    
+    // Update immediately once
+    updateSubscriptionDataBackground();
+    
+    // Set up interval for periodic background updates (every 5 minutes)
+    const intervalId = setInterval(() => {
+      updateSubscriptionDataBackground();
+    }, 5 * 60 * 1000);
+    
+    // Clear interval on unmount
+    return () => clearInterval(intervalId);
+  }, [session?.user, updateSubscriptionDataBackground]);
+
+  // Refresh subscription data when accounts change
+  useEffect(() => {
+    if (imapAccounts.length > 0 || justCallAccounts.length > 0 || twilioAccounts.length > 0) {
+      updateSubscriptionDataBackground();
+    }
+  }, [imapAccounts.length, justCallAccounts.length, twilioAccounts.length, updateSubscriptionDataBackground]);
 
   // Fetch JustCall accounts
   useEffect(() => {
@@ -473,6 +523,17 @@ export function Sidebar() {
                 className="w-full justify-start rounded-md"
                 disabled={isSyncingSMS}
                 onClick={async () => {
+                  // Check for storage limit
+                  const currentData = subscriptionDataRef.current || subscriptionData;
+                  if (currentData && currentData.usedStorage >= currentData.totalStorage) {
+                    toast({
+                      title: "Storage limit reached",
+                      description: "Please delete some conversations or upgrade your plan to continue syncing.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  
                   try {
                     setIsSyncingSMS(true);
                     await Promise.all([
@@ -484,6 +545,7 @@ export function Sidebar() {
                     const updated = await updateSubscription();
                     if (updated) {
                       setSubscriptionData(updated);
+                      subscriptionDataRef.current = updated;
                     }
                   } catch (error) {
                     console.error("Error syncing SMS messages:", error);
@@ -507,6 +569,17 @@ export function Sidebar() {
                 className="w-full justify-start rounded-md"
                 disabled={isSyncingEmail}
                 onClick={async () => {
+                  // Check for storage limit
+                  const currentData = subscriptionDataRef.current || subscriptionData;
+                  if (currentData && currentData.usedStorage >= currentData.totalStorage) {
+                    toast({
+                      title: "Storage limit reached",
+                      description: "Please delete some conversations or upgrade your plan to continue syncing.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+                  
                   try {
                     setIsSyncingEmail(true);
                     
@@ -597,6 +670,7 @@ export function Sidebar() {
                     const updated = await updateSubscription();
                     if (updated) {
                       setSubscriptionData(updated);
+                      subscriptionDataRef.current = updated;
                     }
                     
                     // Show toast notification with results

@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { StoredSubscriptionData } from '@/lib/subscription';
 
@@ -62,4 +62,98 @@ export function useSubscription() {
 export function useSubscriptionUpdate() {
   const { updateSubscription } = useSubscription();
   return updateSubscription;
+}
+
+/**
+ * Hook to check if connection limits have been reached
+ */
+export function useConnectionLimits() {
+  const [isLoading, setIsLoading] = useState(true);
+  const [limitReached, setLimitReached] = useState(false);
+  const [usedConnections, setUsedConnections] = useState(0);
+  const [maxConnections, setMaxConnections] = useState(0);
+  const { fetchSubscription } = useSubscription();
+  const { data: session } = useSession();
+
+  useEffect(() => {
+    const checkLimits = async () => {
+      if (!session?.user) {
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+        const data = await fetchSubscription();
+        
+        if (data) {
+          const used = data.usedConnections || 0;
+          const limit = data.totalConnections || 0;
+          setUsedConnections(used);
+          setMaxConnections(limit);
+          setLimitReached(used >= limit);
+        }
+      } catch (error) {
+        console.error('Error checking connection limits:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    checkLimits();
+  }, [session?.user, fetchSubscription]);
+
+  return {
+    isLoading,
+    limitReached,
+    usedConnections,
+    maxConnections
+  };
+}
+
+/**
+ * Hook to check if storage limits have been reached
+ */
+export function useStorageLimits() {
+  const [isLoading, setIsLoading] = useState(true);
+  const [limitReached, setLimitReached] = useState(false);
+  const [usedStorage, setUsedStorage] = useState(0);
+  const [maxStorage, setMaxStorage] = useState(0);
+  const { fetchSubscription } = useSubscription();
+  const { data: session } = useSession();
+
+  useEffect(() => {
+    const checkLimits = async () => {
+      if (!session?.user) {
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        setIsLoading(true);
+        const data = await fetchSubscription();
+        
+        if (data) {
+          const used = data.usedStorage || 0;
+          const limit = data.totalStorage || 0;
+          setUsedStorage(used);
+          setMaxStorage(limit);
+          setLimitReached(used >= limit);
+        }
+      } catch (error) {
+        console.error('Error checking storage limits:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    checkLimits();
+  }, [session?.user, fetchSubscription]);
+
+  return {
+    isLoading,
+    limitReached,
+    usedStorage,
+    maxStorage
+  };
 } 
