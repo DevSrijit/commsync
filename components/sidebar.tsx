@@ -247,7 +247,7 @@ export function Sidebar() {
   // Get subscription tier
   const subscriptionTier = subscriptionData?.planType 
     ? formatTierName(subscriptionData.planType)
-    : "Free";
+    : "Standard";
   
   // Determine if subscription is active
   const hasActiveSubscription = subscriptionData?.status === 'active' || 
@@ -332,16 +332,6 @@ export function Sidebar() {
                 {isLoadingSubscription ? 'Loading...' : formattedStorageLimit}
               </span>
             </div>
-            {!hasActiveSubscription && (
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="h-6 px-2 text-xs font-medium"
-                onClick={() => window.location.href = '/settings/subscription'}
-              >
-                Upgrade <CreditCard className="h-3.5 w-3.5 ml-1.5" />
-              </Button>
-            )}
           </div>
 
           <div className="space-y-3">
