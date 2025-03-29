@@ -24,6 +24,7 @@ import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { LoadingSpinner } from "./loading-spinner";
 import { SiTwilio } from "@icons-pack/react-simple-icons";
+import { useSubscriptionUpdate } from "@/hooks/use-subscription";
 
 const twilioAccountSchema = z.object({
   label: z.string().min(1, "Label is required"),
@@ -46,6 +47,8 @@ export function TwilioAccountDialog({
   const router = useRouter();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
+  
+  const updateSubscription = useSubscriptionUpdate();
 
   const form = useForm<TwilioAccountFormValues>({
     resolver: zodResolver(twilioAccountSchema),
@@ -73,6 +76,8 @@ export function TwilioAccountDialog({
         throw new Error(errorData.error || "Failed to link Twilio account");
       }
 
+      await updateSubscription();
+
       toast({
         title: "Twilio account linked successfully",
         description: "Your Twilio account has been connected.",
@@ -81,6 +86,19 @@ export function TwilioAccountDialog({
       // Reset form and close dialog
       form.reset();
       onOpenChange(false);
+      
+      // Fetch latest Twilio accounts and update store
+      try {
+        const accountsResponse = await fetch('/api/twilio/account');
+        if (accountsResponse.ok) {
+          const accounts = await accountsResponse.json();
+          // Dispatch a custom event that sidebar can listen for
+          window.dispatchEvent(new CustomEvent('twilio-accounts-updated', { detail: accounts }));
+        }
+      } catch (error) {
+        console.error('Error refreshing Twilio accounts:', error);
+      }
+      
       router.refresh();
     } catch (error) {
       console.error("Error linking Twilio account:", error);

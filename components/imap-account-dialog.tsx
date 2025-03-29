@@ -28,6 +28,7 @@ import { z } from "zod";
 import { Checkbox } from "@/components/ui/checkbox";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { formatDistanceToNow } from "date-fns";
+import { useSubscriptionUpdate } from "@/hooks/use-subscription";
 
 const imapFormSchema = z.object({
   label: z.string().min(1, "Label is required"),
@@ -65,6 +66,8 @@ export function ImapAccountDialog({
     "idle" | "testing" | "success" | "failed"
   >("idle");
   const [lastSyncDate, setLastSyncDate] = useState<Date | null>(null);
+  
+  const updateSubscription = useSubscriptionUpdate();
 
   const form = useForm<ImapFormValues>({
     resolver: zodResolver(imapFormSchema),
@@ -112,6 +115,9 @@ export function ImapAccountDialog({
       if (result.lastSync) {
         setLastSyncDate(new Date(result.lastSync));
       }
+
+      // Update subscription usage to reflect new connection
+      await updateSubscription();
 
       toast({
         title: "Account added",

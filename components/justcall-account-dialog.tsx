@@ -24,6 +24,7 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { LoadingSpinner } from "./loading-spinner";
+import { useSubscriptionUpdate } from "@/hooks/use-subscription";
 
 const justCallAccountSchema = z.object({
   label: z.string().min(1, "Label is required"),
@@ -57,6 +58,8 @@ export function JustCallAccountDialog({
       phoneNumber: "",
     },
   });
+
+  const updateSubscription = useSubscriptionUpdate();
 
   const handleSubmit = async (values: JustCallAccountFormValues) => {
     setIsLoading(true);
@@ -118,7 +121,23 @@ export function JustCallAccountDialog({
       // Reset form and close dialog
       form.reset();
       onOpenChange(false);
+      
+      // Fetch latest JustCall accounts and update store
+      try {
+        const accountsResponse = await fetch('/api/justcall/account');
+        if (accountsResponse.ok) {
+          const accounts = await accountsResponse.json();
+          // Dispatch a custom event that sidebar can listen for
+          window.dispatchEvent(new CustomEvent('justcall-accounts-updated', { detail: accounts }));
+        }
+      } catch (error) {
+        console.error('Error refreshing JustCall accounts:', error);
+      }
+
       router.refresh();
+
+      // After the account is saved successfully, update subscription
+      await updateSubscription();
     } catch (error) {
       console.error("Error linking JustCall account:", error);
       

@@ -41,7 +41,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "./ui/separator";
 import { cn } from "@/lib/utils";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { MessageComposer } from "./message-composer";
 import {
   Dialog,
@@ -78,6 +78,9 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Progress } from "@/components/ui/progress";
+import { formatStorage, formatTierName, StoredSubscriptionData } from "@/lib/subscription";
+import { PlanType } from "@/lib/stripe";
+import { useSubscription } from "@/hooks/use-subscription";
 
 export type MessageCategory =
   | "inbox"
@@ -112,11 +115,33 @@ export function Sidebar() {
   const [isEmailAccountsOpen, setIsEmailAccountsOpen] = useState(true);
   const [isSMSAccountsOpen, setIsSMSAccountsOpen] = useState(true);
 
-  // Subscription mock data
-  const storageUsed = 3.2; // GB
-  const storageLimit = 5; // GB
-  const storagePercentage = (storageUsed / storageLimit) * 100;
-  const subscriptionTier = "Free"; // Free, Pro, Business
+  // Subscription data state
+  const [subscriptionData, setSubscriptionData] = useState<StoredSubscriptionData | null>(null);
+  const [isLoadingSubscription, setIsLoadingSubscription] = useState(true);
+  
+  // Use the subscription hook
+  const { fetchSubscription, updateSubscription } = useSubscription();
+
+  // Fetch subscription data on mount and whenever accounts are added/removed
+  useEffect(() => {
+    const getSubscriptionData = async () => {
+      if (!session?.user) return;
+      
+      try {
+        setIsLoadingSubscription(true);
+        const data = await fetchSubscription();
+        if (data) {
+          setSubscriptionData(data);
+        }
+      } catch (error) {
+        console.error('Error fetching subscription data:', error);
+      } finally {
+        setIsLoadingSubscription(false);
+      }
+    };
+
+    getSubscriptionData();
+  }, [session?.user, imapAccounts, justCallAccounts, twilioAccounts, fetchSubscription]);
 
   // Fetch JustCall accounts
   useEffect(() => {
@@ -149,6 +174,23 @@ export function Sidebar() {
       fetchJustCallAccounts();
       fetchTwilioAccounts();
     }
+
+    // Add event listeners for account updates
+    const handleJustCallAccountsUpdated = (event: CustomEvent) => {
+      setJustCallAccounts(event.detail);
+    };
+
+    const handleTwilioAccountsUpdated = (event: CustomEvent) => {
+      setTwilioAccounts(event.detail);
+    };
+
+    window.addEventListener('justcall-accounts-updated', handleJustCallAccountsUpdated as EventListener);
+    window.addEventListener('twilio-accounts-updated', handleTwilioAccountsUpdated as EventListener);
+
+    return () => {
+      window.removeEventListener('justcall-accounts-updated', handleJustCallAccountsUpdated as EventListener);
+      window.removeEventListener('twilio-accounts-updated', handleTwilioAccountsUpdated as EventListener);
+    };
   }, [session?.user]);
 
   // Log IMAP accounts when they change
@@ -186,6 +228,30 @@ export function Sidebar() {
   ).length;
 
   const contactsCount = groups?.length || 0;
+
+  // Calculate subscription-related values
+  const storageUsed = subscriptionData?.usedStorage || 0;
+  const storageLimit = subscriptionData?.totalStorage || 5120; // Default 5GB
+  const connectionsUsed = subscriptionData?.usedConnections || 1;
+  const connectionsLimit = subscriptionData?.totalConnections || 6; // Default 6 connections
+  const aiCreditsUsed = subscriptionData?.usedAiCredits || 0;
+  const aiCreditsLimit = subscriptionData?.totalAiCredits || 25; // Default 25 credits
+  
+  // Format values for display
+  const formattedStorageUsed = formatStorage(storageUsed);
+  const formattedStorageLimit = formatStorage(storageLimit);
+  const storagePercentage = Math.min(100, (storageUsed / storageLimit) * 100);
+  const connectionsPercentage = Math.min(100, (connectionsUsed / connectionsLimit) * 100);
+  const aiCreditsPercentage = Math.min(100, (aiCreditsUsed / aiCreditsLimit) * 100);
+  
+  // Get subscription tier
+  const subscriptionTier = subscriptionData?.planType 
+    ? formatTierName(subscriptionData.planType)
+    : "Free";
+  
+  // Determine if subscription is active
+  const hasActiveSubscription = subscriptionData?.status === 'active' || 
+                               subscriptionData?.status === 'trialing';
 
   // Message filter buttons, extracted for cleaner code
   const MessageFilterButton = ({ 
@@ -241,6 +307,13 @@ export function Sidebar() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              <DropdownMenuItem asChild>
+                <a href="/settings/subscription">
+                  <CreditCard className="mr-2 h-4 w-4" />
+                  Subscription
+                </a>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => signOut()}>
                 <LogOut className="mr-2 h-4 w-4" />
                 Sign out
@@ -252,36 +325,87 @@ export function Sidebar() {
         <div className="rounded-lg p-3 bg-muted/40 border border-border/50 mb-4">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-1.5">
-              <Badge variant={subscriptionTier === "Free" ? "secondary" : "default"} className="font-medium">
+              <Badge variant={hasActiveSubscription ? "default" : "secondary"} className="font-medium">
                 {subscriptionTier}
               </Badge>
-              {subscriptionTier === "Free" && (
-                <span className="text-xs text-muted-foreground">
-                  {storageLimit}GB
-                </span>
-              )}
+              <span className="text-xs text-muted-foreground">
+                {isLoadingSubscription ? 'Loading...' : formattedStorageLimit}
+              </span>
             </div>
-            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs font-medium">
-              Upgrade <CreditCard />
-            </Button>
+            {!hasActiveSubscription && (
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="h-6 px-2 text-xs font-medium"
+                onClick={() => window.location.href = '/settings/subscription'}
+              >
+                Upgrade <CreditCard className="h-3.5 w-3.5 ml-1.5" />
+              </Button>
+            )}
           </div>
 
-          <div className="space-y-1.5">
-            <div className="flex justify-between text-xs">
-              <span className="text-muted-foreground">Storage</span>
-              <span className="font-medium">{storageUsed}/{storageLimit}GB</span>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">Storage</span>
+                <span className="font-medium">
+                  {isLoadingSubscription ? '...' : `${formattedStorageUsed}/${formattedStorageLimit}`}
+                </span>
+              </div>
+              <Progress 
+                value={storagePercentage} 
+                className={cn(
+                  "h-1.5 rounded-sm", 
+                  storagePercentage > 90 
+                    ? "bg-destructive/20" 
+                    : storagePercentage > 70 
+                      ? "bg-warning/20" 
+                      : "bg-primary/20"
+                )}
+              />
             </div>
-            <Progress 
-              value={storagePercentage} 
-              className={cn(
-                "h-1.5 rounded-sm", 
-                storagePercentage > 90 
-                  ? "bg-destructive/20" 
-                  : storagePercentage > 70 
-                    ? "bg-warning/20" 
-                    : "bg-primary/20"
-              )}
-            />
+            
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">Connections</span>
+                <span className="font-medium">
+                  {isLoadingSubscription ? '...' : `${connectionsUsed}/${connectionsLimit}`}
+                </span>
+              </div>
+              <Progress 
+                value={connectionsPercentage} 
+                className={cn(
+                  "h-1.5 rounded-sm", 
+                  connectionsPercentage > 90 
+                    ? "bg-destructive/20" 
+                    : connectionsPercentage > 70 
+                      ? "bg-warning/20" 
+                      : "bg-primary/20"
+                )}
+              />
+            </div>
+
+            {hasActiveSubscription && (
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">AI Credits</span>
+                  <span className="font-medium">
+                    {isLoadingSubscription ? '...' : `${aiCreditsUsed}/${aiCreditsLimit}`}
+                  </span>
+                </div>
+                <Progress 
+                  value={aiCreditsPercentage} 
+                  className={cn(
+                    "h-1.5 rounded-sm", 
+                    aiCreditsPercentage > 90 
+                      ? "bg-destructive/20" 
+                      : aiCreditsPercentage > 70 
+                        ? "bg-warning/20" 
+                        : "bg-primary/20"
+                  )}
+                />
+              </div>
+            )}
           </div>
         </div>
 
@@ -365,6 +489,12 @@ export function Sidebar() {
                       useEmailStore.getState().syncTwilioAccounts(),
                       useEmailStore.getState().syncJustcallAccounts()
                     ]);
+                    
+                    // Update subscription usage after sync
+                    const updated = await updateSubscription();
+                    if (updated) {
+                      setSubscriptionData(updated);
+                    }
                   } catch (error) {
                     console.error("Error syncing SMS messages:", error);
                   } finally {
@@ -471,6 +601,12 @@ export function Sidebar() {
                       } catch (error) {
                         console.error(`Error syncing account ${account.label}:`, error);
                       }
+                    }
+                    
+                    // Update subscription usage after sync
+                    const updated = await updateSubscription();
+                    if (updated) {
+                      setSubscriptionData(updated);
                     }
                     
                     // Show toast notification with results

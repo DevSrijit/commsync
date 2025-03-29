@@ -1,18 +1,23 @@
-import Stripe from 'stripe';
+import Stripe from "stripe";
 
-if (!process.env.STRIPE_SECRET_KEY) {
-  throw new Error('STRIPE_SECRET_KEY is not set in environment variables');
+// Ensure this code only runs on the server side
+let stripe: Stripe | undefined;
+
+if (typeof window === 'undefined') {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error("STRIPE_SECRET_KEY is not set in environment variables");
+  }
+
+  stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+    apiVersion: "2025-02-24.acacia",
+    typescript: true,
+  });
 }
-
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2025-02-24.acacia',
-  typescript: true,
-});
 
 // Plan configurations with shared limits across all users
 export const STRIPE_PLANS = {
   lite: {
-    name: 'Lite',
+    name: "Lite",
     priceId: process.env.STRIPE_LITE_PRICE_ID,
     limits: {
       maxUsers: 1,
@@ -24,7 +29,7 @@ export const STRIPE_PLANS = {
     },
   },
   standard: {
-    name: 'Standard',
+    name: "Standard",
     priceId: process.env.STRIPE_STANDARD_PRICE_ID,
     limits: {
       maxUsers: 3,
@@ -36,7 +41,7 @@ export const STRIPE_PLANS = {
     },
   },
   business: {
-    name: 'Business',
+    name: "Business",
     priceId: process.env.STRIPE_BUSINESS_PRICE_ID,
     limits: {
       maxUsers: 8,
@@ -49,4 +54,6 @@ export const STRIPE_PLANS = {
   },
 } as const;
 
-export type PlanType = keyof typeof STRIPE_PLANS; 
+export type PlanType = keyof typeof STRIPE_PLANS;
+
+export { stripe };

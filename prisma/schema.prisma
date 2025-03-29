@@ -36,29 +36,29 @@ model Session {
   userId       String
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
   @@index([userId])
 }
 
 model User {
-  id            String        @id @default(cuid())
-  name          String?
-  email         String?       @unique
-  emailVerified DateTime?
-  image         String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  accounts      Account[]
-  sessions      Session[]
-  imapAccounts  ImapAccount[]
-  groups        Group[]       @relation("UserGroups")
-  syncAccounts  SyncAccount[]
-  contacts      Contact[]
-  twilioAccounts TwilioAccount[]
-  clientCache   ClientCache[]
-  organizations Organization[] @relation("OrganizationMembers")
-  ownedOrganizations Organization[] @relation("OrganizationOwner")
-  stripeCustomerId String? // Stripe customer ID for individual subscriptions
+  id                 String          @id @default(cuid())
+  name               String?
+  email              String?         @unique
+  emailVerified      DateTime?
+  image              String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  accounts           Account[]
+  sessions           Session[]
+  imapAccounts       ImapAccount[]
+  groups             Group[]         @relation("UserGroups")
+  syncAccounts       SyncAccount[]
+  contacts           Contact[]
+  twilioAccounts     TwilioAccount[]
+  clientCache        ClientCache[]
+  organizations      Organization[]  @relation("OrganizationMembers")
+  ownedOrganizations Organization[]  @relation("OrganizationOwner")
+  stripeCustomerId   String? // Stripe customer ID for individual subscriptions
 }
 
 model VerificationToken {
@@ -84,10 +84,10 @@ model VerificationRequest {
 model ImapAccount {
   id          String   @id @default(cuid())
   label       String
-  credentials String    // Encrypted credentials
-  username    String?   // Added username field
-  host        String?   // Added host field
-  port        Int?      // Added port field
+  credentials String // Encrypted credentials
+  username    String? // Added username field
+  host        String? // Added host field
+  port        Int? // Added port field
   userId      String
   lastSync    DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -112,12 +112,12 @@ model SyncAccount {
   id                String    @id @default(cuid())
   userId            String
   user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  platform          String    // Platform type (e.g., "justcall", "email", "whatsapp")
-  credentials       String    // Encrypted credentials
-  accountIdentifier String    // Username or account identifier for the platform
+  platform          String // Platform type (e.g., "justcall", "email", "whatsapp")
+  credentials       String // Encrypted credentials
+  accountIdentifier String // Username or account identifier for the platform
   lastSync          DateTime  @default(now())
   createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt 
+  updatedAt         DateTime  @updatedAt
   messages          Message[]
 
   @@index([userId])
@@ -141,13 +141,13 @@ model Contact {
 }
 
 model Sender {
-  id           String   @id @default(cuid())
-  contactId    String
-  contact      Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  platform     String   // Platform type (e.g., "justcall", "email", "whatsapp")
-  identifier   String   // Email address, phone number, or account identifier
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id         String   @id @default(cuid())
+  contactId  String
+  contact    Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  platform   String // Platform type (e.g., "justcall", "email", "whatsapp")
+  identifier String // Email address, phone number, or account identifier
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@index([contactId])
   @@index([platform, identifier])
@@ -172,13 +172,13 @@ model Message {
   conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   syncAccountId  String?
   syncAccount    SyncAccount? @relation(fields: [syncAccountId], references: [id])
-  platform       String       // Platform type (e.g., "justcall", "email", "whatsapp")
-  externalId     String?      // ID from the external platform
-  direction      String       // "inbound" or "outbound"
+  platform       String // Platform type (e.g., "justcall", "email", "whatsapp")
+  externalId     String? // ID from the external platform
+  direction      String // "inbound" or "outbound"
   content        String       @db.Text
-  contentType    String       // "text", "html", etc.
-  metadata       Json?        // Additional platform-specific metadata
-  attachments    Json?        // Information about attachments
+  contentType    String // "text", "html", etc.
+  metadata       Json? // Additional platform-specific metadata
+  attachments    Json? // Information about attachments
   sentAt         DateTime
   receivedAt     DateTime     @default(now())
   isRead         Boolean      @default(false)
@@ -213,7 +213,7 @@ model TwilioMessage {
   to              String
   body            String        @db.Text
   status          String
-  direction       String        // "inbound" or "outbound"
+  direction       String // "inbound" or "outbound"
   conversationId  String?
   sentAt          DateTime
   createdAt       DateTime      @default(now())
@@ -224,13 +224,13 @@ model TwilioMessage {
 }
 
 model ClientCache {
-  id         String   @id @default(cuid())
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  key        String   // Cache key (e.g., "emails", "gmail_page_tokens", "sidebar:state", etc.)
-  value      String   @db.Text // JSON stringified data
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key       String // Cache key (e.g., "emails", "gmail_page_tokens", "sidebar:state", etc.)
+  value     String   @db.Text // JSON stringified data
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([userId, key])
   @@index([userId])
@@ -238,45 +238,45 @@ model ClientCache {
 
 // Models for subscription management
 model Organization {
-  id              String        @id @default(cuid())
-  name            String
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  ownerId         String
-  owner           User          @relation("OrganizationOwner", fields: [ownerId], references: [id])
-  members         User[]        @relation("OrganizationMembers")
-  subscription    Subscription?
-  stripeCustomerId String?      // Stripe customer ID for org subscriptions
+  id               String        @id @default(cuid())
+  name             String
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  ownerId          String
+  owner            User          @relation("OrganizationOwner", fields: [ownerId], references: [id])
+  members          User[]        @relation("OrganizationMembers")
+  subscription     Subscription?
+  stripeCustomerId String? // Stripe customer ID for org subscriptions
 
   @@index([ownerId])
 }
 
 model Subscription {
-  id                 String       @id @default(cuid())
-  organizationId     String       @unique
-  organization       Organization @relation(fields: [organizationId], references: [id])
-  stripeSubscriptionId String     @unique
-  stripePriceId      String
-  status             String       // active, canceled, past_due, etc.
-  currentPeriodStart DateTime
-  currentPeriodEnd   DateTime
-  cancelAtPeriodEnd  Boolean      @default(false)
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
+  id                   String       @id @default(cuid())
+  organizationId       String       @unique
+  organization         Organization @relation(fields: [organizationId], references: [id])
+  stripeSubscriptionId String       @unique
+  stripePriceId        String
+  status               String // active, canceled, past_due, etc.
+  currentPeriodStart   DateTime
+  currentPeriodEnd     DateTime
+  cancelAtPeriodEnd    Boolean      @default(false)
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
   // Plan limits - now shared across all users
-  planType           String       // lite, standard, business, enterprise
-  maxUsers           Int          // maximum number of users allowed
-  maxStorage         Int          // maximum storage in MB per user
-  maxConnections     Int          // maximum connected accounts per user
-  totalStorage       Int          // total storage in MB shared across all users
-  totalConnections   Int          // total connected accounts shared across all users
-  totalAiCredits     Int          // total monthly AI credits shared across all users
-  usedStorage        Int          @default(0) // currently used storage
-  usedConnections    Int          @default(0) // currently used connections
-  usedAiCredits      Int          @default(0) // used AI credits for current period
-  customLimits       Json?        // for enterprise plans with custom limits
+  planType             String // lite, standard, business, enterprise
+  maxUsers             Int // maximum number of users allowed
+  maxStorage           Int // maximum storage in MB per user
+  maxConnections       Int // maximum connected accounts per user
+  totalStorage         Int // total storage in MB shared across all users
+  totalConnections     Int // total connected accounts shared across all users
+  totalAiCredits       Int // total monthly AI credits shared across all users
+  usedStorage          Int          @default(0) // currently used storage
+  usedConnections      Int          @default(1) // currently used connections
+  usedAiCredits        Int          @default(0) // used AI credits for current period
+  customLimits         Json? // for enterprise plans with custom limits
   // Trial-related fields
-  trialEndsAt        DateTime?    // When the trial period ends, if applicable
-  trialStartedAt     DateTime?    @default(now()) // When the trial started
-  hasTrialEnded      Boolean      @default(false) // Track if trial has ended
+  trialEndsAt          DateTime? // When the trial period ends, if applicable
+  trialStartedAt       DateTime?    @default(now()) // When the trial started
+  hasTrialEnded        Boolean      @default(false) // Track if trial has ended
 }

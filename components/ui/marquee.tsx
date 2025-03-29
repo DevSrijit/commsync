@@ -33,13 +33,12 @@ export const Marquee = React.forwardRef<HTMLDivElement, MarqueeProps>(
     ...props
   }, ref) => {
     const { theme } = useTheme()
-    const isDark = theme === "dark"
 
     return (
       <div
         ref={ref}
         className={cn(
-          "relative w-screen overflow-hidden py-16",
+          "relative w-screen overflow-hidden py-16 [--stroke-color:rgb(156,163,175)] dark:[--stroke-color:rgb(64,64,64)]",
           className
         )}
         {...props}
@@ -67,7 +66,7 @@ export const Marquee = React.forwardRef<HTMLDivElement, MarqueeProps>(
                   "font-bold text-transparent px-4"
                 )}
                 style={{
-                  WebkitTextStroke: `${strokeWidth} ${isDark ? 'rgb(64 64 64)' : 'rgb(156 163 175)'}`,
+                  WebkitTextStroke: `${strokeWidth} var(--stroke-color)`,
                 }}
               >
                 {text}

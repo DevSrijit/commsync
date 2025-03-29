@@ -1,4 +1,6 @@
-import { Subscription } from "@prisma/client";
+import { Subscription, Organization, User } from "@prisma/client";
+import { db } from "@/lib/db";
+import { PlanType, STRIPE_PLANS } from "@/lib/stripe";
 
 // Structured logger for consistent format
 const logger = {
@@ -25,6 +27,14 @@ export interface StoredSubscriptionData {
   trialEndsAt?: string;
   hasTrialEnded?: boolean;
   lastUpdated: number;
+  // Usage data
+  usedStorage: number;
+  totalStorage: number;
+  usedConnections: number;
+  totalConnections: number;
+  usedAiCredits: number;
+  totalAiCredits: number;
+  maxUsers: number;
 }
 
 /**
@@ -41,6 +51,14 @@ export function storeSubscriptionData(subscription: Subscription): void {
       organizationId: subscription.organizationId,
       currentPeriodEnd: subscription.currentPeriodEnd?.toISOString() || '',
       lastUpdated: Date.now(),
+      // Usage data
+      usedStorage: subscription.usedStorage,
+      totalStorage: subscription.totalStorage,
+      usedConnections: subscription.usedConnections,
+      totalConnections: subscription.totalConnections,
+      usedAiCredits: subscription.usedAiCredits,
+      totalAiCredits: subscription.totalAiCredits,
+      maxUsers: subscription.maxUsers,
     };
     
     if (subscription.trialEndsAt) {
@@ -275,4 +293,221 @@ export function hasActiveAccess(subscription: Subscription): boolean {
     status: subscription.status
   });
   return false;
+}
+
+/**
+ * Calculate client cache size for a user
+ */
+export async function calculateUserCacheSize(userId: string): Promise<number> {
+  try {
+    // Get all client cache entries for the user
+    const cacheEntries = await db.clientCache.findMany({
+      where: { userId }
+    });
+    
+    // Calculate the total size in bytes
+    let totalBytes = 0;
+    for (const entry of cacheEntries) {
+      totalBytes += Buffer.byteLength(entry.value, 'utf8');
+    }
+    
+    // Convert to MB and return
+    return Math.ceil(totalBytes / (1024 * 1024));
+  } catch (error) {
+    console.error('Error calculating user cache size:', error);
+    return 0;
+  }
+}
+
+/**
+ * Count connected accounts for a user
+ */
+export async function countUserConnections(userId: string): Promise<number> {
+  try {
+    // Count IMAP accounts
+    const imapCount = await db.imapAccount.count({
+      where: { userId }
+    });
+    
+    // Count Twilio accounts
+    const twilioCount = await db.twilioAccount.count({
+      where: { userId }
+    });
+    
+    // Count JustCall accounts (through SyncAccount)
+    const justCallCount = await db.syncAccount.count({
+      where: { 
+        userId,
+        platform: "justcall"
+      }
+    });
+    
+    // Gmail is already a default connection (1) plus all other accounts
+    return 1 + imapCount + twilioCount + justCallCount;
+  } catch (error) {
+    console.error('Error counting user connections:', error);
+    return 1; // Default to at least 1 connection
+  }
+}
+
+/**
+ * Get subscription data for a user from the database
+ */
+export async function getUserSubscriptionData(userId: string): Promise<StoredSubscriptionData | null> {
+  try {
+    // Find the user and their organization
+    const user = await db.user.findUnique({
+      where: { id: userId },
+      include: {
+        organizations: {
+          include: {
+            subscription: true
+          }
+        },
+        ownedOrganizations: {
+          include: {
+            subscription: true
+          }
+        }
+      }
+    });
+
+    if (!user) return null;
+
+    // Find an organization this user belongs to that has a subscription
+    const userOrg = user.organizations.find(org => org.subscription) || 
+                    user.ownedOrganizations.find(org => org.subscription);
+
+    if (!userOrg || !userOrg.subscription) return null;
+
+    // Get the subscription
+    const subscription = userOrg.subscription;
+    
+    // Calculate current usage for this user
+    const userStorageUsed = await calculateUserCacheSize(userId);
+    const userConnections = await countUserConnections(userId);
+    
+    // Update the database with the latest usage
+    await updateSubscriptionUsage(
+      subscription.id, 
+      userStorageUsed, 
+      userConnections, 
+      0 // No AI credits update
+    );
+    
+    // Get updated subscription data
+    const updatedSubscription = await db.subscription.findUnique({
+      where: { id: subscription.id }
+    });
+    
+    if (!updatedSubscription) return null;
+    
+    // Create subscription data object
+    const subscriptionData: StoredSubscriptionData = {
+      id: updatedSubscription.id,
+      status: updatedSubscription.status,
+      planType: updatedSubscription.planType,
+      organizationId: updatedSubscription.organizationId,
+      currentPeriodEnd: updatedSubscription.currentPeriodEnd?.toISOString() || '',
+      lastUpdated: Date.now(),
+      usedStorage: updatedSubscription.usedStorage,
+      totalStorage: updatedSubscription.totalStorage,
+      usedConnections: updatedSubscription.usedConnections,
+      totalConnections: updatedSubscription.totalConnections,
+      usedAiCredits: updatedSubscription.usedAiCredits,
+      totalAiCredits: updatedSubscription.totalAiCredits,
+      maxUsers: updatedSubscription.maxUsers,
+    };
+    
+    if (updatedSubscription.trialEndsAt) {
+      subscriptionData.trialEndsAt = updatedSubscription.trialEndsAt.toISOString();
+      subscriptionData.hasTrialEnded = updatedSubscription.hasTrialEnded;
+    }
+    
+    // Store data in local storage for future reference
+    if (typeof window !== 'undefined') {
+      storeSubscriptionData(updatedSubscription);
+    }
+    
+    return subscriptionData;
+  } catch (error) {
+    console.error('Error getting user subscription data:', error);
+    return null;
+  }
+}
+
+/**
+ * Update subscription usage without overwriting other users' usage
+ */
+export async function updateSubscriptionUsage(
+  subscriptionId: string, 
+  userStorageUsed: number, 
+  userConnections: number, 
+  aiCreditsUsed: number
+): Promise<Subscription | null> {
+  try {
+    // Get current subscription data
+    const subscription = await db.subscription.findUnique({
+      where: { id: subscriptionId },
+      include: {
+        organization: {
+          include: {
+            members: true
+          }
+        }
+      }
+    });
+    
+    if (!subscription) return null;
+    
+    // Calculate total organization storage by updating this user's portion
+    // This is a simplified approach - in a real system, you'd track per-user usage
+    const memberCount = subscription.organization.members.length;
+    const avgStoragePerUser = subscription.usedStorage / Math.max(memberCount, 1);
+    const newTotalStorage = Math.min(
+      subscription.usedStorage - avgStoragePerUser + userStorageUsed,
+      subscription.totalStorage
+    );
+    
+    // Update subscription with new usage data
+    const updatedSubscription = await db.subscription.update({
+      where: { id: subscriptionId },
+      data: {
+        usedStorage: Math.round(newTotalStorage),
+        usedConnections: Math.min(userConnections, subscription.totalConnections),
+        usedAiCredits: Math.min(subscription.usedAiCredits + aiCreditsUsed, subscription.totalAiCredits)
+      }
+    });
+    
+    return updatedSubscription;
+  } catch (error) {
+    console.error('Error updating subscription usage:', error);
+    return null;
+  }
+}
+
+/**
+ * Get plan limits for a given plan type
+ */
+export function getPlanLimits(planType: PlanType) {
+  return STRIPE_PLANS[planType]?.limits || STRIPE_PLANS.lite.limits;
+}
+
+// Format storage size for display (e.g., 1024 MB -> 1 GB)
+export function formatStorage(sizeInMB: number): string {
+  if (sizeInMB >= 1024) {
+    return `${(sizeInMB / 1024).toFixed(1)}GB`;
+  }
+  return `${sizeInMB}MB`;
+}
+
+/**
+ * Format subscription tier name for display
+ */
+export function formatTierName(planType: string): string {
+  const planKey = planType as PlanType;
+  if (Object.keys(STRIPE_PLANS).includes(planKey)) {
+    return STRIPE_PLANS[planKey].name;
+  }
+  return planType.charAt(0).toUpperCase() + planType.slice(1);
 } 
