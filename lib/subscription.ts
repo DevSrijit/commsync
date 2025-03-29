@@ -5,16 +5,16 @@ import { PlanType, STRIPE_PLANS } from "@/lib/stripe";
 // Structured logger for consistent format
 const logger = {
   debug: (message: string, data?: any) => {
-    if (process.env.DEBUG === 'true') {
-      console.log(`[SUBSCRIPTION] ${message}`, data ? data : '');
+    if (process.env.DEBUG === "true") {
+      console.log(`[SUBSCRIPTION] ${message}`, data ? data : "");
     }
-  }
+  },
 };
 
 // Local storage keys
 const STORAGE_KEYS = {
-  SUBSCRIPTION_DATA: 'commsync_subscription_data',
-  LAST_UPDATED: 'commsync_subscription_last_updated',
+  SUBSCRIPTION_DATA: "commsync_subscription_data",
+  LAST_UPDATED: "commsync_subscription_last_updated",
 };
 
 // Subscription data interface
@@ -41,7 +41,7 @@ export interface StoredSubscriptionData {
  * Store subscription details in local storage
  */
 export function storeSubscriptionData(subscription: Subscription): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === "undefined") return;
 
   try {
     const subscriptionData: StoredSubscriptionData = {
@@ -49,7 +49,7 @@ export function storeSubscriptionData(subscription: Subscription): void {
       status: subscription.status,
       planType: subscription.planType,
       organizationId: subscription.organizationId,
-      currentPeriodEnd: subscription.currentPeriodEnd?.toISOString() || '',
+      currentPeriodEnd: subscription.currentPeriodEnd?.toISOString() || "",
       lastUpdated: Date.now(),
       // Usage data
       usedStorage: subscription.usedStorage,
@@ -60,18 +60,21 @@ export function storeSubscriptionData(subscription: Subscription): void {
       totalAiCredits: subscription.totalAiCredits,
       maxUsers: subscription.maxUsers,
     };
-    
+
     if (subscription.trialEndsAt) {
       subscriptionData.trialEndsAt = subscription.trialEndsAt.toISOString();
       subscriptionData.hasTrialEnded = subscription.hasTrialEnded;
     }
-    
-    localStorage.setItem(STORAGE_KEYS.SUBSCRIPTION_DATA, JSON.stringify(subscriptionData));
+
+    localStorage.setItem(
+      STORAGE_KEYS.SUBSCRIPTION_DATA,
+      JSON.stringify(subscriptionData)
+    );
     localStorage.setItem(STORAGE_KEYS.LAST_UPDATED, Date.now().toString());
-    
-    logger.debug('Subscription data stored in local storage', subscriptionData);
+
+    logger.debug("Subscription data stored in local storage", subscriptionData);
   } catch (error) {
-    console.error('Failed to store subscription data in local storage', error);
+    console.error("Failed to store subscription data in local storage", error);
   }
 }
 
@@ -79,16 +82,19 @@ export function storeSubscriptionData(subscription: Subscription): void {
  * Get subscription details from local storage
  */
 export function getStoredSubscriptionData(): StoredSubscriptionData | null {
-  if (typeof window === 'undefined') return null;
+  if (typeof window === "undefined") return null;
 
   try {
     const data = localStorage.getItem(STORAGE_KEYS.SUBSCRIPTION_DATA);
     if (!data) return null;
-    
+
     const parsedData = JSON.parse(data) as StoredSubscriptionData;
     return parsedData;
   } catch (error) {
-    console.error('Failed to retrieve subscription data from local storage', error);
+    console.error(
+      "Failed to retrieve subscription data from local storage",
+      error
+    );
     return null;
   }
 }
@@ -97,16 +103,18 @@ export function getStoredSubscriptionData(): StoredSubscriptionData | null {
  * Check if stored subscription data is stale (older than the specified maxAge in milliseconds)
  * Default maxAge is 1 hour
  */
-export function isStoredSubscriptionStale(maxAge: number = 60 * 60 * 1000): boolean {
-  if (typeof window === 'undefined') return true;
+export function isStoredSubscriptionStale(
+  maxAge: number = 60 * 60 * 1000
+): boolean {
+  if (typeof window === "undefined") return true;
 
   const lastUpdated = localStorage.getItem(STORAGE_KEYS.LAST_UPDATED);
   if (!lastUpdated) return true;
 
   const now = Date.now();
   const lastUpdateTime = parseInt(lastUpdated, 10);
-  
-  return (now - lastUpdateTime) > maxAge;
+
+  return now - lastUpdateTime > maxAge;
 }
 
 /**
@@ -117,31 +125,31 @@ export async function updateSubscriptionDataInBackground(): Promise<boolean> {
   try {
     // Only update if data is stale or doesn't exist
     if (!isStoredSubscriptionStale() && getStoredSubscriptionData()) {
-      logger.debug('Skipping background update - subscription data is fresh');
+      logger.debug("Skipping background update - subscription data is fresh");
       return true;
     }
 
-    logger.debug('Updating subscription data in background');
+    logger.debug("Updating subscription data in background");
     const response = await fetch("/api/auth/check-subscription", {
       method: "GET",
       credentials: "include",
     });
-    
+
     if (!response.ok) {
       throw new Error("Failed to verify subscription");
     }
-    
+
     const data = await response.json();
-    
+
     // If we have subscription data, store it
     if (data.subscription) {
       storeSubscriptionData(data.subscription);
       return true;
     }
-    
+
     return false;
   } catch (error) {
-    console.error('Failed to update subscription data in background', error);
+    console.error("Failed to update subscription data in background", error);
     return false;
   }
 }
@@ -152,15 +160,15 @@ export async function updateSubscriptionDataInBackground(): Promise<boolean> {
 export function hasStoredActiveSubscription(): boolean {
   const data = getStoredSubscriptionData();
   if (!data) return false;
-  
+
   // Valid active status values from Stripe
-  const activeStatuses = ['active', 'trialing', 'past_due', 'unpaid'];
-  
+  const activeStatuses = ["active", "trialing", "past_due", "unpaid"];
+
   // Check if status is active
   if (activeStatuses.includes(data.status)) {
     return true;
   }
-  
+
   // Check trial period
   if (data.trialEndsAt && !data.hasTrialEnded) {
     const trialEnd = new Date(data.trialEndsAt);
@@ -169,20 +177,30 @@ export function hasStoredActiveSubscription(): boolean {
       return true;
     }
   }
-  
+
   // Check current period
   if (data.currentPeriodEnd) {
     const periodEnd = new Date(data.currentPeriodEnd);
     const now = new Date();
-    
+
     // Only honor the valid period for certain statuses
-    const validPeriodStatuses = ['active', 'trialing', 'past_due', 'unpaid', 'incomplete', 'incomplete_expired'];
-    
-    if ((validPeriodStatuses.includes(data.status) || !data.status) && periodEnd > now) {
+    const validPeriodStatuses = [
+      "active",
+      "trialing",
+      "past_due",
+      "unpaid",
+      "incomplete",
+      "incomplete_expired",
+    ];
+
+    if (
+      (validPeriodStatuses.includes(data.status) || !data.status) &&
+      periodEnd > now
+    ) {
       return true;
     }
   }
-  
+
   return false;
 }
 
@@ -193,11 +211,11 @@ export function isInTrialPeriod(subscription: Subscription): boolean {
   if (!subscription.trialEndsAt) {
     return false;
   }
-  
+
   if (subscription.hasTrialEnded) {
     return false;
   }
-  
+
   const now = new Date();
   return subscription.trialEndsAt > now;
 }
@@ -209,12 +227,12 @@ export function getTrialDaysRemaining(subscription: Subscription): number {
   if (!isInTrialPeriod(subscription)) {
     return 0;
   }
-  
+
   const now = new Date();
   const trialEnd = subscription.trialEndsAt!;
   const diffTime = Math.abs(trialEnd.getTime() - now.getTime());
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  
+
   return diffDays;
 }
 
@@ -226,17 +244,17 @@ export function getStoredTrialDaysRemaining(): number {
   if (!data || !data.trialEndsAt || data.hasTrialEnded) {
     return 0;
   }
-  
+
   const now = new Date();
   const trialEnd = new Date(data.trialEndsAt);
-  
+
   if (trialEnd <= now) {
     return 0;
   }
-  
+
   const diffTime = Math.abs(trialEnd.getTime() - now.getTime());
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  
+
   return diffDays;
 }
 
@@ -246,75 +264,87 @@ export function getStoredTrialDaysRemaining(): number {
  */
 export function hasActiveAccess(subscription: Subscription): boolean {
   if (!subscription) return false;
-  
-  logger.debug(`Checking subscription status`, { 
+
+  logger.debug(`Checking subscription status`, {
     id: subscription.id,
     status: subscription.status,
-    periodEnd: subscription.currentPeriodEnd?.toISOString()
+    periodEnd: subscription.currentPeriodEnd?.toISOString(),
   });
-  
+
   // Valid active status values from Stripe
-  const activeStatuses = ['active', 'trialing', 'past_due', 'unpaid'];
-  
+  const activeStatuses = ["active", "trialing", "past_due", "unpaid"];
+
   // First check Stripe status
   if (activeStatuses.includes(subscription.status)) {
-    logger.debug(`Subscription has active status`, { 
-      id: subscription.id, 
-      status: subscription.status 
+    logger.debug(`Subscription has active status`, {
+      id: subscription.id,
+      status: subscription.status,
     });
     return true;
   }
-  
+
   // Special case for trial period - double check trial parameters
   if (isInTrialPeriod(subscription)) {
     logger.debug(`Subscription is in trial period`, { id: subscription.id });
     return true;
   }
-  
+
   // Additional check for any subscription that has a valid current period
   // This ensures access even if webhooks failed to update status
   const now = new Date();
   if (subscription.currentPeriodEnd && subscription.currentPeriodEnd > now) {
     // Only honor the valid period for certain statuses
     // We don't want canceled subscriptions to be considered active
-    const validPeriodStatuses = ['active', 'trialing', 'past_due', 'unpaid', 'incomplete', 'incomplete_expired'];
-    
-    if (validPeriodStatuses.includes(subscription.status) || !subscription.status) {
-      logger.debug(`Subscription has valid period`, { 
-        id: subscription.id, 
-        validUntil: subscription.currentPeriodEnd.toISOString() 
+    const validPeriodStatuses = [
+      "active",
+      "trialing",
+      "past_due",
+      "unpaid",
+      "incomplete",
+      "incomplete_expired",
+    ];
+
+    if (
+      validPeriodStatuses.includes(subscription.status) ||
+      !subscription.status
+    ) {
+      logger.debug(`Subscription has valid period`, {
+        id: subscription.id,
+        validUntil: subscription.currentPeriodEnd.toISOString(),
       });
       return true;
     }
   }
-  
-  logger.debug(`Subscription is not active`, { 
-    id: subscription.id, 
-    status: subscription.status
+
+  logger.debug(`Subscription is not active`, {
+    id: subscription.id,
+    status: subscription.status,
   });
   return false;
 }
 
 /**
- * Calculate client cache size for a user
+ * Calculate client cache size for a user - using PostgreSQL's calculation capabilities
  */
 export async function calculateUserCacheSize(userId: string): Promise<number> {
-  try {
-    // Get all client cache entries for the user
-    const cacheEntries = await db.clientCache.findMany({
-      where: { userId }
-    });
-    
-    // Calculate the total size in bytes
-    let totalBytes = 0;
-    for (const entry of cacheEntries) {
-      totalBytes += Buffer.byteLength(entry.value, 'utf8');
+  if (typeof window === "undefined") {
+    try {
+      // Use raw PostgreSQL query to calculate total size directly in the database
+      // This avoids loading all records into memory
+      const result = await db.$queryRaw<[{ total_size_mb: number }]>`
+      SELECT 
+        CEIL(SUM(LENGTH("value")::decimal) / (1024 * 1024)) as total_size_mb
+      FROM "ClientCache"
+      WHERE "userId" = ${userId}
+    `;
+
+      // Return the calculated size or 0 if no results
+      return result[0]?.total_size_mb || 0;
+    } catch (error) {
+      console.error("Error calculating user cache size:", error);
+      return 0;
     }
-    
-    // Convert to MB and return
-    return Math.ceil(totalBytes / (1024 * 1024));
-  } catch (error) {
-    console.error('Error calculating user cache size:', error);
+  } else {
     return 0;
   }
 }
@@ -326,26 +356,26 @@ export async function countUserConnections(userId: string): Promise<number> {
   try {
     // Count IMAP accounts
     const imapCount = await db.imapAccount.count({
-      where: { userId }
+      where: { userId },
     });
-    
+
     // Count Twilio accounts
     const twilioCount = await db.twilioAccount.count({
-      where: { userId }
+      where: { userId },
     });
-    
+
     // Count JustCall accounts (through SyncAccount)
     const justCallCount = await db.syncAccount.count({
-      where: { 
+      where: {
         userId,
-        platform: "justcall"
-      }
+        platform: "justcall",
+      },
     });
-    
+
     // Gmail is already a default connection (1) plus all other accounts
     return 1 + imapCount + twilioCount + justCallCount;
   } catch (error) {
-    console.error('Error counting user connections:', error);
+    console.error("Error counting user connections:", error);
     return 1; // Default to at least 1 connection
   }
 }
@@ -353,7 +383,9 @@ export async function countUserConnections(userId: string): Promise<number> {
 /**
  * Get subscription data for a user from the database
  */
-export async function getUserSubscriptionData(userId: string): Promise<StoredSubscriptionData | null> {
+export async function getUserSubscriptionData(
+  userId: string
+): Promise<StoredSubscriptionData | null> {
   try {
     // Find the user and their organization
     const user = await db.user.findUnique({
@@ -361,54 +393,56 @@ export async function getUserSubscriptionData(userId: string): Promise<StoredSub
       include: {
         organizations: {
           include: {
-            subscription: true
-          }
+            subscription: true,
+          },
         },
         ownedOrganizations: {
           include: {
-            subscription: true
-          }
-        }
-      }
+            subscription: true,
+          },
+        },
+      },
     });
 
     if (!user) return null;
 
     // Find an organization this user belongs to that has a subscription
-    const userOrg = user.organizations.find(org => org.subscription) || 
-                    user.ownedOrganizations.find(org => org.subscription);
+    const userOrg =
+      user.organizations.find((org) => org.subscription) ||
+      user.ownedOrganizations.find((org) => org.subscription);
 
     if (!userOrg || !userOrg.subscription) return null;
 
     // Get the subscription
     const subscription = userOrg.subscription;
-    
+
     // Calculate current usage for this user
     const userStorageUsed = await calculateUserCacheSize(userId);
     const userConnections = await countUserConnections(userId);
-    
+
     // Update the database with the latest usage
     await updateSubscriptionUsage(
-      subscription.id, 
-      userStorageUsed, 
-      userConnections, 
+      subscription.id,
+      userStorageUsed,
+      userConnections,
       0 // No AI credits update
     );
-    
+
     // Get updated subscription data
     const updatedSubscription = await db.subscription.findUnique({
-      where: { id: subscription.id }
+      where: { id: subscription.id },
     });
-    
+
     if (!updatedSubscription) return null;
-    
+
     // Create subscription data object
     const subscriptionData: StoredSubscriptionData = {
       id: updatedSubscription.id,
       status: updatedSubscription.status,
       planType: updatedSubscription.planType,
       organizationId: updatedSubscription.organizationId,
-      currentPeriodEnd: updatedSubscription.currentPeriodEnd?.toISOString() || '',
+      currentPeriodEnd:
+        updatedSubscription.currentPeriodEnd?.toISOString() || "",
       lastUpdated: Date.now(),
       usedStorage: updatedSubscription.usedStorage,
       totalStorage: updatedSubscription.totalStorage,
@@ -418,20 +452,21 @@ export async function getUserSubscriptionData(userId: string): Promise<StoredSub
       totalAiCredits: updatedSubscription.totalAiCredits,
       maxUsers: updatedSubscription.maxUsers,
     };
-    
+
     if (updatedSubscription.trialEndsAt) {
-      subscriptionData.trialEndsAt = updatedSubscription.trialEndsAt.toISOString();
+      subscriptionData.trialEndsAt =
+        updatedSubscription.trialEndsAt.toISOString();
       subscriptionData.hasTrialEnded = updatedSubscription.hasTrialEnded;
     }
-    
+
     // Store data in local storage for future reference
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       storeSubscriptionData(updatedSubscription);
     }
-    
+
     return subscriptionData;
   } catch (error) {
-    console.error('Error getting user subscription data:', error);
+    console.error("Error getting user subscription data:", error);
     return null;
   }
 }
@@ -440,9 +475,9 @@ export async function getUserSubscriptionData(userId: string): Promise<StoredSub
  * Update subscription usage without overwriting other users' usage
  */
 export async function updateSubscriptionUsage(
-  subscriptionId: string, 
-  userStorageUsed: number, 
-  userConnections: number, 
+  subscriptionId: string,
+  userStorageUsed: number,
+  userConnections: number,
   aiCreditsUsed: number
 ): Promise<Subscription | null> {
   try {
@@ -452,36 +487,43 @@ export async function updateSubscriptionUsage(
       include: {
         organization: {
           include: {
-            members: true
-          }
-        }
-      }
+            members: true,
+          },
+        },
+      },
     });
-    
+
     if (!subscription) return null;
-    
+
     // Calculate total organization storage by updating this user's portion
     // This is a simplified approach - in a real system, you'd track per-user usage
     const memberCount = subscription.organization.members.length;
-    const avgStoragePerUser = subscription.usedStorage / Math.max(memberCount, 1);
+    const avgStoragePerUser =
+      subscription.usedStorage / Math.max(memberCount, 1);
     const newTotalStorage = Math.min(
       subscription.usedStorage - avgStoragePerUser + userStorageUsed,
       subscription.totalStorage
     );
-    
+
     // Update subscription with new usage data
     const updatedSubscription = await db.subscription.update({
       where: { id: subscriptionId },
       data: {
         usedStorage: Math.round(newTotalStorage),
-        usedConnections: Math.min(userConnections, subscription.totalConnections),
-        usedAiCredits: Math.min(subscription.usedAiCredits + aiCreditsUsed, subscription.totalAiCredits)
-      }
+        usedConnections: Math.min(
+          userConnections,
+          subscription.totalConnections
+        ),
+        usedAiCredits: Math.min(
+          subscription.usedAiCredits + aiCreditsUsed,
+          subscription.totalAiCredits
+        ),
+      },
     });
-    
+
     return updatedSubscription;
   } catch (error) {
-    console.error('Error updating subscription usage:', error);
+    console.error("Error updating subscription usage:", error);
     return null;
   }
 }
@@ -510,4 +552,4 @@ export function formatTierName(planType: string): string {
     return STRIPE_PLANS[planKey].name;
   }
   return planType.charAt(0).toUpperCase() + planType.slice(1);
-} 
+}
