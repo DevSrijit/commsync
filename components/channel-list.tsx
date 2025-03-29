@@ -11,6 +11,7 @@ import { Group, Email } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { useSession } from "next-auth/react";
 import { MessageCategory } from "@/components/sidebar";
+import { useToast } from "@/hooks/use-toast";
 
 interface EmailListProps {
   isLoading: boolean;
@@ -25,14 +26,16 @@ export function EmailList({
   onSelectContact,
   className,
 }: EmailListProps) {
-  const { contacts, emails, activeFilter, groups } = useEmailStore();
+  const { contacts, emails, activeFilter, groups, setEmails } = useEmailStore();
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [smsCount, setSmsCount] = useState<number>(0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [noMoreMessages, setNoMoreMessages] = useState(false);
+  const [deletedContacts, setDeletedContacts] = useState<string[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const { data: session } = useSession();
+  const { toast } = useToast();
 
   // Improved SMS contact detection
   const isSMSMessage = (email: Email) =>
@@ -188,6 +191,21 @@ export function EmailList({
     : activeFilter === 'contacts'
       ? [] // Show no regular contacts when on contacts filter
       : filteredContacts;
+
+  const handleDeleteContact = (contactEmail: string) => {
+    // Add to deleted contacts array so it's filtered from UI immediately
+    setDeletedContacts(prev => [...prev, contactEmail]);
+    
+    // If this was the selected contact, deselect it
+    if (selectedContact === contactEmail) {
+      onSelectContact(null);
+    }
+  };
+
+  // Filter out deleted contacts from displayed contacts
+  const visibleContacts = displayedContacts.filter(
+    contact => !deletedContacts.includes(contact.email)
+  );
 
   const GroupItem = ({ group, isSelected, onClick }: {
     group: Group;
@@ -401,12 +419,13 @@ export function EmailList({
                   {activeFilter === 'sms' ? 'SMS Conversations' : 'Conversations'}
                 </h2>
                 <div>
-                  {displayedContacts.map((contact) => (
+                  {visibleContacts.map((contact) => (
                     <ContactItem
                       key={contact.email}
                       contact={contact}
                       isSelected={selectedContact === contact.email}
                       onClick={() => onSelectContact(contact.email)}
+                      onDelete={handleDeleteContact}
                     />
                   ))}
                 </div>

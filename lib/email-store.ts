@@ -40,6 +40,7 @@ interface EmailStore {
   syncGroups: () => Promise<void>;
   setGroups: (groups: Group[]) => void;
   updateContacts: (emails: Email[]) => void;
+  deleteConversation: (contactEmail: string) => void;
 }
 
 // Helper function to load persisted data
@@ -1085,6 +1086,37 @@ export const useEmailStore = create<EmailStore>((set, get) => {
       } catch (error) {
         console.error("Error in syncAllPlatforms:", error);
       }
+    },
+
+    deleteConversation: (contactEmail: string) => {
+      const { emails } = get();
+      
+      // Filter out all emails where this contact is either a sender or recipient
+      const filteredEmails = emails.filter(email => {
+        // Check if the contact is the sender
+        const isFromContact = email.from.email === contactEmail;
+        
+        // Check if the contact is one of the recipients
+        const isToContact = email.to.some(to => to.email === contactEmail);
+        
+        // Keep emails that are NOT from or to this contact
+        return !isFromContact && !isToContact;
+      });
+      
+      // Update the store with filtered emails
+      set({ emails: filteredEmails });
+      
+      // Update the contact list based on remaining emails
+      const updatedContacts = generateContactsFromEmails(filteredEmails);
+      set({ contacts: updatedContacts });
+      
+      // Persist to the cache
+      setCacheValue("emails", filteredEmails);
+      setCacheValue("emailsTimestamp", Date.now().toString());
+      
+      console.log(`Deleted conversation with ${contactEmail}. Remaining emails: ${filteredEmails.length}`);
+      
+      return filteredEmails.length;
     },
   };
 });
