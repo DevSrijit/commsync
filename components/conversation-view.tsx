@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Image, FileText, File, Users, MessageSquare, Mail, Inbox, MailQuestion, Info } from "lucide-react";
 import DOMPurify from "isomorphic-dompurify";
+import EncapsulatedEmailContent from "./EncapsulatedEmailContent";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -786,12 +787,7 @@ export function ConversationView({
                             )}
                           </span>
                         </div>
-                        <div
-                          className="prose prose-sm dark:prose-invert max-w-none overflow-hidden"
-                          dangerouslySetInnerHTML={{
-                            __html: DOMPurify.sanitize(email.body),
-                          }}
-                        />
+                        <EncapsulatedEmailContent html={DOMPurify.sanitize(email.body)} />
                         {/* Attachments */}
                         {email.attachments && email.attachments.length > 0 && (
                           <div
