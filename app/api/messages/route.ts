@@ -48,80 +48,87 @@ export async function GET(request: Request) {
     }
 
     let allMessages: any[] = [];
-    
-    // Handle based on platform
-    if (platform === 'twilio') {
-      // Twilio implementation...
-      // ... (existing Twilio code)
-    } else if (platform === 'justcall') {
-      // JustCall implementation
-      const account = accounts[0]; // Use first account if multiple
-      if (!account) {
-        return NextResponse.json({ error: 'No JustCall account found' }, { status: 404 });
-      }
-      
-      const justcallService = new JustCallService(account);
-      
+
+    // Fetch messages from each account
+    for (const account of accounts) {
       try {
-        // Call getMessages with proper parameters
-        const { messages, rateLimitInfo } = await justcallService.getMessages(
-          phoneNumber || undefined, 
-          undefined, // fromDate
-          pageSize,
-          lastSmsIdFetched || undefined,
-          sortDirection
-        );
+        let messages: any[] = [];
         
-        // Return both messages and rate limit info
-        return NextResponse.json({
-          messages: messages || [],
-          rateLimitInfo,
-          count: messages?.length || 0,
-        });
-      } catch (error: any) {
-        console.error('Error fetching JustCall messages:', error);
-        
-        // Check if this is a rate limit error based on status code
-        if (error.status === 429 || (error.message && error.message.includes('rate limit'))) {
-          // Try to extract rate limit information if available
-          const rateLimitInfo = {
-            isRateLimited: true,
-            remaining: 0,
-            limit: 1000,
-            resetTimestamp: Date.now() + 60000, // Default 1 minute
-            retryAfterSeconds: 60
-          };
+        if (platform.toLowerCase() === 'twilio') {
+          const twilioService = new TwilioService(account);
+          messages = await twilioService.getMessages(undefined, limit);
+        } else if (platform.toLowerCase() === 'justcall') {
+          const justcallService = new JustCallService(account);
           
-          // If the error has specific rate limit details, use them
-          if (error.retryAfter) {
-            rateLimitInfo.retryAfterSeconds = error.retryAfter;
-            rateLimitInfo.resetTimestamp = Date.now() + (error.retryAfter * 1000);
+          // For JustCall, use the phoneNumber from query params or the accountIdentifier
+          const phoneToUse = phoneNumber || account.accountIdentifier;
+          
+          if (!phoneToUse) {
+            console.warn(`No phone number specified for JustCall account ${account.id}, skipping`);
+            continue;
           }
           
-          return NextResponse.json({
-            messages: [],
-            rateLimitInfo,
-            count: 0,
-            error: 'Rate limit exceeded'
-          }, { status: 429 });
+          console.log(`Fetching messages for JustCall account ${account.id}:`);
+          console.log(`- Phone: ${phoneToUse}`);
+          console.log(`- Sort direction: ${sortDirection}`);
+          console.log(`- Pagination cursor (lastSmsIdFetched): ${lastSmsIdFetched || 'none'}`);
+          
+          // Use cursor-based pagination with lastSmsIdFetched instead of page numbers
+          messages = await justcallService.getMessages(
+            phoneToUse, 
+            undefined, // No date filtering
+            pageSize,
+            lastSmsIdFetched || undefined,
+            sortDirection as 'asc' | 'desc'
+          );
+          console.log(`Retrieved ${messages.length} messages from JustCall`);
+          
+          // Log the ID range to help with troubleshooting pagination
+          if (messages.length > 0) {
+            const firstId = messages[0].id;
+            const lastId = messages[messages.length - 1].id;
+            console.log(`Message ID range: ${firstId} - ${lastId}`);
+          }
         }
         
-        return NextResponse.json({ 
-          messages: [], 
-          error: error.message || 'Failed to fetch JustCall messages' 
-        }, { status: 500 });
+        // Add account ID to each message for reference
+        messages = messages.map(msg => ({
+          ...msg,
+          accountId: account.id
+        }));
+        
+        allMessages = [...allMessages, ...messages];
+      } catch (error) {
+        console.error(`Error fetching messages from ${platform} account ${account.id}:`, error);
+        // Continue with other accounts
       }
     }
+
+    // For JustCall with cursor-based pagination, we don't need to apply additional pagination
+    if (platform.toLowerCase() === 'justcall') {
+      return NextResponse.json({ 
+        messages: allMessages,
+        total: allMessages.length
+      });
+    }
     
-    // If we get here without returning, the platform wasn't handled
+    // Apply pagination to the results for other platforms
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const paginatedMessages = allMessages.slice(startIndex, endIndex);
+
     return NextResponse.json({ 
-      error: `Unsupported platform: ${platform}` 
-    }, { status: 400 });
-    
-  } catch (error: any) {
-    console.error('Error in messages API:', error);
-    return NextResponse.json({
-      error: error.message || 'An error occurred while fetching messages',
-    }, { status: 500 });
+      messages: paginatedMessages,
+      total: allMessages.length,
+      page,
+      pageSize,
+      totalPages: Math.ceil(allMessages.length / pageSize)
+    });
+  } catch (error) {
+    console.error('Error fetching messages:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch messages' },
+      { status: 500 }
+    );
   }
 } 

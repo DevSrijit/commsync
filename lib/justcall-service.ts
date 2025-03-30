@@ -2,14 +2,6 @@ import { SyncAccountModel, JustCallMessage } from "@/lib/types";
 import { decryptData } from "@/lib/encryption";
 import { db } from "@/lib/db";
 
-export interface RateLimitInfo {
-  isRateLimited: boolean;
-  remaining: number;
-  limit: number;
-  resetTimestamp: number;
-  retryAfterSeconds: number;
-}
-
 /**
  * Creates a properly formatted ISO timestamp from JustCall date and time fields
  * 
@@ -147,53 +139,13 @@ export class JustCallService {
     };
   }
 
-  /**
-   * Extracts rate limit information from response headers
-   */
-  private extractRateLimitInfo(headers: Headers): RateLimitInfo {
-    const remaining = parseInt(headers.get('X-Rate-Limit-Remaining') || '1000', 10);
-    const limit = parseInt(headers.get('X-Rate-Limit-Limit') || '1000', 10);
-    const retryAfter = parseInt(headers.get('Retry-After') || '0', 10);
-    
-    // Parse reset time - try both formats
-    let resetTimestamp = 0;
-    const resetHeader = headers.get('X-Rate-Limit-Reset');
-    if (resetHeader) {
-      // If it's a unix timestamp
-      if (/^\d+$/.test(resetHeader)) {
-        resetTimestamp = parseInt(resetHeader, 10) * 1000; // Convert to ms
-      } else {
-        // If it's a date string
-        resetTimestamp = new Date(resetHeader).getTime();
-      }
-    }
-    
-    // If reset timestamp is invalid, calculate based on retry-after
-    if (!resetTimestamp || isNaN(resetTimestamp)) {
-      resetTimestamp = Date.now() + (retryAfter * 1000 || 60000); // Default 60s
-    }
-    
-    const isRateLimited = remaining <= 0 || retryAfter > 0;
-    
-    // Calculate seconds until reset, ensuring it's never negative
-    const retryAfterSeconds = retryAfter || Math.max(0, Math.ceil((resetTimestamp - Date.now()) / 1000));
-    
-    return {
-      isRateLimited,
-      remaining,
-      limit,
-      resetTimestamp,
-      retryAfterSeconds
-    };
-  }
-
   async getMessages(
     phoneNumber?: string,
     fromDate?: Date,
     limit = 100,
     lastSmsIdFetched?: string,
     sortDirection: "asc" | "desc" = "desc"
-  ): Promise<{ messages: JustCallMessage[], rateLimitInfo: RateLimitInfo }> {
+  ): Promise<JustCallMessage[]> {
     try {
       // Using the V2 SMS endpoints as per the documentation
       let url = `${this.baseUrl}/texts`;
@@ -239,19 +191,6 @@ export class JustCallService {
         headers: this.getAuthHeaders(),
       });
 
-      // Extract rate limit information from headers
-      const rateLimitInfo = this.extractRateLimitInfo(response.headers);
-      console.log('JustCall rate limit info:', rateLimitInfo);
-
-      // If we're rate limited, return empty data with rate limit info
-      if (rateLimitInfo.isRateLimited) {
-        console.warn(`JustCall API rate limited. Retry after ${rateLimitInfo.retryAfterSeconds}s`);
-        return { 
-          messages: [], 
-          rateLimitInfo 
-        };
-      }
-
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         const statusCode = response.status;
@@ -263,12 +202,6 @@ export class JustCallService {
           errorMessage = "Forbidden: JustCall API access denied";
         } else if (statusCode === 404) {
           errorMessage = "Requested JustCall resource does not exist";
-        } else if (statusCode === 429) {
-          // Rate limit exceeded - already handled above but just in case
-          return { 
-            messages: [], 
-            rateLimitInfo 
-          };
         } else if (statusCode === 500) {
           errorMessage =
             "JustCall server error. Please contact JustCall support.";
@@ -285,7 +218,7 @@ export class JustCallService {
       const messages = data.data || [];
       if (!Array.isArray(messages)) {
         console.error("JustCall API returned unexpected data format:", data);
-        return { messages: [], rateLimitInfo };
+        return [];
       }
 
       // Log all messages with their timestamps for debugging
@@ -324,7 +257,7 @@ export class JustCallService {
       });
 
       // Second pass: map messages and add threadId
-      const processedMessages = messages
+      return messages
         .map((message: any): JustCallMessage => {
           if (!message) {
             throw new Error("Received null message from JustCall API");
@@ -380,11 +313,6 @@ export class JustCallService {
           };
         })
         .filter(Boolean); // Remove null messages
-
-      return { 
-        messages: processedMessages, 
-        rateLimitInfo 
-      };
     } catch (error) {
       console.error("Failed to fetch JustCall messages:", error);
       throw error;
@@ -428,13 +356,6 @@ export class JustCallService {
         headers: this.getAuthHeaders(),
         body: JSON.stringify(payload),
       });
-
-      // Check for rate limiting
-      const rateLimitInfo = this.extractRateLimitInfo(response.headers);
-      if (rateLimitInfo.isRateLimited) {
-        console.warn(`JustCall API rate limited when sending message. Retry after ${rateLimitInfo.retryAfterSeconds}s`);
-        throw new Error(`Rate limit exceeded: Try again in ${rateLimitInfo.retryAfterSeconds} seconds`);
-      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -608,13 +529,6 @@ export class JustCallService {
         headers: this.getAuthHeaders(),
       });
 
-      // Check for rate limiting
-      const rateLimitInfo = this.extractRateLimitInfo(response.headers);
-      if (rateLimitInfo.isRateLimited) {
-        console.warn(`JustCall API rate limited when fetching calls. Retry after ${rateLimitInfo.retryAfterSeconds}s`);
-        return [];
-      }
-
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         const statusCode = response.status;
@@ -653,13 +567,6 @@ export class JustCallService {
         method: "GET",
         headers: this.getAuthHeaders(),
       });
-
-      // Check for rate limiting
-      const rateLimitInfo = this.extractRateLimitInfo(response.headers);
-      if (rateLimitInfo.isRateLimited) {
-        console.warn(`JustCall API rate limited when fetching users. Retry after ${rateLimitInfo.retryAfterSeconds}s`);
-        return [];
-      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -702,13 +609,6 @@ export class JustCallService {
         method: "GET",
         headers: this.getAuthHeaders(),
       });
-
-      // Check for rate limiting
-      const rateLimitInfo = this.extractRateLimitInfo(response.headers);
-      if (rateLimitInfo.isRateLimited) {
-        console.warn(`JustCall API rate limited during debug fetch. Retry after ${rateLimitInfo.retryAfterSeconds}s`);
-        return { error: "Rate limit exceeded", rateLimitInfo };
-      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
