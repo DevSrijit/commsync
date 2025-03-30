@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useSession } from "next-auth/react";
 import { useToast } from "@/hooks/use-toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Image, FileText, File, Users, MessageSquare } from "lucide-react";
+import { Image, FileText, File, Users, MessageSquare, Mail, Inbox, MailQuestion, Info } from "lucide-react";
 import DOMPurify from "isomorphic-dompurify";
 import {
   ResizableHandle,
@@ -19,6 +19,71 @@ import {
 import { AlertTriangle } from "lucide-react";
 import { Email } from "@/lib/types";
 import { useSendMessage } from "@/lib/messaging";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+interface WelcomeScreenProps {
+  userEmail?: string | null;
+}
+
+function WelcomeScreen({ userEmail }: WelcomeScreenProps) {
+  return (
+    <div className="flex flex-col items-center justify-center h-full px-4 py-12 text-center max-w-3xl mx-auto">
+      <div className="mb-8 relative">
+        <div className="h-24 w-24 rounded-full bg-primary/10 flex items-center justify-center mx-auto relative">
+          <Mail className="h-12 w-12 text-primary" />
+          <div className="absolute -right-3 -bottom-3 h-10 w-10 rounded-full bg-secondary flex items-center justify-center border-4 border-background">
+            <MessageSquare className="h-5 w-5 text-secondary-foreground" />
+          </div>
+        </div>
+      </div>
+      
+      <h1 className="text-3xl font-bold tracking-tight mb-3">Welcome to CommSync</h1>
+      {userEmail && (
+        <p className="text-muted-foreground mb-8">
+          Connected as <span className="font-medium text-foreground">{userEmail}</span>
+        </p>
+      )}
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10 w-full max-w-2xl mx-auto">
+        <div className="border rounded-lg p-4 flex items-start gap-3 bg-card hover:bg-accent/50 transition-colors">
+          <div className="h-10 w-10 rounded-full bg-primary/10 flex-shrink-0 flex items-center justify-center">
+            <Inbox className="h-5 w-5 text-primary" />
+          </div>
+          <div className="text-left">
+            <h3 className="font-medium mb-1">Select a Conversation</h3>
+            <p className="text-sm text-muted-foreground">Choose from your existing conversations in the sidebar to get started.</p>
+          </div>
+        </div>
+        
+        <div className="border rounded-lg p-4 flex items-start gap-3 bg-card hover:bg-accent/50 transition-colors">
+          <div className="h-10 w-10 rounded-full bg-primary/10 flex-shrink-0 flex items-center justify-center">
+            <Users className="h-5 w-5 text-primary" />
+          </div>
+          <div className="text-left">
+            <h3 className="font-medium mb-1">Add Contacts</h3>
+            <p className="text-sm text-muted-foreground">Manage your contacts and create groups for easier communication.</p>
+          </div>
+        </div>
+      </div>
+      
+      <div className="border border-dashed rounded-lg p-5 w-full max-w-2xl text-left bg-muted/40">
+        <div className="flex items-start gap-3">
+          <Info className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
+          <div>
+            <h3 className="font-medium mb-2">Getting Started</h3>
+            <ul className="space-y-2 text-sm text-muted-foreground">
+              <li>• Connect your email and SMS accounts from the sidebar</li>
+              <li>• Sync your conversations using the sync buttons</li>
+              <li>• Create contact groups for bulk messaging</li>
+              <li>• Compose new messages from any connected account</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface ConversationViewProps {
   contactEmail: string | null;
@@ -70,7 +135,10 @@ export function ConversationView({
   } = useEmailStore();
   const { toast } = useToast();
   const { sendMessage } = useSendMessage();
-
+  
+  // State to track whether we've already shown a Gmail error
+  const [shownGmailError, setShownGmailError] = useState(false);
+  
   // Determine if we're dealing with a group based on contactEmail format
   const isContactGroup = useMemo(() => {
     return contactEmail?.startsWith('group:') || isGroup;
@@ -299,37 +367,45 @@ export function ConversationView({
   // Add useEffect to handle empty conversation
   useEffect(() => {
     const fetchConversation = async () => {
+      // Check if contactEmail actually exists before fetching
+      if (!contactEmail) {
+        return;
+      }
+      
       if (
         !isLoading &&
         !isRefetching &&
-        contactEmail &&
         session?.user?.accessToken &&
         contact && // Make sure we have a contact
         conversation.length === 0 // Only fetch if conversation is empty
       ) {
         setIsRefetching(true);
-        toast({
-          title: "Loading conversation",
-          description: "Fetching messages for this contact...",
-        });
-
+        
         try {
           // For Gmail accounts
           if (!contact.accountId) {
-            // Show Gmail access limitation message instead of attempting to fetch
-            toast({
-              title: "Gmail conversation unavailable",
-              description:
-                "We cannot display this conversation due to Gmail API limitations.",
-              variant: "destructive",
-              duration: 5000,
-            });
+            // Only show the Gmail error toast once per conversation
+            if (!shownGmailError) {
+              setShownGmailError(true);
+              toast({
+                title: "Gmail conversation unavailable",
+                description:
+                  "We cannot display this conversation due to Gmail API limitations.",
+                variant: "destructive",
+                duration: 5000,
+              });
+            }
 
             setIsRefetching(false);
             return;
           }
           // For IMAP accounts - keep existing code
           else if (contact.accountId) {
+            toast({
+              title: "Loading conversation",
+              description: "Fetching messages for this contact...",
+            });
+            
             const imapAccount = imapAccounts.find(
               (acc) => acc.id === contact.accountId
             );
@@ -385,7 +461,10 @@ export function ConversationView({
       }
     };
 
-    fetchConversation();
+    // Only run fetchConversation if we have a contactEmail - not on initial render
+    if (contactEmail) {
+      fetchConversation();
+    }
   }, [
     contactEmail,
     isLoading,
@@ -397,6 +476,7 @@ export function ConversationView({
     setEmails,
     toast,
     imapAccounts,
+    shownGmailError,
   ]);
 
   // Update loading state to include refetching
@@ -489,13 +569,7 @@ export function ConversationView({
 
   if (!contactEmail) {
     return (
-      <div className="flex flex-col items-center justify-center h-full">
-        <MessageSquare className="h-16 w-16 text-primary/20" />
-        <h2 className="text-xl font-medium mt-4">No conversation selected</h2>
-        <p className="text-muted-foreground text-sm mt-2">
-          Select a conversation to view messages
-        </p>
-      </div>
+      <WelcomeScreen userEmail={session?.user?.email} />
     );
   }
 

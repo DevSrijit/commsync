@@ -110,7 +110,7 @@ export function Sidebar() {
   const [isTwilioDialogOpen, setIsTwilioDialogOpen] = useState(false);
   const [isSyncingSMS, setIsSyncingSMS] = useState(false);
   const [isSyncingEmail, setIsSyncingEmail] = useState(false);
-  
+
   // State for account collapsible sections
   const [isEmailAccountsOpen, setIsEmailAccountsOpen] = useState(true);
   const [isSMSAccountsOpen, setIsSMSAccountsOpen] = useState(true);
@@ -126,19 +126,19 @@ export function Sidebar() {
   // Function to fetch subscription data without causing re-renders
   const updateSubscriptionDataBackground = useCallback(async () => {
     if (!session?.user) return;
-    
+
     try {
       const data = await fetchSubscription();
       if (data) {
         // Store in ref
         subscriptionDataRef.current = data;
-        
+
         // Only update state if there are significant changes to minimize re-renders
-        if (!subscriptionData || 
-            data.usedStorage !== subscriptionData.usedStorage ||
-            data.usedConnections !== subscriptionData.usedConnections ||
-            data.usedAiCredits !== subscriptionData.usedAiCredits ||
-            data.status !== subscriptionData.status) {
+        if (!subscriptionData ||
+          data.usedStorage !== subscriptionData.usedStorage ||
+          data.usedConnections !== subscriptionData.usedConnections ||
+          data.usedAiCredits !== subscriptionData.usedAiCredits ||
+          data.status !== subscriptionData.status) {
           setSubscriptionData(data);
         }
       }
@@ -151,7 +151,7 @@ export function Sidebar() {
   useEffect(() => {
     const getSubscriptionData = async () => {
       if (!session?.user) return;
-      
+
       try {
         setIsLoadingSubscription(true);
         const data = await fetchSubscription();
@@ -173,15 +173,15 @@ export function Sidebar() {
   useEffect(() => {
     // Skip if no user session
     if (!session?.user) return;
-    
+
     // Update immediately once
     updateSubscriptionDataBackground();
-    
+
     // Set up interval for periodic background updates (every 5 minutes)
     const intervalId = setInterval(() => {
       updateSubscriptionDataBackground();
     }, 5 * 60 * 1000);
-    
+
     // Clear interval on unmount
     return () => clearInterval(intervalId);
   }, [session?.user, updateSubscriptionDataBackground]);
@@ -270,10 +270,10 @@ export function Sidebar() {
   const archiveCount = emails.filter((email) =>
     email.labels?.includes("ARCHIVE")
   ).length;
-  
-  const smsCount = emails.filter(email => 
-    email.accountType === 'twilio' || 
-    email.accountType === 'justcall' || 
+
+  const smsCount = emails.filter(email =>
+    email.accountType === 'twilio' ||
+    email.accountType === 'justcall' ||
     (email.labels && email.labels.includes('SMS'))
   ).length;
 
@@ -286,42 +286,42 @@ export function Sidebar() {
   const connectionsLimit = subscriptionData?.totalConnections || 6; // Default 6 connections for Lite
   const aiCreditsUsed = subscriptionData?.usedAiCredits || 0;
   const aiCreditsLimit = subscriptionData?.totalAiCredits || 25; // Default 25 credits for Lite
-  
+
   // Format values for display
   const formattedStorageUsed = formatStorage(storageUsed);
   const formattedStorageLimit = formatStorage(storageLimit);
   const storagePercentage = Math.min(100, (storageUsed / storageLimit) * 100);
   const connectionsPercentage = Math.min(100, (connectionsUsed / connectionsLimit) * 100);
   const aiCreditsPercentage = Math.min(100, (aiCreditsUsed / aiCreditsLimit) * 100);
-  
+
   // Get subscription tier
-  const subscriptionTier = subscriptionData?.planType 
+  const subscriptionTier = subscriptionData?.planType
     ? formatTierName(subscriptionData.planType)
     : "Standard";
-  
+
   // Determine if subscription is active
-  const hasActiveSubscription = subscriptionData?.status === 'active' || 
-                               subscriptionData?.status === 'trialing';
+  const hasActiveSubscription = subscriptionData?.status === 'active' ||
+    subscriptionData?.status === 'trialing';
 
   // Message filter buttons, extracted for cleaner code
-  const MessageFilterButton = ({ 
-    icon: Icon, 
-    label, 
-    filter, 
-    count 
-  }: { 
-    icon: React.ElementType, 
-    label: string, 
-    filter: MessageCategory, 
-    count: number 
+  const MessageFilterButton = ({
+    icon: Icon,
+    label,
+    filter,
+    count
+  }: {
+    icon: React.ElementType,
+    label: string,
+    filter: MessageCategory,
+    count: number
   }) => (
     <Button
       variant="ghost"
       size="sm"
       className={cn(
         "w-full justify-start mb-0.5 px-2 py-1.5 text-sm font-medium rounded-md h-9",
-        activeFilter === filter 
-          ? "bg-accent text-accent-foreground" 
+        activeFilter === filter
+          ? "bg-accent text-accent-foreground"
           : "hover:bg-accent/50 hover:text-accent-foreground"
       )}
       onClick={() => setActiveFilter(filter)}
@@ -392,19 +392,19 @@ export function Sidebar() {
                   {isLoadingSubscription ? '...' : `${formattedStorageUsed}/${formattedStorageLimit}`}
                 </span>
               </div>
-              <Progress 
-                value={storagePercentage} 
+              <Progress
+                value={storagePercentage}
                 className={cn(
-                  "h-1.5 rounded-sm", 
-                  storagePercentage > 90 
-                    ? "bg-destructive/20" 
-                    : storagePercentage > 70 
-                      ? "bg-warning/20" 
+                  "h-1.5 rounded-sm",
+                  storagePercentage > 90
+                    ? "bg-destructive/20"
+                    : storagePercentage > 70
+                      ? "bg-warning/20"
                       : "bg-primary/20"
                 )}
               />
             </div>
-            
+
             <div className="space-y-1.5">
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">Connections</span>
@@ -412,14 +412,14 @@ export function Sidebar() {
                   {isLoadingSubscription ? '...' : `${connectionsUsed}/${connectionsLimit}`}
                 </span>
               </div>
-              <Progress 
-                value={connectionsPercentage} 
+              <Progress
+                value={connectionsPercentage}
                 className={cn(
-                  "h-1.5 rounded-sm", 
-                  connectionsPercentage > 90 
-                    ? "bg-destructive/20" 
-                    : connectionsPercentage > 70 
-                      ? "bg-warning/20" 
+                  "h-1.5 rounded-sm",
+                  connectionsPercentage > 90
+                    ? "bg-destructive/20"
+                    : connectionsPercentage > 70
+                      ? "bg-warning/20"
                       : "bg-primary/20"
                 )}
               />
@@ -433,14 +433,14 @@ export function Sidebar() {
                     {isLoadingSubscription ? '...' : `${aiCreditsUsed}/${aiCreditsLimit}`}
                   </span>
                 </div>
-                <Progress 
-                  value={aiCreditsPercentage} 
+                <Progress
+                  value={aiCreditsPercentage}
                   className={cn(
-                    "h-1.5 rounded-sm", 
-                    aiCreditsPercentage > 90 
-                      ? "bg-destructive/20" 
-                      : aiCreditsPercentage > 70 
-                        ? "bg-warning/20" 
+                    "h-1.5 rounded-sm",
+                    aiCreditsPercentage > 90
+                      ? "bg-destructive/20"
+                      : aiCreditsPercentage > 70
+                        ? "bg-warning/20"
                         : "bg-primary/20"
                   )}
                 />
@@ -465,56 +465,56 @@ export function Sidebar() {
           <div className="space-y-4">
             {/* Primary Message Filters */}
             <div className="space-y-0.5">
-              <MessageFilterButton 
-                icon={Inbox} 
-                label="Inbox" 
-                filter="inbox" 
-                count={inboxCount} 
+              <MessageFilterButton
+                icon={Inbox}
+                label="Inbox"
+                filter="inbox"
+                count={inboxCount}
               />
-              <MessageFilterButton 
-                icon={Star} 
-                label="Starred" 
-                filter="starred" 
-                count={starredCount} 
+              <MessageFilterButton
+                icon={Star}
+                label="Starred"
+                filter="starred"
+                count={starredCount}
               />
-              <MessageFilterButton 
-                icon={Send} 
-                label="Sent" 
-                filter="sent" 
-                count={sentCount} 
+              <MessageFilterButton
+                icon={Send}
+                label="Sent"
+                filter="sent"
+                count={sentCount}
               />
-              <MessageFilterButton 
-                icon={PenSquare} 
-                label="Drafts" 
-                filter="draft" 
-                count={draftCount} 
+              <MessageFilterButton
+                icon={PenSquare}
+                label="Drafts"
+                filter="draft"
+                count={draftCount}
               />
-              <MessageFilterButton 
-                icon={MessageSquare} 
-                label="SMS" 
-                filter="sms" 
-                count={smsCount} 
+              <MessageFilterButton
+                icon={MessageSquare}
+                label="SMS"
+                filter="sms"
+                count={smsCount}
               />
-              <MessageFilterButton 
-                icon={Users} 
-                label="Contacts" 
-                filter="contacts" 
-                count={contactsCount} 
+              <MessageFilterButton
+                icon={Users}
+                label="Contacts"
+                filter="contacts"
+                count={contactsCount}
               />
-              <MessageFilterButton 
-                icon={Archive} 
-                label="Archive" 
-                filter="archive" 
-                count={archiveCount} 
+              <MessageFilterButton
+                icon={Archive}
+                label="Archive"
+                filter="archive"
+                count={archiveCount}
               />
-              <MessageFilterButton 
-                icon={Trash} 
-                label="Trash" 
-                filter="trash" 
-                count={trashCount} 
+              <MessageFilterButton
+                icon={Trash}
+                label="Trash"
+                filter="trash"
+                count={trashCount}
               />
             </div>
-            
+
             {/* Sync Buttons */}
             <div className="space-y-1">
               <Button
@@ -533,14 +533,14 @@ export function Sidebar() {
                     });
                     return;
                   }
-                  
+
                   try {
                     setIsSyncingSMS(true);
                     await Promise.all([
                       useEmailStore.getState().syncTwilioAccounts(),
                       useEmailStore.getState().syncJustcallAccounts()
                     ]);
-                    
+
                     // Update subscription usage after sync
                     const updated = await updateSubscription();
                     if (updated) {
@@ -562,7 +562,7 @@ export function Sidebar() {
                   )}
                 </div>
               </Button>
-              
+
               <Button
                 variant="outline"
                 size="sm"
@@ -579,10 +579,10 @@ export function Sidebar() {
                     });
                     return;
                   }
-                  
+
                   try {
                     setIsSyncingEmail(true);
-                    
+
                     // Sync Gmail messages if access token is available
                     if (session?.user?.accessToken) {
                       try {
@@ -593,16 +593,16 @@ export function Sidebar() {
                         console.error("Error syncing Gmail messages:", error);
                       }
                     }
-                    
+
                     // Sync all IMAP accounts
                     const { imapAccounts } = useEmailStore.getState();
                     const contentLoader = EmailContentLoader.getInstance();
                     let totalEmailsLoaded = 0;
-                    
+
                     for (const account of imapAccounts) {
                       try {
                         console.log(`Syncing account: ${account.label}`);
-                        
+
                         // Fetch emails for this account
                         const response = await fetch("/api/imap", {
                           method: "POST",
@@ -618,14 +618,14 @@ export function Sidebar() {
                             },
                           }),
                         });
-                        
+
                         if (!response.ok) {
                           console.error(`Failed to sync emails for ${account.label}`);
                           continue; // Skip to next account on error
                         }
-                        
+
                         const data = await response.json();
-                        
+
                         // Format emails to ensure they have required properties
                         const formattedEmails = data.emails.map((email: any) => ({
                           ...email,
@@ -637,12 +637,12 @@ export function Sidebar() {
                           accountType: 'imap',
                           accountId: account.id,
                         }));
-                        
+
                         // Update the email store with fetched emails
                         const store = useEmailStore.getState();
                         store.setEmails([...store.emails, ...formattedEmails]);
                         totalEmailsLoaded += formattedEmails.length;
-                        
+
                         // Update last sync time
                         if (account.id) {
                           await fetch("/api/imap", {
@@ -658,10 +658,10 @@ export function Sidebar() {
                             }),
                           });
                         }
-                        
+
                         // Load content for emails that don't have it
                         const emailsWithoutContent = formattedEmails.filter((email: any) => !email.body || email.body.length === 0);
-                        
+
                         // Load content for up to 5 emails at a time
                         if (emailsWithoutContent.length > 0) {
                           const batchSize = 5;
@@ -676,14 +676,14 @@ export function Sidebar() {
                         console.error(`Error syncing account ${account.label}:`, error);
                       }
                     }
-                    
+
                     // Update subscription usage after sync
                     const updated = await updateSubscription();
                     if (updated) {
                       setSubscriptionData(updated);
                       subscriptionDataRef.current = updated;
                     }
-                    
+
                     // Show toast notification with results
                     if (totalEmailsLoaded > 0) {
                       toast({
@@ -693,8 +693,8 @@ export function Sidebar() {
                     } else {
                       toast({
                         title: "Sync complete",
-                        description: session?.user?.accessToken 
-                          ? "No new emails found from IMAP accounts or Gmail" 
+                        description: session?.user?.accessToken
+                          ? "No new emails found from IMAP accounts or Gmail"
                           : "No new emails found",
                       });
                     }
@@ -757,8 +757,8 @@ export function Sidebar() {
               </div>
 
               {/* Email Accounts Collapsible */}
-              <Collapsible 
-                open={isEmailAccountsOpen} 
+              <Collapsible
+                open={isEmailAccountsOpen}
                 onOpenChange={setIsEmailAccountsOpen}
                 className="px-2"
               >
@@ -808,8 +808,8 @@ export function Sidebar() {
               </Collapsible>
 
               {/* SMS Accounts Collapsible */}
-              <Collapsible 
-                open={isSMSAccountsOpen} 
+              <Collapsible
+                open={isSMSAccountsOpen}
                 onOpenChange={setIsSMSAccountsOpen}
                 className="px-2"
               >
@@ -844,7 +844,7 @@ export function Sidebar() {
                       {justCallAccounts.length}
                     </Badge>
                   </Button>
-                  
+
                   <Button
                     variant="ghost"
                     size="sm"
@@ -922,8 +922,8 @@ export function Sidebar() {
             </Button>
             <div className="space-y-2">
               {justCallAccounts.map((account) => (
-                <JustCallAccountCard 
-                  key={account.id} 
+                <JustCallAccountCard
+                  key={account.id}
                   id={account.id}
                   phoneNumber={account.accountIdentifier}
                   label={account.platform}
@@ -975,7 +975,7 @@ export function Sidebar() {
                               method: "DELETE",
                             });
                             if (response.ok) {
-                              setTwilioAccounts(accounts => 
+                              setTwilioAccounts(accounts =>
                                 accounts.filter(a => a.id !== account.id)
                               );
                             }

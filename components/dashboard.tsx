@@ -205,11 +205,16 @@ export function EmailDashboard() {
 
   // Set the first contact as selected by default when contacts load
   useEffect(() => {
-    if (contacts.length > 0 && !selectedContact) {
-      setSelectedContact(contacts[0].email);
-      setIsGroupSelected(false);
-      setSelectedGroupId(null);
-    }
+    // Don't auto-select first contact on initial load
+    // Only select if user explicitly requests via UI
+    // This allows the welcome screen to show on first load
+    
+    // We've removed the auto-selection behavior:
+    // if (contacts.length > 0 && !selectedContact) {
+    //   setSelectedContact(contacts[0].email);
+    //   setIsGroupSelected(false);
+    //   setSelectedGroupId(null);
+    // }
   }, [contacts, selectedContact]);
 
   return (
