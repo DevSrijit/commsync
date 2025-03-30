@@ -78,7 +78,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Progress } from "@/components/ui/progress";
-import { formatStorage, formatTierName, StoredSubscriptionData } from "@/lib/subscription";
+import { formatStorage, formatTierName, StoredSubscriptionData, getStoredSubscriptionData, isStoredSubscriptionStale } from "@/lib/subscription";
 import { PlanType } from "@/lib/stripe";
 import { useSubscription } from "@/hooks/use-subscription";
 
@@ -153,11 +153,31 @@ export function Sidebar() {
       if (!session?.user) return;
 
       try {
-        setIsLoadingSubscription(true);
+        // Only show loading state on initial load
+        if (!subscriptionData) {
+          setIsLoadingSubscription(true);
+        }
+        
+        // First try to get from local storage for immediate display
+        const storedData = getStoredSubscriptionData();
+        if (storedData && !isStoredSubscriptionStale()) {
+          setSubscriptionData(storedData);
+          subscriptionDataRef.current = storedData;
+          setIsLoadingSubscription(false);
+        }
+        
+        // Then fetch the latest data from server
         const data = await fetchSubscription();
         if (data) {
-          setSubscriptionData(data);
-          subscriptionDataRef.current = data;
+          // Only update if something changed
+          if (!subscriptionData || 
+              data.usedStorage !== (subscriptionData?.usedStorage || 0) ||
+              data.usedConnections !== (subscriptionData?.usedConnections || 0) ||
+              data.usedAiCredits !== (subscriptionData?.usedAiCredits || 0) ||
+              data.status !== subscriptionData?.status) {
+            setSubscriptionData(data);
+            subscriptionDataRef.current = data;
+          }
         }
       } catch (error) {
         console.error('Error fetching subscription data:', error);
@@ -167,15 +187,12 @@ export function Sidebar() {
     };
 
     getSubscriptionData();
-  }, [session?.user, fetchSubscription]);
+  }, [session?.user, fetchSubscription, subscriptionData]);
 
   // Set up an interval to update subscription data in the background
   useEffect(() => {
     // Skip if no user session
     if (!session?.user) return;
-
-    // Update immediately once
-    updateSubscriptionDataBackground();
 
     // Set up interval for periodic background updates (every 5 minutes)
     const intervalId = setInterval(() => {
