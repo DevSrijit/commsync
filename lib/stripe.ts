@@ -33,11 +33,11 @@ export const STRIPE_PLANS = {
     priceId: process.env.STRIPE_STANDARD_PRICE_ID,
     limits: {
       maxUsers: 3,
-      maxStorage: 333, // MB per user (~1GB / 3 users)
+      maxStorage: 500, // MB per user
       maxConnections: 10, // per user
-      totalStorage: 1000, // MB (1GB) total
-      totalConnections: 30, // total
-      totalAiCredits: 300,
+      totalStorage: 500, // MB (500MB per user)
+      totalConnections: 10, // total
+      totalAiCredits: 100, // 100 per user
     },
   },
   business: {
@@ -45,11 +45,11 @@ export const STRIPE_PLANS = {
     priceId: process.env.STRIPE_BUSINESS_PRICE_ID,
     limits: {
       maxUsers: 8,
-      maxStorage: 640, // MB per user (~5GB / 8 users)
-      maxConnections: 12, // per user
-      totalStorage: 5120, // MB (5GB) total
-      totalConnections: 100, // total
-      totalAiCredits: 1000,
+      maxStorage: 1024, // MB per user
+      maxConnections: 20, // per user
+      totalStorage: 1024, // MB (1GB per user)
+      totalConnections: 20, // total
+      totalAiCredits: 200, // 200 per user
     },
   },
 } as const;

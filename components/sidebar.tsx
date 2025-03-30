@@ -583,6 +583,17 @@ export function Sidebar() {
                   try {
                     setIsSyncingEmail(true);
                     
+                    // Sync Gmail messages if access token is available
+                    if (session?.user?.accessToken) {
+                      try {
+                        console.log("Syncing Gmail messages");
+                        await useEmailStore.getState().syncEmails(session.user.accessToken);
+                        console.log("Gmail sync complete");
+                      } catch (error) {
+                        console.error("Error syncing Gmail messages:", error);
+                      }
+                    }
+                    
                     // Sync all IMAP accounts
                     const { imapAccounts } = useEmailStore.getState();
                     const contentLoader = EmailContentLoader.getInstance();
@@ -677,12 +688,14 @@ export function Sidebar() {
                     if (totalEmailsLoaded > 0) {
                       toast({
                         title: "Sync successful",
-                        description: `Synced ${totalEmailsLoaded} emails from ${imapAccounts.length} accounts`,
+                        description: `Synced ${totalEmailsLoaded} emails from ${imapAccounts.length} accounts${session?.user?.accessToken ? ' and Gmail' : ''}`,
                       });
                     } else {
                       toast({
                         title: "Sync complete",
-                        description: "No new emails found",
+                        description: session?.user?.accessToken 
+                          ? "No new emails found from IMAP accounts or Gmail" 
+                          : "No new emails found",
                       });
                     }
                   } catch (error) {
