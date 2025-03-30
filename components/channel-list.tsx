@@ -375,9 +375,33 @@ export function EmailList({
       console.log('- JustCall cursor (lastMessageId):', store.lastJustcallMessageId || 'none');
       console.log('- Page size:', pageSize);
 
+      // Find the oldest Gmail email to use for filtering
+      const gmailEmails = store.emails.filter(email => 
+        !email.accountId || email.accountType === 'gmail' || email.source === 'gmail-api'
+      );
+      
+      let oldestGmailEmail = null;
+      if (gmailEmails.length > 0) {
+        // Sort by date ascending to find oldest
+        const sortedGmailEmails = [...gmailEmails].sort(
+          (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
+        );
+        oldestGmailEmail = sortedGmailEmails[0];
+        console.log('Oldest Gmail email date:', oldestGmailEmail.date);
+        console.log('Oldest Gmail email subject:', oldestGmailEmail.subject);
+      } else {
+        console.log('No Gmail emails found to establish pagination reference');
+      }
+
       // Track which services returned new messages
       const results = await Promise.all([
-        store.syncEmails(session?.user?.accessToken || ''),
+        // For Gmail, we'll pass the oldest email date for backwards loading
+        oldestGmailEmail 
+          ? store.syncEmails(session?.user?.accessToken || '', {
+              isLoadingMore: true,
+              oldestEmailDate: oldestGmailEmail.date
+            })
+          : store.syncEmails(session?.user?.accessToken || ''),
         store.syncImapAccounts(),
         store.syncTwilioAccounts(),
         store.syncJustcallAccounts(true)
@@ -473,7 +497,7 @@ export function EmailList({
         setNoMoreMessages(false);
       }, 3000);
     }
-  }, [toast]);
+  }, [toast, session]);
 
   if (isLoading) {
     return (

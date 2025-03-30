@@ -27,7 +27,7 @@ interface EmailStore {
   addImapAccount: (account: ImapAccount) => void;
   removeImapAccount: (id: string) => void;
   getImapAccount: (id: string) => ImapAccount | undefined;
-  syncEmails: (gmailToken: string | null) => Promise<void>;
+  syncEmails: (gmailToken: string | null, options?: { isLoadingMore?: boolean; oldestEmailDate?: string }) => Promise<number>;
   syncImapAccounts: () => Promise<number>;
   syncTwilioAccounts: () => Promise<number>;
   syncJustcallAccounts: (isLoadingMore?: boolean) => Promise<number | { count: number; rateLimited: boolean; retryAfter: number }>;
@@ -309,16 +309,93 @@ export const useEmailStore = create<EmailStore>((set, get) => {
     lastJustcallMessageId: initialData.lastJustcallMessageId,
     loadPageSize: savedPageSize,
 
-    syncEmails: async (gmailToken: string | null) => {
+    syncEmails: async (gmailToken: string | null, options?: { isLoadingMore?: boolean; oldestEmailDate?: string }) => {
       const { imapAccounts, loadPageSize } = get();
       try {
         if (!gmailToken) {
           console.log("No Gmail token provided, skipping Gmail sync");
+          return 0;
         } else {
           try {
             // Use the configured page size
             console.log(`Using configured page size: ${loadPageSize}`);
-            await SyncService.getInstance().syncAllEmails(gmailToken, imapAccounts, 1, loadPageSize);
+            
+            const isLoadingMore = options?.isLoadingMore || false;
+            const oldestEmailDate = options?.oldestEmailDate;
+            
+            if (isLoadingMore && oldestEmailDate) {
+              console.log(`Loading more Gmail emails older than ${oldestEmailDate}`);
+              
+              // We need to fetch emails with a date filter
+              try {
+                // Import and use fetchEmails directly for more control
+                const { fetchEmails } = await import('@/lib/gmail-api');
+                
+                // Construct a query to find emails older than our oldest email
+                // Gmail search syntax: before:YYYY/MM/DD
+                const oldestDate = new Date(oldestEmailDate);
+                const formattedDate = `${oldestDate.getFullYear()}/${(oldestDate.getMonth() + 1).toString().padStart(2, '0')}/${oldestDate.getDate().toString().padStart(2, '0')}`;
+                const query = `before:${formattedDate}`;
+                
+                console.log(`Gmail API query for older emails: ${query}`);
+                
+                // Fetch older emails
+                const olderEmails = await fetchEmails(
+                  gmailToken,
+                  1, // page
+                  loadPageSize, // pageSize
+                  query // date-based filter
+                );
+                
+                console.log(`Fetched ${olderEmails.length} older Gmail emails`);
+                
+                if (olderEmails.length > 0) {
+                  // Merge with existing emails
+                  const currentEmails = get().emails;
+                  
+                  // Deduplicate using email IDs
+                  const existingIds = new Set(currentEmails.map(email => email.id));
+                  const newEmails = olderEmails.filter(email => !existingIds.has(email.id));
+                  
+                  if (newEmails.length > 0) {
+                    console.log(`Adding ${newEmails.length} new older Gmail emails`);
+                    
+                    // Combine existing and new emails
+                    const combinedEmails = [...currentEmails, ...newEmails];
+                    
+                    // Sort by date, newest first
+                    combinedEmails.sort((a, b) => 
+                      new Date(b.date).getTime() - new Date(a.date).getTime()
+                    );
+                    
+                    // Update the store
+                    get().setEmails(combinedEmails);
+                    setCacheValue("emails", combinedEmails);
+                    
+                    return newEmails.length; // Return count of new emails
+                  } else {
+                    console.log('No new Gmail emails found');
+                    return 0;
+                  }
+                } else {
+                  console.log('No older Gmail emails found');
+                  return 0;
+                }
+              } catch (error) {
+                console.error('Error fetching older Gmail emails:', error);
+                return 0;
+              }
+            } else {
+              // Normal sync without backwards loading
+              await SyncService.getInstance().syncAllEmails(
+                gmailToken, 
+                imapAccounts, 
+                1, 
+                loadPageSize,
+                "" // Empty query for regular sync
+              );
+              return 1; // Return a positive number to indicate success
+            }
           } catch (apiError: any) {
             // Handle auth errors
             console.error("Error syncing emails:", apiError);
@@ -341,7 +418,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                     console.log("Token refreshed successfully, retrying API call");
                     // Retry the API call with the new token and configured page size
                     await SyncService.getInstance().syncAllEmails(refreshData.accessToken, imapAccounts, 1, loadPageSize);
-                    return; // Success, exit function
+                    return 1; // Success, exit function
                   }
                 } else {
                   console.error('Failed to refresh Google token:', await response.text());
@@ -349,6 +426,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                   if (typeof window !== 'undefined') {
                     window.location.href = `/login?error=token_expired&provider=google`;
                   }
+                  return 0;
                 }
               } catch (refreshError) {
                 console.error('Error refreshing Google token:', refreshError);
@@ -356,12 +434,15 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                 if (typeof window !== 'undefined') {
                   window.location.href = `/login?error=token_expired&provider=google`;
                 }
+                return 0;
               }
             }
+            return 0;
           }
         }
       } catch (error: any) {
         console.error("Unhandled error in syncEmails:", error);
+        return 0;
       }
     },
 

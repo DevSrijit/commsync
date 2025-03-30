@@ -25,7 +25,8 @@ export class SyncService {
     gmailToken: string | null,
     imapAccounts: ImapAccount[],
     page: number = 1,
-    pageSize: number = 100 // Default to 100, but will use provided value
+    pageSize: number = 100, // Default to 100, but will use provided value
+    query: string = "" // Add a query parameter for Gmail API filtering
   ): Promise<void> {
     if (this.syncInProgress) {
       console.log("Sync already in progress");
@@ -41,8 +42,8 @@ export class SyncService {
       if (gmailToken) {
         // Use a try-catch block specifically for Gmail to handle auth errors properly
         try {
-          console.log(`Fetching Gmail emails with page ${page}, pageSize ${pageSize}`);
-          const gmailEmails = await fetchGmailEmails(gmailToken, page, pageSize);
+          console.log(`Fetching Gmail emails with page ${page}, pageSize ${pageSize}${query ? `, query: ${query}` : ''}`);
+          const gmailEmails = await fetchGmailEmails(gmailToken, page, pageSize, query);
           if (gmailEmails && gmailEmails.length > 0) {
             syncPromises.push(Promise.resolve(gmailEmails));
           } else {
