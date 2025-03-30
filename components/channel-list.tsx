@@ -198,7 +198,7 @@ export function EmailList({
     
     // If this was the selected contact, deselect it
     if (selectedContact === contactEmail) {
-      onSelectContact(null);
+      onSelectContact(''); // Use empty string instead of null
     }
   };
 
@@ -233,7 +233,7 @@ export function EmailList({
           {group.phoneNumbers.length > 0 && (
             <p>{group.phoneNumbers.length} phone number{group.phoneNumbers.length !== 1 ? 's' : ''}</p>
           )}
-          <p>{group.addresses.length + group.phoneNumbers.length} total contact{group.addresses.length + group.phoneNumbers.length !== 1 ? 's' : ''}</p>
+          <p>{group.addresses.length + group.phoneNumbers.length} total addresses{group.addresses.length + group.phoneNumbers.length !== 1 ? 's' : ''}</p>
         </div>
       </div>
     );
