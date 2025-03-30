@@ -307,33 +307,52 @@ export const useEmailStore = create<EmailStore>((set, get) => {
         if (!gmailToken) {
           console.log("No Gmail token provided, skipping Gmail sync");
         } else {
-          // Set very large page size to fetch all emails
-          await SyncService.getInstance().syncAllEmails(gmailToken, imapAccounts, 1, 100000);
-        }
-      } catch (error: any) {
-        // Handle auth errors
-        console.error("Error syncing emails:", error);
-        if (error?.response?.status === 401 || 
-            (error?.error?.code === 401) ||
-            (error?.message && error.message.includes('Invalid Credentials'))) {
-          
-          // Try to refresh the token
           try {
-            const response = await fetch(`/api/auth/refresh?provider=google`, {
-              method: 'POST',
-            });
-            
-            if (!response.ok) {
-              console.error('Failed to refresh Google token:', await response.text());
-              // Only redirect if we're in browser context
-              if (typeof window !== 'undefined') {
-                window.location.href = `/login?error=token_expired&provider=google`;
+            // Set very large page size to fetch all emails
+            await SyncService.getInstance().syncAllEmails(gmailToken, imapAccounts, 1, 100000);
+          } catch (apiError: any) {
+            // Handle auth errors
+            console.error("Error syncing emails:", apiError);
+            if (apiError?.response?.status === 401 || 
+                (apiError?.error?.code === 401) ||
+                (apiError?.message && apiError.message.includes('Invalid Credentials'))) {
+              
+              // Try to refresh the token
+              try {
+                console.log("Attempting to refresh Google token...");
+                const response = await fetch(`/api/auth/refresh?provider=google`, {
+                  method: 'POST',
+                  credentials: 'same-origin',
+                });
+                
+                if (response.ok) {
+                  // Token refresh successful, get the new token
+                  const refreshData = await response.json();
+                  if (refreshData.accessToken) {
+                    console.log("Token refreshed successfully, retrying API call");
+                    // Retry the API call with the new token
+                    await SyncService.getInstance().syncAllEmails(refreshData.accessToken, imapAccounts, 1, 100000);
+                    return; // Success, exit function
+                  }
+                } else {
+                  console.error('Failed to refresh Google token:', await response.text());
+                  // Only redirect if we're in browser context
+                  if (typeof window !== 'undefined') {
+                    window.location.href = `/login?error=token_expired&provider=google`;
+                  }
+                }
+              } catch (refreshError) {
+                console.error('Error refreshing Google token:', refreshError);
+                // Only redirect if we're in browser context
+                if (typeof window !== 'undefined') {
+                  window.location.href = `/login?error=token_expired&provider=google`;
+                }
               }
             }
-          } catch (refreshError) {
-            console.error('Error refreshing Google token:', refreshError);
           }
         }
+      } catch (error: any) {
+        console.error("Unhandled error in syncEmails:", error);
       }
     },
 

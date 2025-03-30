@@ -39,13 +39,36 @@ export class SyncService {
 
       // Add Gmail sync if token is available
       if (gmailToken) {
-        syncPromises.push(fetchGmailEmails(gmailToken, page, pageSize));
+        // Use a try-catch block specifically for Gmail to handle auth errors properly
+        try {
+          const gmailEmails = await fetchGmailEmails(gmailToken, page, pageSize);
+          if (gmailEmails && gmailEmails.length > 0) {
+            syncPromises.push(Promise.resolve(gmailEmails));
+          } else {
+            console.log("No Gmail emails returned, possibly due to auth issues");
+          }
+        } catch (gmailError: any) {
+          console.error("Error fetching Gmail emails:", gmailError);
+          // Propagate auth errors to be handled by the caller
+          if (gmailError?.response?.status === 401 || 
+              (gmailError?.error?.code === 401) ||
+              (gmailError?.message && gmailError.message.includes('Invalid Credentials'))) {
+            // Create a structured error with authentication details
+            const authError = new Error("Gmail authentication failed");
+            authError.name = "AuthenticationError";
+            // @ts-ignore - adding custom properties to error
+            authError.error = { code: 401 };
+            // @ts-ignore - adding custom properties to error
+            authError.response = { status: 401 };
+            throw authError;
+          }
+        }
       }
 
       // Add IMAP sync for each account
-      imapAccounts.forEach((account) => {
-        syncPromises.push(
-          fetch("/api/imap", {
+      for (const account of imapAccounts) {
+        try {
+          const response = await fetch("/api/imap", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -59,46 +82,65 @@ export class SyncService {
                 fetchAll: true // Add a flag to fetch all emails
               },
             }),
-          }).then((response) => response.json().then((data) => data.emails))
-        );
-      });
-
-      // Wait for all syncs to complete
-      const results = await Promise.allSettled(syncPromises);
-      
-      // Combine all successful results
-      const allEmails: Email[] = [];
-      results.forEach((result) => {
-        if (result.status === "fulfilled") {
-          allEmails.push(...result.value);
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.emails && data.emails.length > 0) {
+              syncPromises.push(Promise.resolve(data.emails));
+            }
+          } else {
+            console.error(`Failed to fetch IMAP emails for account ${account.id}:`, await response.text());
+          }
+        } catch (error) {
+          console.error(`Error fetching IMAP emails for account ${account.id}:`, error);
         }
-      });
+      }
 
-      // Update the email store with all emails
-      const store = useEmailStore.getState();
-      store.setEmails(allEmails);
+      // Wait for all syncs to complete (only those that were successful)
+      if (syncPromises.length > 0) {
+        const results = await Promise.allSettled(syncPromises);
+        
+        // Combine all successful results
+        const allEmails: Email[] = [];
+        results.forEach((result) => {
+          if (result.status === "fulfilled") {
+            allEmails.push(...result.value);
+          }
+        });
 
-      // Update last sync time for IMAP accounts
-      imapAccounts.forEach((account) => {
-        if (account.id) {
-          fetch("/api/imap", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              action: "updateLastSync",
-              accountId: account.id,
-            }),
-          }).catch(console.error);
+        // Update the email store with all emails only if we have some
+        if (allEmails.length > 0) {
+          const store = useEmailStore.getState();
+          store.setEmails(allEmails);
+
+          // Update last sync time for IMAP accounts
+          imapAccounts.forEach((account) => {
+            if (account.id) {
+              fetch("/api/imap", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  action: "updateLastSync",
+                  data: { accountId: account.id },
+                }),
+              }).catch(console.error);
+            }
+          });
+
+          // Load content for emails that don't have it
+          this.loadMissingContent(allEmails);
+        } else {
+          console.log("No emails retrieved from any accounts");
         }
-      });
-
-      // Load content for emails that don't have it
-      this.loadMissingContent(allEmails);
-
+      } else {
+        console.log("No successful sync operations completed");
+      }
     } catch (error) {
       console.error("Error syncing emails:", error);
+      throw error; // Re-throw to allow caller to handle
     } finally {
       this.syncInProgress = false;
     }

@@ -6,6 +6,8 @@ import { getCacheValue, setCacheValue } from './client-cache-browser';
 // Helper function to refresh session
 async function refreshSession() {
   try {
+    console.log("Starting token refresh sequence...");
+    
     // Force a session refresh by calling the NextAuth endpoint
     const refreshResponse = await fetch("/api/auth/refresh?provider=google", {
       method: "POST",
@@ -16,17 +18,46 @@ async function refreshSession() {
     if (!refreshResponse.ok) {
       console.error(`Refresh response not OK: ${refreshResponse.status} ${refreshResponse.statusText}`);
       
+      // Try to get detailed error info
+      try {
+        const errorData = await refreshResponse.json();
+        console.error("Token refresh error details:", errorData);
+      } catch (e) {
+        // If we can't parse the error response, just log the raw text
+        try {
+          console.error("Token refresh error response:", await refreshResponse.text());
+        } catch (e2) {
+          console.error("Could not extract error details from refresh response");
+        }
+      }
+      
       // Check if we need to redirect to login
       if (refreshResponse.status === 401) {
         if (typeof window !== 'undefined') {
-          console.log("Redirecting to login page due to expired session");
+          console.log("Authentication required - redirecting to login page");
           window.location.href = `/login?error=token_expired&provider=google`;
           return null;
         }
       }
-      throw new Error("Failed to refresh session");
+      throw new Error(`Failed to refresh session: ${refreshResponse.status} ${refreshResponse.statusText}`);
     }
 
+    // Try to parse the refresh response directly first
+    try {
+      const refreshData = await refreshResponse.json();
+      
+      // If the refresh endpoint returned a token directly, use it
+      if (refreshData && refreshData.accessToken) {
+        console.log("Token refresh successful - got new token directly");
+        return refreshData.accessToken;
+      }
+      
+      // Otherwise, fall back to getting the session
+      console.log("Token may be refreshed, but need to get session for the token");
+    } catch (parseError) {
+      console.warn("Could not parse refresh response as JSON, falling back to session fetch");
+    }
+    
     // Get new session with refreshed token
     const sessionResponse = await fetch("/api/auth/session", {
       method: "GET",
@@ -35,6 +66,7 @@ async function refreshSession() {
     });
     
     if (!sessionResponse.ok) {
+      console.error(`Session response not OK: ${sessionResponse.status} ${sessionResponse.statusText}`);
       throw new Error("Failed to get updated session");
     }
     
@@ -46,6 +78,7 @@ async function refreshSession() {
       return null;
     }
     
+    console.log("Successfully obtained new access token from session");
     return session.user.accessToken;
   } catch (error) {
     console.error("Error refreshing session:", error);
