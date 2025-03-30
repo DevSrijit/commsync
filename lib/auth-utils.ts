@@ -24,3 +24,31 @@ export async function getUserIdFromSession(session: Session): Promise<string> {
 
   return user.id;
 }
+
+/**
+ * Client-side utility to refresh the Google OAuth token
+ * Call this when you get a 401 Unauthorized response
+ * @returns Promise with success status and refreshed token if successful
+ */
+export async function refreshGoogleToken(): Promise<{ success: boolean; accessToken?: string }> {
+  try {
+    const response = await fetch('/api/auth/refresh?provider=google', {
+      method: 'POST',
+      credentials: 'include',
+    });
+    
+    if (!response.ok) {
+      console.error('Token refresh failed:', await response.json());
+      return { success: false };
+    }
+    
+    const data = await response.json();
+    return { 
+      success: true, 
+      accessToken: data.accessToken 
+    };
+  } catch (error) {
+    console.error('Error refreshing token:', error);
+    return { success: false };
+  }
+}

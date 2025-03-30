@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth-options';
+import { db } from '@/lib/db';
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,7 +33,6 @@ export async function POST(request: NextRequest) {
 
       try {
         // Call Google's token endpoint to refresh the token
-        // This is a simplified implementation - you might need to adjust based on your auth setup
         const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
           method: 'POST',
           headers: {
@@ -57,15 +57,48 @@ export async function POST(request: NextRequest) {
 
         const tokenData = await tokenResponse.json();
         
-        // In a real implementation, you would update the session or user record
-        // with the new access token here
-        console.log('Token refreshed successfully');
-        
-        return NextResponse.json({
-          message: 'Token refresh completed successfully',
-          provider,
-          success: true
-        });
+        // IMPORTANT: Update the account with the new token
+        if (session.user.id) {
+          // Find the account in the database
+          const account = await db.account.findFirst({
+            where: {
+              userId: session.user.id,
+              provider: 'google',
+            },
+          });
+          
+          if (account) {
+            // Update the account with the new token
+            await db.account.update({
+              where: { id: account.id },
+              data: {
+                access_token: tokenData.access_token,
+                expires_at: Math.floor(Date.now() / 1000 + tokenData.expires_in),
+              },
+            });
+            
+            // Return the new token in the response
+            return NextResponse.json({
+              message: 'Token refresh completed successfully',
+              provider,
+              accessToken: tokenData.access_token,
+              expiresAt: Math.floor(Date.now() / 1000 + tokenData.expires_in),
+              success: true
+            });
+          } else {
+            console.error('Google account not found for user');
+            return NextResponse.json({ 
+              error: 'Account not found in database',
+              message: 'You may need to re-authenticate with Google'
+            }, { status: 404 });
+          }
+        } else {
+          console.error('User ID not found in session');
+          return NextResponse.json({ 
+            error: 'User not found',
+            message: 'Session user ID is missing'
+          }, { status: 400 });
+        }
       } catch (error) {
         console.error('Error refreshing Google token:', error);
         return NextResponse.json({ 
