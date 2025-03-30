@@ -84,6 +84,13 @@ const loadPersistedData = async () => {
 
 // Improved email key generation function
 const generateEmailKey = (email: Email): string => {
+  // For JustCall messages, we need to use the threadId specifically
+  if (email.accountType === 'justcall' && email.threadId) {
+    // Generate a key that includes the direction to prevent mixing outbound to different contacts
+    const direction = email.from.email === 'You' ? 'outbound' : 'inbound';
+    return `justcall:${email.threadId}:${direction}:${email.id}`;
+  }
+  
   // Create a more robust key that includes thread info when available
   // This ensures emails are properly grouped even from different sources
   if (email.threadId) {
@@ -159,48 +166,81 @@ const generateContactsFromEmails = (emails: Email[]): Contact[] => {
     
     // Add sender as contact (if not the current user)
     if (!email.from.email.includes("me")) {
-      // Use email address only as the contact key
-      const contactKey = email.from.email.toLowerCase();
-      const existingContact = contactsMap.get(contactKey);
+      // For JustCall outbound messages, use recipient's email (contact_number) as the key
+      if (email.accountType === 'justcall' && 
+          (email.from.email === 'You' || email.from.name === 'You') && 
+          email.to && email.to.length > 0) {
+        // Use the first recipient's email as the contact key
+        const contactKey = email.to[0].email.toLowerCase();
+        const existingContact = contactsMap.get(contactKey);
 
-      if (
-        !existingContact ||
-        new Date(existingContact.lastMessageDate) < emailDate
-      ) {
-        contactsMap.set(contactKey, {
-          name: email.from.name || (isSMS ? `Phone: ${email.from.email}` : email.from.email),
-          email: email.from.email,
-          lastMessageDate: email.date,
-          lastMessageSubject: isSMS ? 'SMS Message' : email.subject,
-          labels: isSMS ? ['SMS', ...(email.labels || [])] : email.labels,
-          accountId: email.accountId,
-          accountType: email.accountType,
-        });
+        if (
+          !existingContact ||
+          new Date(existingContact.lastMessageDate) < emailDate
+        ) {
+          contactsMap.set(contactKey, {
+            name: email.to[0].name || (isSMS ? `Phone: ${email.to[0].email}` : email.to[0].email),
+            email: email.to[0].email, // Important: Use recipient's number as the contact email
+            lastMessageDate: email.date,
+            lastMessageSubject: isSMS ? 'SMS Message' : email.subject,
+            labels: isSMS ? ['SMS', ...(email.labels || [])] : email.labels,
+            accountId: email.accountId,
+            accountType: email.accountType,
+          });
+        }
+      } else {
+        // For all other messages, use sender's email as the contact key
+        const contactKey = email.from.email.toLowerCase();
+        const existingContact = contactsMap.get(contactKey);
+
+        if (
+          !existingContact ||
+          new Date(existingContact.lastMessageDate) < emailDate
+        ) {
+          contactsMap.set(contactKey, {
+            name: email.from.name || (isSMS ? `Phone: ${email.from.email}` : email.from.email),
+            email: email.from.email,
+            lastMessageDate: email.date,
+            lastMessageSubject: isSMS ? 'SMS Message' : email.subject,
+            labels: isSMS ? ['SMS', ...(email.labels || [])] : email.labels,
+            accountId: email.accountId,
+            accountType: email.accountType,
+          });
+        }
       }
     }
 
     // Add recipients as contacts
     if (Array.isArray(email.to)) {
       email.to.forEach((recipient) => {
-        if (!recipient.email.includes("me")) {
-          // Use email address only as the contact key
-          const contactKey = recipient.email.toLowerCase();
-          const existingContact = contactsMap.get(contactKey);
+        // Skip 'You' recipients for JustCall messages
+        if (email.accountType === 'justcall' && 
+            (recipient.email.includes("me") || recipient.name === 'You')) {
+          return;
+        }
+        
+        // For non-justcall messages, skip 'me'
+        if (email.accountType !== 'justcall' && recipient.email.includes("me")) {
+          return;
+        }
 
-          if (
-            !existingContact ||
-            new Date(existingContact.lastMessageDate) < emailDate
-          ) {
-            contactsMap.set(contactKey, {
-              name: recipient.name || (isSMS ? `Phone: ${recipient.email}` : recipient.email),
-              email: recipient.email,
-              lastMessageDate: email.date,
-              lastMessageSubject: isSMS ? 'SMS Message' : email.subject,
-              labels: isSMS ? ['SMS', ...(email.labels || [])] : email.labels,
-              accountId: email.accountId,
-              accountType: email.accountType,
-            });
-          }
+        // Use email address only as the contact key
+        const contactKey = recipient.email.toLowerCase();
+        const existingContact = contactsMap.get(contactKey);
+
+        if (
+          !existingContact ||
+          new Date(existingContact.lastMessageDate) < emailDate
+        ) {
+          contactsMap.set(contactKey, {
+            name: recipient.name || (isSMS ? `Phone: ${recipient.email}` : recipient.email),
+            email: recipient.email,
+            lastMessageDate: email.date,
+            lastMessageSubject: isSMS ? 'SMS Message' : email.subject,
+            labels: isSMS ? ['SMS', ...(email.labels || [])] : email.labels,
+            accountId: email.accountId,
+            accountType: email.accountType,
+          });
         }
       });
     }
