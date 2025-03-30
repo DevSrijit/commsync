@@ -121,6 +121,11 @@ export function EmailList({
   const { data: session } = useSession();
   const { toast } = useToast();
 
+  // Reset to page 1 when activeFilter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeFilter]);
+
   // Improved SMS contact detection
   const isSMSMessage = (email: Email) =>
     email.accountType === 'twilio' ||
@@ -508,8 +513,8 @@ export function EmailList({
         ) : (
           <div className="flex flex-col h-full overflow-hidden">
             <div className="flex-1 overflow-y-auto pb-2">
-              {/* Show groups first */}
-              {groups.length > 0 && activeFilter !== 'sms' && (
+              {/* Show groups first - Only show header if currentGroups has items */}
+              {currentGroups.length > 0 && activeFilter !== 'sms' && (
                 <div className="px-3 mb-2">
                   <h2 className="text-sm font-medium text-muted-foreground mb-2">
                     {activeFilter === 'contacts' ? 'Contact Groups' : 'Contacts'}
@@ -528,7 +533,7 @@ export function EmailList({
               )}
 
               {/* Show contacts */}
-              {displayedContacts.length > 0 && activeFilter !== 'contacts' && (
+              {currentContacts.length > 0 && activeFilter !== 'contacts' && (
                 <div className="px-3">
                   <h2 className="text-sm font-medium text-muted-foreground mb-2">
                     {activeFilter === 'sms' ? 'SMS Conversations' : 'Conversations'}
