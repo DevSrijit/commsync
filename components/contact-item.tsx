@@ -96,7 +96,11 @@ export function ContactItem({ contact, isSelected, onClick, onDelete }: ContactI
         <p className="text-sm text-muted-foreground truncate mb-2">{contact.lastMessageSubject}</p>
         <div className="flex overflow-x-auto scroll-smooth">
           {contact.labels.map((label, index) => (
-            <Badge key={`${label}-${index}`} variant="outline" className="text-xs bg-neutral-900 whitespace-nowrap mr-1">
+            <Badge 
+              key={`${label}-${index}`} 
+              variant="outline" 
+              className="text-xs whitespace-nowrap mr-1 dark:bg-neutral-900 bg-neutral-100"
+            >
               {displayLabels(label)}
             </Badge>
           ))}

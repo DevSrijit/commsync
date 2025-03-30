@@ -29,6 +29,9 @@ import {
   DownloadCloud,
   MailPlus,
   RefreshCw,
+  Palette,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { SiTwilio } from "@icons-pack/react-simple-icons";
 import { Button } from "@/components/ui/button";
@@ -90,6 +93,7 @@ import {
   TooltipTrigger,
   TooltipProvider,  
 } from "@/components/ui/tooltip";
+import { useTheme } from "next-themes";
 
 export type MessageCategory =
   | "inbox"
@@ -134,6 +138,8 @@ export function Sidebar() {
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [loadPageSize, setLoadPageSize] = useState(100);
+
+  const { setTheme } = useTheme();
 
   // Function to fetch subscription data without causing re-renders
   const updateSubscriptionDataBackground = useCallback(async () => {
@@ -418,6 +424,29 @@ export function Sidebar() {
                 >
                   <Settings className="mr-2 h-4 w-4" />
                   <span>Preferences</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel className="font-medium text-xs px-2 pt-2">Theme</DropdownMenuLabel>
+                <DropdownMenuItem 
+                  onClick={() => setTheme("light")}
+                  className="flex items-center gap-2 cursor-pointer"
+                >
+                  <Sun className="mr-2 h-4 w-4" />
+                  <span>Light</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => setTheme("dark")}
+                  className="flex items-center gap-2 cursor-pointer"
+                >
+                  <Moon className="mr-2 h-4 w-4" />
+                  <span>Dark</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => setTheme("system")}
+                  className="flex items-center gap-2 cursor-pointer"
+                >
+                  <div className="mr-2 h-4 w-4 flex items-center justify-center">💻</div>
+                  <span>System</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem 
