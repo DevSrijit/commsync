@@ -74,21 +74,44 @@ export async function GET(request: Request) {
           console.log(`- Pagination cursor (lastSmsIdFetched): ${lastSmsIdFetched || 'none'}`);
           
           // Use cursor-based pagination with lastSmsIdFetched instead of page numbers
-          messages = await justcallService.getMessages(
+          const result = await justcallService.getMessages(
             phoneToUse, 
             undefined, // No date filtering
             pageSize,
             lastSmsIdFetched || undefined,
             sortDirection as 'asc' | 'desc'
           );
-          console.log(`Retrieved ${messages.length} messages from JustCall`);
+          
+          // Extract messages and rate limit info
+          const { messages: justcallMessages, rateLimited, retryAfter } = result;
+          
+          // Log rate limit status if it's close to being reached
+          if (rateLimited) {
+            console.warn(`⚠️ JustCall API rate limit warning for account ${account.id}`);
+            if (retryAfter) {
+              console.warn(`   Recommended to retry after ${retryAfter} seconds`);
+              
+              // Add rate limit info to global state
+              // Will be used later for headers in the final response
+              (global as any).justcallRateLimitReset = retryAfter;
+              (global as any).justcallRateLimited = true;
+            }
+          }
+          
+          console.log(`Retrieved ${justcallMessages.length} messages from JustCall`);
           
           // Log the ID range to help with troubleshooting pagination
-          if (messages.length > 0) {
-            const firstId = messages[0].id;
-            const lastId = messages[messages.length - 1].id;
+          if (justcallMessages.length > 0) {
+            const firstId = justcallMessages[0].id;
+            const lastId = justcallMessages[justcallMessages.length - 1].id;
             console.log(`Message ID range: ${firstId} - ${lastId}`);
           }
+          
+          // Add messages to our collection (even if partial due to rate limiting)
+          messages = justcallMessages.map(msg => ({
+            ...msg,
+            accountId: account.id
+          }));
         }
         
         // Add account ID to each message for reference
@@ -106,10 +129,26 @@ export async function GET(request: Request) {
 
     // For JustCall with cursor-based pagination, we don't need to apply additional pagination
     if (platform.toLowerCase() === 'justcall') {
+      // Create headers object for rate limit info if needed
+      const responseHeaders: HeadersInit = {};
+      
+      // Add rate limit headers if we encountered rate limiting
+      if ((global as any).justcallRateLimited) {
+        responseHeaders['X-RateLimit-Warning'] = 'true';
+        
+        if ((global as any).justcallRateLimitReset) {
+          responseHeaders['X-RateLimit-Reset'] = (global as any).justcallRateLimitReset.toString();
+        }
+        
+        // Reset the global state
+        (global as any).justcallRateLimited = false;
+        (global as any).justcallRateLimitReset = undefined;
+      }
+
       return NextResponse.json({ 
         messages: allMessages,
         total: allMessages.length
-      });
+      }, { headers: responseHeaders });
     }
     
     // Apply pagination to the results for other platforms

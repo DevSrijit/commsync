@@ -85,16 +85,21 @@ export async function GET(request: Request) {
         
         // Test 3: Get messages with normal filtering
         try {
-          const messages = await justCallService.getMessages(
+          const result = await justCallService.getMessages(
             account.accountIdentifier,
             undefined,
             limit
           );
+          
+          const { messages, rateLimited, retryAfter } = result;
+          
           diagnostics.tests.push({
             name: 'getMessages',
             status: 'success',
             count: messages.length,
-            phoneNumber: account.accountIdentifier
+            phoneNumber: account.accountIdentifier,
+            rateLimited,
+            retryAfter
           });
         } catch (error: any) {
           diagnostics.tests.push({

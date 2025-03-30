@@ -252,13 +252,26 @@ export const syncJustCallAccounts = async (
           console.log(`- Pagination cursor: ${options?.lastSmsIdFetched || 'none'}`);
           
           // Get messages using the lastSmsIdFetched for pagination instead of date-based filtering
-          const messages = await justCallService.getMessages(
+          const result = await justCallService.getMessages(
             phoneNumber, 
             undefined, // No date filtering needed
             options?.pageSize || 100,
             options?.lastSmsIdFetched,
             options?.sortDirection || 'desc'  // Default to desc for newest first
           );
+          
+          // Extract the messages array from the result
+          const messages = result.messages;
+          const rateLimited = result.rateLimited;
+          const retryAfter = result.retryAfter;
+          
+          // Include rate limit information in the response
+          if (rateLimited) {
+            console.warn(`⚠️ JustCall API rate limit warning for account ${account.id}`);
+            if (retryAfter) {
+              console.warn(`   Recommended to wait ${retryAfter} seconds before next request`);
+            }
+          }
           
           // Add debug logging to inspect the retrieved messages
           if (messages.length > 0) {
@@ -316,7 +329,9 @@ export const syncJustCallAccounts = async (
             accountId: account.id, 
             processed: processedCount, 
             skipped: skippedCount, 
-            lastMessageId: oldestMessageId // Return the oldest message ID for pagination
+            lastMessageId: oldestMessageId, // Return the oldest message ID for pagination
+            rateLimited,
+            retryAfter
           };
         } catch (error) {
           console.error(`Error syncing JustCall account ${account.id}:`, error);

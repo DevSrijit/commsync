@@ -14,13 +14,13 @@ import { MessageCategory } from "@/components/sidebar";
 import { useToast } from "@/hooks/use-toast";
 
 // Pagination component with Apple-inspired design
-const Pagination = ({ 
-  currentPage, 
-  totalPages, 
-  onPageChange 
-}: { 
-  currentPage: number; 
-  totalPages: number; 
+const Pagination = ({
+  currentPage,
+  totalPages,
+  onPageChange
+}: {
+  currentPage: number;
+  totalPages: number;
   onPageChange: (page: number) => void;
 }) => {
   // Calculate which page numbers to show (show 5 pages at most)
@@ -65,7 +65,7 @@ const Pagination = ({
         <ChevronLeft className="h-4 w-4" />
         <span className="sr-only">Previous page</span>
       </Button>
-      
+
       {getPageNumbers().map(page => (
         <Button
           key={page}
@@ -80,7 +80,7 @@ const Pagination = ({
           {page}
         </Button>
       ))}
-      
+
       <Button
         variant="ghost"
         size="icon"
@@ -225,8 +225,8 @@ export function EmailList({
     if (!matchesSearch) return false;
 
     // Skip contacts that are the user's own Gmail address and likely error placeholders
-    if (session?.user?.email && contact.email === session.user.email && 
-        contact.accountType !== 'imap' && !contact.accountId) {
+    if (session?.user?.email && contact.email === session.user.email &&
+      contact.accountType !== 'imap' && !contact.accountId) {
       return false;
     }
 
@@ -285,7 +285,7 @@ export function EmailList({
   const handleDeleteContact = (contactEmail: string) => {
     // Add to deleted contacts array so it's filtered from UI immediately
     setDeletedContacts(prev => [...prev, contactEmail]);
-    
+
     // If this was the selected contact, deselect it
     if (selectedContact === contactEmail) {
       onSelectContact(''); // Use empty string instead of null
@@ -301,7 +301,7 @@ export function EmailList({
   const totalContactPages = Math.max(1, Math.ceil(visibleContacts.length / itemsPerPage));
   const totalGroupPages = Math.max(1, Math.ceil(groups.length / itemsPerPage));
   const totalPages = activeFilter === 'contacts' ? totalGroupPages : totalContactPages;
-  
+
   // Get current page items
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
@@ -360,7 +360,7 @@ export function EmailList({
 
       // Get the current store state
       const store = useEmailStore.getState();
-      
+
       // Get the user's configured page size
       const pageSize = store.loadPageSize || 100;
       console.log(`Loading more messages with pageSize: ${pageSize}`);
@@ -377,6 +377,7 @@ export function EmailList({
 
       // Track which services returned new messages
       const results = await Promise.all([
+        store.syncEmails(session?.user?.accessToken || ''),
         store.syncImapAccounts(),
         store.syncTwilioAccounts(),
         store.syncJustcallAccounts(true)
@@ -386,10 +387,10 @@ export function EmailList({
       const newStore = useEmailStore.getState();
       const newEmailCount = newStore.emails.length;
       const messagesLoaded = newEmailCount - initialEmailCount;
-      
+
       // Check if JustCall cursor changed
       if (initialCursor !== newStore.lastJustcallMessageId) {
-        console.log('JustCall cursor updated:', 
+        console.log('JustCall cursor updated:',
           `${initialCursor || 'none'} → ${newStore.lastJustcallMessageId || 'none'}`);
       } else if (newStore.lastJustcallMessageId) {
         console.warn('JustCall cursor did not update! Still using:', newStore.lastJustcallMessageId);
@@ -397,9 +398,30 @@ export function EmailList({
 
       // Log results by service
       results.forEach((result, index) => {
-        const serviceName = ['IMAP', 'Twilio', 'JustCall'][index];
+        const serviceName = ['Gmail', 'IMAP', 'Twilio', 'JustCall'][index];
         if (result !== undefined) {
           console.log(`${serviceName} loaded ${result} new messages`);
+
+          // Check if this was a rate-limited result for JustCall
+          if (index === 3 && typeof result === 'object') {
+            // Type assertion for JustCall result
+            const justcallResult = result as {
+              rateLimited?: boolean;
+              retryAfter?: number;
+            };
+
+            if (justcallResult.rateLimited) {
+              // Show rate limit warning to the user
+              toast({
+                title: "JustCall API Rate Limit",
+                description: justcallResult.retryAfter
+                  ? `Rate limit reached. Try again in ${justcallResult.retryAfter} seconds.`
+                  : "Rate limit approaching. Try a smaller batch size.",
+                variant: "destructive",
+                duration: 5000
+              });
+            }
+          }
         }
       });
 
@@ -422,7 +444,7 @@ export function EmailList({
           setTimeout(() => {
             setNoMoreMessages(false);
             localStorage.setItem('emptyLoadCount', '0');
-            
+
             // For JustCall, we don't need to reset anything as we use cursor-based pagination
             // The lastJustcallMessageId will be automatically updated as new messages come in
           }, 3000);
@@ -437,12 +459,21 @@ export function EmailList({
     } catch (error) {
       console.error("Error loading more messages:", error);
       setIsLoadingMore(false);
+
+      // Show error toast
+      toast({
+        title: "Error Loading Messages",
+        description: error instanceof Error ? error.message : "Unknown error occurred",
+        variant: "destructive",
+        duration: 5000
+      });
+
       // Show error briefly then allow retry
       setTimeout(() => {
         setNoMoreMessages(false);
       }, 3000);
     }
-  }, []);
+  }, [toast]);
 
   if (isLoading) {
     return (
@@ -557,10 +588,10 @@ export function EmailList({
             <div className="sticky bottom-0 bg-background border-t">
               {/* Pagination controls */}
               {(groups.length > 0 || displayedContacts.length > 0) && totalPages > 1 && (
-                <Pagination 
-                  currentPage={currentPage} 
-                  totalPages={totalPages} 
-                  onPageChange={handlePageChange} 
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={handlePageChange}
                 />
               )}
 

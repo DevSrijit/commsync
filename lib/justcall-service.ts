@@ -145,7 +145,7 @@ export class JustCallService {
     limit = 100,
     lastSmsIdFetched?: string,
     sortDirection: "asc" | "desc" = "desc"
-  ): Promise<JustCallMessage[]> {
+  ): Promise<{ messages: JustCallMessage[], rateLimited?: boolean, retryAfter?: number }> {
     try {
       // Using the V2 SMS endpoints as per the documentation
       let url = `${this.baseUrl}/texts`;
@@ -191,6 +191,24 @@ export class JustCallService {
         headers: this.getAuthHeaders(),
       });
 
+      // Check for rate limiting headers
+      const rateLimitRemaining = parseInt(response.headers.get('X-RateLimit-Remaining') || '-1');
+      const rateLimitReset = parseInt(response.headers.get('X-RateLimit-Reset') || '-1');
+      
+      if (rateLimitRemaining === 0 || (response.status === 429)) {
+        console.warn(`⚠️ JustCall API rate limit reached! Reset in ${rateLimitReset} seconds`);
+        
+        // If we got a 429 but no specific rate limit headers, use a default wait time
+        const retryAfter = rateLimitReset > 0 ? rateLimitReset : 60; // Default to 60 seconds
+        
+        // Return an empty result with rate limit info
+        return { 
+          messages: [], 
+          rateLimited: true, 
+          retryAfter 
+        };
+      }
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         const statusCode = response.status;
@@ -218,7 +236,7 @@ export class JustCallService {
       const messages = data.data || [];
       if (!Array.isArray(messages)) {
         console.error("JustCall API returned unexpected data format:", data);
-        return [];
+        return { messages: [] };
       }
 
       // Log all messages with their timestamps for debugging
@@ -257,7 +275,7 @@ export class JustCallService {
       });
 
       // Second pass: map messages and add threadId
-      return messages
+      const processedMessages = messages
         .map((message: any): JustCallMessage => {
           if (!message) {
             throw new Error("Received null message from JustCall API");
@@ -313,9 +331,17 @@ export class JustCallService {
           };
         })
         .filter(Boolean); // Remove null messages
+        
+      // Return rate limit info along with messages
+      return { 
+        messages: processedMessages,
+        rateLimited: rateLimitRemaining <= 3, // Warning if we're close to limit
+        retryAfter: rateLimitReset > 0 ? rateLimitReset : undefined
+      };
     } catch (error) {
       console.error("Failed to fetch JustCall messages:", error);
-      throw error;
+      // Return an empty result instead of throwing
+      return { messages: [], rateLimited: false };
     }
   }
 

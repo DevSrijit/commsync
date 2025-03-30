@@ -40,7 +40,20 @@ export async function POST(req: NextRequest) {
     const lastSyncDate = syncAccount.lastSync;
     
     // Fetch messages from JustCall API
-    const messages = await justCallService.getMessages(undefined, lastSyncDate);
+    const result = await justCallService.getMessages(undefined, lastSyncDate);
+    const { messages, rateLimited, retryAfter } = result;
+    
+    // Add rate limit info to response headers
+    const responseHeaders: HeadersInit = {};
+    if (rateLimited) {
+      console.warn(`⚠️ JustCall API rate limit warning for account ${accountId}`);
+      responseHeaders['X-RateLimit-Warning'] = 'true';
+      
+      if (retryAfter) {
+        console.warn(`   Recommended to retry after ${retryAfter} seconds`);
+        responseHeaders['X-RateLimit-Reset'] = retryAfter.toString();
+      }
+    }
     
     let processedCount = 0;
     
@@ -64,7 +77,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       status: 'success',
       messagesProcessed: processedCount,
-    }, { status: 200 });
+      rateLimited: rateLimited ? true : false,
+      retryAfter: retryAfter || undefined
+    }, { status: 200, headers: responseHeaders });
     
   } catch (error) {
     console.error('Error syncing JustCall messages:', error);

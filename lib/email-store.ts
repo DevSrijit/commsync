@@ -30,7 +30,7 @@ interface EmailStore {
   syncEmails: (gmailToken: string | null) => Promise<void>;
   syncImapAccounts: () => Promise<number>;
   syncTwilioAccounts: () => Promise<number>;
-  syncJustcallAccounts: (isLoadingMore?: boolean) => Promise<number>;
+  syncJustcallAccounts: (isLoadingMore?: boolean) => Promise<number | { count: number; rateLimited: boolean; retryAfter: number }>;
   syncAllPlatforms: (gmailToken?: string | null) => Promise<void>;
   setImapAccounts: (accounts: ImapAccount[]) => void;
   setTwilioAccounts: (accounts: any[]) => void;
@@ -672,6 +672,8 @@ export const useEmailStore = create<EmailStore>((set, get) => {
         
         let totalNewMessages = 0;
         let lastProcessedMessageId = lastMessageId;
+        let rateLimitHit = false;
+        let rateLimitWait = 0;
         
         // Process each account separately to ensure phone number filtering
         for (const account of accounts) {
@@ -699,37 +701,94 @@ export const useEmailStore = create<EmailStore>((set, get) => {
           for (let batch = 0; batch < batchCount; batch++) {
             console.log(`Fetching JustCall batch ${batch + 1}/${batchCount} with cursor: ${currentBatchCursor || 'none'}`);
             
-            // Sync messages for this specific account/phone number (one batch)
-            const syncResult = await fetch("/api/sync/messages", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                platform: "justcall",
-                pageSize: batchSize, // Always use batchSize (100) for JustCall API
-                phoneNumber: account.accountIdentifier,
-                accountId: account.id,
-                lastSmsIdFetched: currentBatchCursor, // Use the cursor for this batch
-                sortDirection: 'desc', // Always use desc for newest messages first
-                isLoadingMore: isLoadingMore // Indicate whether this is a "Load More" operation
-              }),
-            });
-            
-            if (!syncResult.ok) {
-              console.error(`Failed to sync JustCall batch ${batch + 1}:`, await syncResult.text());
-              break; // Stop batching on error
+            // If we hit a rate limit on the previous batch, enforce a delay
+            if (rateLimitHit && rateLimitWait > 0) {
+              console.log(`🕒 Rate limit hit. Waiting ${rateLimitWait} seconds before next batch...`);
+              await new Promise(resolve => setTimeout(resolve, rateLimitWait * 1000));
+              rateLimitHit = false;
+              console.log(`✅ Resuming after rate limit delay`);
+            } else if (batch > 0) {
+              // Add a small delay between batches to avoid rate limiting
+              console.log(`Adding a small delay between batches (0.5s)...`);
+              await new Promise(resolve => setTimeout(resolve, 500));
             }
             
-            // After syncing, get messages for this specific phone number
-            const messagesResponse = await fetch(`/api/messages?platform=justcall&pageSize=${batchSize}&phoneNumber=${encodeURIComponent(account.accountIdentifier)}&accountId=${account.id}&lastSmsIdFetched=${currentBatchCursor || ''}&sortDirection=desc`);
-            
-            if (messagesResponse.ok) {
-              const { messages } = await messagesResponse.json();
-              const batchMessageCount = messages?.length || 0;
+            try {
+              // Sync messages for this specific account/phone number (one batch)
+              const syncResult = await fetch("/api/sync/messages", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  platform: "justcall",
+                  pageSize: batchSize, // Always use batchSize (100) for JustCall API
+                  phoneNumber: account.accountIdentifier,
+                  accountId: account.id,
+                  lastSmsIdFetched: currentBatchCursor, // Use the cursor for this batch
+                  sortDirection: 'desc', // Always use desc for newest messages first
+                  isLoadingMore: isLoadingMore // Indicate whether this is a "Load More" operation
+                }),
+              });
+              
+              // Check for rate limit headers
+              const rateLimitWarning = syncResult.headers.get('X-RateLimit-Warning');
+              const rateLimitReset = parseInt(syncResult.headers.get('X-RateLimit-Reset') || '0');
+              
+              if (rateLimitWarning === 'true') {
+                console.warn(`⚠️ JustCall API rate limit warning received!`);
+                if (rateLimitReset > 0) {
+                  console.warn(`Recommended to wait ${rateLimitReset} seconds before next request`);
+                  rateLimitHit = true;
+                  rateLimitWait = rateLimitReset;
+                }
+              }
+              
+              // Even if we get a non-OK response, we continue with the messages we've already gathered
+              if (!syncResult.ok) {
+                console.error(`Failed to sync JustCall batch ${batch + 1}:`, await syncResult.text());
+                
+                // If we have some messages already, we'll process those instead of breaking
+                if (allMessages.length > 0) {
+                  console.log(`Will continue with ${allMessages.length} messages already fetched`);
+                  break; // Stop batching but don't fail the entire operation
+                } else {
+                  // If this is the first batch and it failed, try to at least get existing messages
+                  console.log(`First batch failed, trying to get existing messages...`);
+                }
+              }
+              
+              // After syncing, get messages for this specific phone number
+              const messagesResponse = await fetch(`/api/messages?platform=justcall&pageSize=${batchSize}&phoneNumber=${encodeURIComponent(account.accountIdentifier)}&accountId=${account.id}&lastSmsIdFetched=${currentBatchCursor || ''}&sortDirection=desc`);
+              
+              // Check for rate limit headers again
+              const msgRateLimitWarning = messagesResponse.headers.get('X-RateLimit-Warning');
+              const msgRateLimitReset = parseInt(messagesResponse.headers.get('X-RateLimit-Reset') || '0');
+              
+              if (msgRateLimitWarning === 'true') {
+                console.warn(`⚠️ JustCall API rate limit warning received from messages endpoint!`);
+                if (msgRateLimitReset > 0) {
+                  console.warn(`Recommended to wait ${msgRateLimitReset} seconds before next request`);
+                  rateLimitHit = true;
+                  rateLimitWait = Math.max(rateLimitWait, msgRateLimitReset);
+                }
+              }
+              
+              // If we get messages, even with a non-OK response, we'll use them
+              let batchMessages: any[] = [];
+              
+              if (messagesResponse.ok) {
+                const { messages } = await messagesResponse.json();
+                batchMessages = messages || [];
+              } else {
+                console.error(`Failed to fetch JustCall messages in batch ${batch + 1}:`, await messagesResponse.text());
+                // Continue with next batch, we'll process what we have so far
+              }
+              
+              const batchMessageCount = batchMessages.length;
               console.log(`Retrieved ${batchMessageCount} JustCall messages in batch ${batch + 1}`);
               
-              if (messages && messages.length > 0) {
+              if (batchMessageCount > 0) {
                 // Save the ID of the last message for pagination
-                const lastMessage = messages[messages.length - 1]; // Last is oldest in desc order
+                const lastMessage = batchMessages[batchMessages.length - 1]; // Last is oldest in desc order
                 if (lastMessage && lastMessage.id) {
                   // Update the cursor for the next batch
                   lastBatchProcessedMessage = lastMessage.id;
@@ -743,11 +802,11 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                 }
                 
                 // Add messages to our collection
-                allMessages = [...allMessages, ...messages];
+                allMessages = [...allMessages, ...batchMessages];
                 
                 // If we have enough messages across all batches or if this batch was less than batchSize
                 // (meaning there are no more messages), break the loop
-                if (allMessages.length >= totalDesiredMessages || messages.length < batchSize) {
+                if (allMessages.length >= totalDesiredMessages || batchMessageCount < batchSize) {
                   console.log(`Received enough messages (${allMessages.length}) or last batch was smaller than limit`);
                   break;
                 }
@@ -756,9 +815,20 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                 console.log(`No JustCall messages in batch ${batch + 1}, stopping`);
                 break;
               }
-            } else {
-              console.error(`Failed to fetch JustCall messages in batch ${batch + 1}:`, await messagesResponse.text());
-              break;
+            } catch (batchError) {
+              console.error(`Error in JustCall batch ${batch + 1}:`, batchError);
+              
+              // If we've already fetched some messages, stop batching but continue processing
+              if (allMessages.length > 0) {
+                console.log(`Will continue with ${allMessages.length} messages already fetched`);
+                break;
+              }
+              
+              // If this is the first batch and it completely failed, move to the next account
+              if (batch === 0) {
+                console.warn(`First batch failed completely, moving to next account`);
+                continue;
+              }
             }
           }
           
@@ -868,8 +938,15 @@ export const useEmailStore = create<EmailStore>((set, get) => {
           console.log(`Skipping cursor update during sync operation`);
         }
         
-        // Return the count of new messages found
-        return totalNewMessages;
+        // Return the count of new messages found along with rate limit information
+        const hasRateLimit = rateLimitHit || rateLimitWait > 0;
+        return hasRateLimit 
+          ? { 
+              count: totalNewMessages, 
+              rateLimited: true, 
+              retryAfter: rateLimitWait 
+            } 
+          : totalNewMessages;
       } catch (error) {
         console.error("Error syncing JustCall accounts:", error);
         return 0; // Return 0 new messages on error
