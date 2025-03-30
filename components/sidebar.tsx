@@ -281,11 +281,11 @@ export function Sidebar() {
 
   // Calculate subscription-related values
   const storageUsed = subscriptionData?.usedStorage || 0;
-  const storageLimit = subscriptionData?.totalStorage || 5120; // Default 5GB
+  const storageLimit = subscriptionData?.totalStorage || 100; // Default 100MB for Lite
   const connectionsUsed = subscriptionData?.usedConnections || 1;
-  const connectionsLimit = subscriptionData?.totalConnections || 6; // Default 6 connections
+  const connectionsLimit = subscriptionData?.totalConnections || 6; // Default 6 connections for Lite
   const aiCreditsUsed = subscriptionData?.usedAiCredits || 0;
-  const aiCreditsLimit = subscriptionData?.totalAiCredits || 25; // Default 25 credits
+  const aiCreditsLimit = subscriptionData?.totalAiCredits || 25; // Default 25 credits for Lite
   
   // Format values for display
   const formattedStorageUsed = formatStorage(storageUsed);
