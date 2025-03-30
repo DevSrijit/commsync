@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Search, Users, RotateCw } from "lucide-react";
+import { Search, Users, RotateCw, ChevronLeft, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useEmailStore } from "@/lib/email-store";
 import { ContactItem } from "@/components/contact-item";
@@ -12,6 +12,88 @@ import { Button } from "@/components/ui/button";
 import { useSession } from "next-auth/react";
 import { MessageCategory } from "@/components/sidebar";
 import { useToast } from "@/hooks/use-toast";
+
+// Pagination component with Apple-inspired design
+const Pagination = ({ 
+  currentPage, 
+  totalPages, 
+  onPageChange 
+}: { 
+  currentPage: number; 
+  totalPages: number; 
+  onPageChange: (page: number) => void;
+}) => {
+  // Calculate which page numbers to show (show 5 pages at most)
+  const getPageNumbers = () => {
+    const pageNumbers = [];
+    // For small number of pages, show all
+    if (totalPages <= 5) {
+      for (let i = 1; i <= totalPages; i++) {
+        pageNumbers.push(i);
+      }
+    } else {
+      // For many pages, show current page and neighbors
+      if (currentPage <= 3) {
+        // Show first 5 pages
+        for (let i = 1; i <= 5; i++) {
+          pageNumbers.push(i);
+        }
+      } else if (currentPage >= totalPages - 2) {
+        // Show last 5 pages
+        for (let i = totalPages - 4; i <= totalPages; i++) {
+          pageNumbers.push(i);
+        }
+      } else {
+        // Show current page and 2 neighbors on each side
+        for (let i = currentPage - 2; i <= currentPage + 2; i++) {
+          pageNumbers.push(i);
+        }
+      }
+    }
+    return pageNumbers;
+  };
+
+  return (
+    <div className="flex items-center justify-center gap-1 py-2">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 rounded-full"
+        onClick={() => onPageChange(currentPage - 1)}
+        disabled={currentPage === 1}
+      >
+        <ChevronLeft className="h-4 w-4" />
+        <span className="sr-only">Previous page</span>
+      </Button>
+      
+      {getPageNumbers().map(page => (
+        <Button
+          key={page}
+          variant={currentPage === page ? "default" : "ghost"}
+          size="sm"
+          className={cn(
+            "h-8 w-8 rounded-full px-0",
+            currentPage === page && "bg-primary text-primary-foreground font-medium"
+          )}
+          onClick={() => onPageChange(page)}
+        >
+          {page}
+        </Button>
+      ))}
+      
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 rounded-full"
+        onClick={() => onPageChange(currentPage + 1)}
+        disabled={currentPage === totalPages}
+      >
+        <ChevronRight className="h-4 w-4" />
+        <span className="sr-only">Next page</span>
+      </Button>
+    </div>
+  );
+};
 
 interface EmailListProps {
   isLoading: boolean;
@@ -33,6 +115,8 @@ export function EmailList({
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [noMoreMessages, setNoMoreMessages] = useState(false);
   const [deletedContacts, setDeletedContacts] = useState<string[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(100);
   const containerRef = useRef<HTMLDivElement>(null);
   const { data: session } = useSession();
   const { toast } = useToast();
@@ -178,6 +262,7 @@ export function EmailList({
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(e.target.value);
+    setCurrentPage(1); // Reset to first page on search
   };
 
   const handleGroupSelect = (group: Group) => {
@@ -206,6 +291,29 @@ export function EmailList({
   const visibleContacts = displayedContacts.filter(
     contact => !deletedContacts.includes(contact.email)
   );
+
+  // Pagination calculations
+  const totalContactPages = Math.max(1, Math.ceil(visibleContacts.length / itemsPerPage));
+  const totalGroupPages = Math.max(1, Math.ceil(groups.length / itemsPerPage));
+  const totalPages = activeFilter === 'contacts' ? totalGroupPages : totalContactPages;
+  
+  // Get current page items
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentContacts = visibleContacts.slice(indexOfFirstItem, indexOfLastItem);
+  const currentGroups = groups.slice(indexOfFirstItem, indexOfLastItem);
+
+  // Handle page change
+  const handlePageChange = (pageNumber: number) => {
+    setCurrentPage(pageNumber);
+    // Scroll to top of list when changing pages
+    if (containerRef.current) {
+      containerRef.current.scrollTop = 0;
+    }
+  };
+
+  // Determine if we're on the last page
+  const isLastPage = currentPage === totalPages;
 
   const GroupItem = ({ group, isSelected, onClick }: {
     group: Group;
@@ -363,7 +471,7 @@ export function EmailList({
   return (
     <div
       className={cn(
-        "flex flex-col h-full overflow-y-auto",
+        "flex flex-col h-full overflow-hidden",
         className
       )}
       ref={containerRef}
@@ -398,71 +506,87 @@ export function EmailList({
             )}
           </div>
         ) : (
-          <>
-            {/* Show groups first */}
-            {groups.length > 0 && activeFilter !== 'sms' && (
-              <div className="px-3 mb-2">
-                <h2 className="text-sm font-medium text-muted-foreground mb-2">
-                  {activeFilter === 'contacts' ? 'Contact Groups' : 'Contacts'}
-                </h2>
-                <div className="space-y-1">
-                  {groups.map(group => (
-                    <GroupItem
-                      key={group.id}
-                      group={group}
-                      isSelected={selectedGroupId === group.id}
-                      onClick={() => handleGroupSelect(group)}
-                    />
-                  ))}
+          <div className="flex flex-col h-full overflow-hidden">
+            <div className="flex-1 overflow-y-auto pb-2">
+              {/* Show groups first */}
+              {groups.length > 0 && activeFilter !== 'sms' && (
+                <div className="px-3 mb-2">
+                  <h2 className="text-sm font-medium text-muted-foreground mb-2">
+                    {activeFilter === 'contacts' ? 'Contact Groups' : 'Contacts'}
+                  </h2>
+                  <div className="space-y-1">
+                    {currentGroups.map(group => (
+                      <GroupItem
+                        key={group.id}
+                        group={group}
+                        isSelected={selectedGroupId === group.id}
+                        onClick={() => handleGroupSelect(group)}
+                      />
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* Show contacts */}
-            {displayedContacts.length > 0 && activeFilter !== 'contacts' && (
-              <div className="px-3">
-                <h2 className="text-sm font-medium text-muted-foreground mb-2">
-                  {activeFilter === 'sms' ? 'SMS Conversations' : 'Conversations'}
-                </h2>
-                <div>
-                  {visibleContacts.map((contact) => (
-                    <ContactItem
-                      key={contact.email}
-                      contact={contact}
-                      isSelected={selectedContact === contact.email}
-                      onClick={() => onSelectContact(contact.email)}
-                      onDelete={handleDeleteContact}
-                    />
-                  ))}
+              {/* Show contacts */}
+              {displayedContacts.length > 0 && activeFilter !== 'contacts' && (
+                <div className="px-3">
+                  <h2 className="text-sm font-medium text-muted-foreground mb-2">
+                    {activeFilter === 'sms' ? 'SMS Conversations' : 'Conversations'}
+                  </h2>
+                  <div>
+                    {currentContacts.map((contact) => (
+                      <ContactItem
+                        key={contact.email}
+                        contact={contact}
+                        isSelected={selectedContact === contact.email}
+                        onClick={() => onSelectContact(contact.email)}
+                        onDelete={handleDeleteContact}
+                      />
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
-
-            {/* Load More button */}
-            <div className="p-4 flex justify-center">
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full flex items-center justify-center gap-2"
-                onClick={loadMoreMessages}
-                disabled={isLoadingMore || noMoreMessages}
-              >
-                {isLoadingMore ? (
-                  <>
-                    <RotateCw className="h-4 w-4 animate-spin" />
-                    <span>Loading more...</span>
-                  </>
-                ) : noMoreMessages ? (
-                  <span>No more messages</span>
-                ) : (
-                  <>
-                    <RotateCw className="h-4 w-4" />
-                    <span>Load more messages</span>
-                  </>
-                )}
-              </Button>
+              )}
             </div>
-          </>
+
+            {/* Fixed footer area for pagination and load more */}
+            <div className="sticky bottom-0 bg-background border-t">
+              {/* Pagination controls */}
+              {(groups.length > 0 || displayedContacts.length > 0) && totalPages > 1 && (
+                <Pagination 
+                  currentPage={currentPage} 
+                  totalPages={totalPages} 
+                  onPageChange={handlePageChange} 
+                />
+              )}
+
+              {/* Load More button - only show on last page */}
+              {isLastPage && (
+                <div className="p-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full flex items-center justify-center gap-2"
+                    onClick={loadMoreMessages}
+                    disabled={isLoadingMore || noMoreMessages}
+                  >
+                    {isLoadingMore ? (
+                      <>
+                        <RotateCw className="h-4 w-4 animate-spin" />
+                        <span>Loading more...</span>
+                      </>
+                    ) : noMoreMessages ? (
+                      <span>No more messages</span>
+                    ) : (
+                      <>
+                        <RotateCw className="h-4 w-4" />
+                        <span>Load more messages</span>
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
         )}
       </div>
     </div>
