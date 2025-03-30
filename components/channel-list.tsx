@@ -366,13 +366,16 @@ export function EmailList({
       console.log(`Loading more messages with pageSize: ${pageSize}`);
 
       const initialEmailCount = store.emails.length;
-      const initialCursor = store.lastJustcallMessageId;
+      // Get the JustCall message ID map for tracking changes
+      const initialJustcallCursors = store.lastJustcallMessageIds;
 
       console.log('Loading more messages...');
       console.log('Current pagination state:');
       console.log('- IMAP page:', store.currentImapPage);
       console.log('- Twilio page:', store.currentTwilioPage);
-      console.log('- JustCall cursor (lastMessageId):', store.lastJustcallMessageId || 'none');
+      console.log('- JustCall cursors:', Object.keys(initialJustcallCursors).length > 0 
+        ? Object.entries(initialJustcallCursors).map(([id, cursor]) => `Account ${id}: ${cursor}`).join(', ')
+        : 'none');
       console.log('- Page size:', pageSize);
 
       // Find the oldest Gmail email to use for filtering
@@ -412,12 +415,19 @@ export function EmailList({
       const newEmailCount = newStore.emails.length;
       const messagesLoaded = newEmailCount - initialEmailCount;
 
-      // Check if JustCall cursor changed
-      if (initialCursor !== newStore.lastJustcallMessageId) {
-        console.log('JustCall cursor updated:',
-          `${initialCursor || 'none'} → ${newStore.lastJustcallMessageId || 'none'}`);
-      } else if (newStore.lastJustcallMessageId) {
-        console.warn('JustCall cursor did not update! Still using:', newStore.lastJustcallMessageId);
+      // Check if JustCall cursors changed
+      const newJustcallCursors = newStore.lastJustcallMessageIds;
+      const cursorChanges = Object.keys(newJustcallCursors).filter(accountId => 
+        newJustcallCursors[accountId] !== (initialJustcallCursors[accountId] || null)
+      );
+      
+      if (cursorChanges.length > 0) {
+        console.log(`JustCall cursors updated for ${cursorChanges.length} accounts:`);
+        cursorChanges.forEach(accountId => {
+          console.log(`- Account ${accountId}: ${initialJustcallCursors[accountId] || 'none'} → ${newJustcallCursors[accountId]}`);
+        });
+      } else if (Object.keys(newJustcallCursors).length > 0) {
+        console.warn('JustCall cursors did not update! Still using the same cursors');
       }
 
       // Log results by service
@@ -469,8 +479,7 @@ export function EmailList({
             setNoMoreMessages(false);
             localStorage.setItem('emptyLoadCount', '0');
 
-            // For JustCall, we don't need to reset anything as we use cursor-based pagination
-            // The lastJustcallMessageId will be automatically updated as new messages come in
+            // The lastJustcallMessageIds map will be automatically updated for each account as new messages come in
           }, 3000);
         }
       } else {

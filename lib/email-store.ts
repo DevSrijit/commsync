@@ -19,7 +19,7 @@ interface EmailStore {
   groups: Group[];
   currentImapPage: number;
   currentTwilioPage: number;
-  lastJustcallMessageId: string | null;
+  lastJustcallMessageIds: Record<string, string>;
   loadPageSize: number;
   setEmails: (emails: Email[]) => void;
   setActiveFilter: (filter: MessageCategory) => void;
@@ -55,7 +55,7 @@ const loadPersistedData = async () => {
       twilioAccounts: [],
       justcallAccounts: [],
       groups: [],
-      lastJustcallMessageId: null
+      lastJustcallMessageIds: {}
     };
   }
 
@@ -67,8 +67,25 @@ const loadPersistedData = async () => {
       "twilioAccounts", 
       "justcallAccounts", 
       "groups",
-      "lastJustcallMessageId"
+      "lastJustcallMessageIds"
     ]);
+
+    // For backwards compatibility, if we have the old format, convert it
+    let lastMessageIds = cacheData.lastJustcallMessageIds;
+    if (!lastMessageIds && cacheData.lastJustcallMessageId) {
+      // If we have just a single ID from the old format, migrate it
+      const justcallAccounts = cacheData.justcallAccounts || [];
+      lastMessageIds = {};
+      
+      // If we have accounts, assign the old cursor to all accounts
+      if (justcallAccounts.length > 0 && cacheData.lastJustcallMessageId) {
+        justcallAccounts.forEach((account: any) => {
+          if (account.id) {
+            lastMessageIds[account.id] = cacheData.lastJustcallMessageId;
+          }
+        });
+      }
+    }
 
     return {
       emails: cacheData.emails || [],
@@ -76,11 +93,18 @@ const loadPersistedData = async () => {
       twilioAccounts: cacheData.twilioAccounts || [],
       justcallAccounts: cacheData.justcallAccounts || [],
       groups: cacheData.groups || [],
-      lastJustcallMessageId: cacheData.lastJustcallMessageId || null,
+      lastJustcallMessageIds: lastMessageIds || {},
     };
   } catch (e) {
     console.error("Failed to load persisted data:", e);
-    return { emails: [], imapAccounts: [], twilioAccounts: [], justcallAccounts: [], groups: [], lastJustcallMessageId: null };
+    return { 
+      emails: [], 
+      imapAccounts: [], 
+      twilioAccounts: [], 
+      justcallAccounts: [], 
+      groups: [], 
+      lastJustcallMessageIds: {}
+    };
   }
 };
 
@@ -266,7 +290,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
     twilioAccounts: [], 
     justcallAccounts: [], 
     groups: [],
-    lastJustcallMessageId: null
+    lastJustcallMessageIds: {}
   };
 
   // Load saved page size from localStorage if available
@@ -287,7 +311,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
           twilioAccounts: persistedData.twilioAccounts,
           justcallAccounts: persistedData.justcallAccounts,
           groups: persistedData.groups,
-          lastJustcallMessageId: persistedData.lastJustcallMessageId
+          lastJustcallMessageIds: persistedData.lastJustcallMessageIds
         });
       } catch (error) {
         console.error("Error loading persisted data:", error);
@@ -306,7 +330,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
     groups: initialData.groups,
     currentImapPage: 1,
     currentTwilioPage: 1,
-    lastJustcallMessageId: initialData.lastJustcallMessageId,
+    lastJustcallMessageIds: initialData.lastJustcallMessageIds,
     loadPageSize: savedPageSize,
 
     syncEmails: async (gmailToken: string | null, options?: { isLoadingMore?: boolean; oldestEmailDate?: string }) => {
@@ -718,16 +742,13 @@ export const useEmailStore = create<EmailStore>((set, get) => {
       try {
         console.log("Starting JustCall accounts sync");
         
-        // Get the current lastJustcallMessageId for pagination and page size
-        const lastMessageId = get().lastJustcallMessageId;
+        // Get the current lastJustcallMessageIds for pagination and page size
+        const messageIdMap = get().lastJustcallMessageIds;
         const loadPageSize = get().loadPageSize;
-        
-        // Only use lastMessageId for pagination if this is a "Load More" operation
-        const paginationCursor = isLoadingMore ? lastMessageId : null;
         
         console.log(`Fetching JustCall messages: ${isLoadingMore ? 'LOAD MORE operation' : 'SYNC operation'}`);
         if (isLoadingMore) {
-          console.log(`Using pagination cursor: ${paginationCursor || 'none'}, pageSize: ${loadPageSize}`);
+          console.log(`Using pagination cursor map with ${Object.keys(messageIdMap).length} accounts`);
         } else {
           console.log('Getting most recent messages (no cursor - sync operation)');
         }
@@ -752,7 +773,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
         set((state) => ({ ...state, justcallAccounts: accounts }));
         
         let totalNewMessages = 0;
-        let lastProcessedMessageId = lastMessageId;
+        let updatedMessageIdMap = { ...messageIdMap }; // Create a copy to track updates
         let rateLimitHit = false;
         let rateLimitWait = 0;
         
@@ -764,7 +785,12 @@ export const useEmailStore = create<EmailStore>((set, get) => {
             continue;
           }
           
+          // Only use lastMessageId for pagination if this is a "Load More" operation
+          // Get account-specific cursor for this account
+          const accountCursor = isLoadingMore ? messageIdMap[account.id] : null;
+          
           console.log(`Syncing JustCall account ${account.id} for phone number: ${account.accountIdentifier}`);
+          console.log(`Account cursor: ${accountCursor || 'none'}`);
           
           // For JustCall, we need to handle batching since the API has a 100 message limit
           // Calculate how many batches we need
@@ -775,7 +801,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
           console.log(`Will fetch JustCall messages in ${batchCount} batches of ${batchSize} each to get ${totalDesiredMessages} messages`);
           
           let allMessages: any[] = [];
-          let currentBatchCursor = paginationCursor;
+          let currentBatchCursor = accountCursor;
           let lastBatchProcessedMessage = null;
           
           // Fetch each batch sequentially
@@ -876,9 +902,9 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                   currentBatchCursor = lastMessage.id;
                   
                   if (batch === batchCount - 1 && isLoadingMore) {
-                    // If this is the last batch and we're loading more, update the final cursor
-                    lastProcessedMessageId = lastMessage.id;
-                    console.log(`Updated cursor to last message ID: ${lastMessage.id} (final batch)`);
+                    // If this is the last batch and we're loading more, update the final cursor for this account
+                    updatedMessageIdMap[account.id] = lastMessage.id;
+                    console.log(`Updated cursor for account ${account.id} to: ${lastMessage.id} (final batch)`);
                   }
                 }
                 
@@ -1010,11 +1036,11 @@ export const useEmailStore = create<EmailStore>((set, get) => {
           }
         }
         
-        // Update the lastJustcallMessageId for next pagination only if this was a "Load More" operation
-        if (isLoadingMore && lastProcessedMessageId && lastProcessedMessageId !== lastMessageId) {
-          set((state) => ({ ...state, lastJustcallMessageId: lastProcessedMessageId }));
-          setCacheValue("lastJustcallMessageId", lastProcessedMessageId);
-          console.log(`Updated last JustCall message ID to: ${lastProcessedMessageId} (Load More operation)`);
+        // Update the lastJustcallMessageIds map for next pagination only if this was a "Load More" operation
+        if (isLoadingMore && Object.keys(updatedMessageIdMap).length > 0) {
+          set((state) => ({ ...state, lastJustcallMessageIds: updatedMessageIdMap }));
+          setCacheValue("lastJustcallMessageIds", updatedMessageIdMap);
+          console.log(`Updated JustCall message ID map (Load More operation)`, updatedMessageIdMap);
         } else if (!isLoadingMore) {
           console.log(`Skipping cursor update during sync operation`);
         }
