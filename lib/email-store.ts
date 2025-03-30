@@ -6,7 +6,15 @@ import { MessageCategory } from "@/components/sidebar";
 import { ImapAccount } from "@/lib/imap-service";
 import { SyncService } from "./sync-service";
 import { getCacheValue, getMultipleCacheValues, setCacheValue, removeCacheValue } from './client-cache-browser';
-import { formatJustCallTimestamp } from "./justcall-service";
+import { formatJustCallTimestamp, RateLimitInfo } from "./justcall-service";
+
+// Define sync status interface
+interface SyncStatus {
+  isActive: boolean;
+  message: string;
+  progress: number;
+  total: number;
+}
 
 interface EmailStore {
   emails: Email[];
@@ -21,6 +29,8 @@ interface EmailStore {
   currentTwilioPage: number;
   lastJustcallMessageId: string | null;
   loadPageSize: number;
+  syncStatus: SyncStatus;
+  justcallRateLimitInfo: RateLimitInfo;
   setEmails: (emails: Email[]) => void;
   setActiveFilter: (filter: MessageCategory) => void;
   addEmail: (email: Email) => void;
@@ -43,6 +53,8 @@ interface EmailStore {
   setGroups: (groups: Group[]) => void;
   updateContacts: (emails: Email[]) => void;
   deleteConversation: (contactEmail: string) => void;
+  updateSyncStatus: (status: Partial<SyncStatus>) => void;
+  updateJustcallRateLimitInfo: (info: Partial<RateLimitInfo>) => void;
 }
 
 // Helper function to load persisted data
@@ -258,6 +270,15 @@ const generateContactsFromEmails = (emails: Email[]): Contact[] => {
   );
 };
 
+// Default values for rate limit info
+const defaultRateLimitInfo: RateLimitInfo = {
+  isRateLimited: false,
+  remaining: 1000,
+  limit: 1000,
+  resetTimestamp: 0,
+  retryAfterSeconds: 0
+};
+
 export const useEmailStore = create<EmailStore>((set, get) => {
   // Initialize with empty data, we'll load asynchronously
   const initialData = { 
@@ -308,6 +329,14 @@ export const useEmailStore = create<EmailStore>((set, get) => {
     currentTwilioPage: 1,
     lastJustcallMessageId: initialData.lastJustcallMessageId,
     loadPageSize: savedPageSize,
+    // New default state values for syncStatus and rateLimitInfo
+    syncStatus: {
+      isActive: false,
+      message: "",
+      progress: 0,
+      total: 0
+    },
+    justcallRateLimitInfo: defaultRateLimitInfo,
 
     syncEmails: async (gmailToken: string | null) => {
       const { imapAccounts, loadPageSize } = get();
@@ -635,6 +664,17 @@ export const useEmailStore = create<EmailStore>((set, get) => {
 
     syncJustcallAccounts: async (isLoadingMore: boolean = false) => {
       try {
+        // Start sync and update UI
+        set(state => ({ 
+          ...state, 
+          syncStatus: {
+            isActive: true,
+            message: `${isLoadingMore ? 'Loading more' : 'Syncing'} JustCall messages...`,
+            progress: 0,
+            total: 0
+          }
+        }));
+
         console.log("Starting JustCall accounts sync");
         
         // Get the current lastJustcallMessageId for pagination and page size
@@ -658,6 +698,14 @@ export const useEmailStore = create<EmailStore>((set, get) => {
         const response = await fetch("/api/sync/accounts?platform=justcall");
         if (!response.ok) {
           console.error("Failed to fetch JustCall accounts:", await response.text());
+          set(state => ({ 
+            ...state, 
+            syncStatus: {
+              ...state.syncStatus,
+              isActive: false,
+              message: "Failed to fetch JustCall accounts"
+            }
+          }));
           return 0; // Return 0 new messages on error
         }
         
@@ -665,6 +713,14 @@ export const useEmailStore = create<EmailStore>((set, get) => {
         console.log(`Found ${accounts?.length || 0} JustCall accounts`);
         
         if (!accounts || accounts.length === 0) {
+          set(state => ({ 
+            ...state, 
+            syncStatus: {
+              ...state.syncStatus,
+              isActive: false,
+              message: "No JustCall accounts found"
+            }
+          }));
           return 0; // Return 0 if no accounts
         }
         
@@ -672,9 +728,59 @@ export const useEmailStore = create<EmailStore>((set, get) => {
         
         let totalNewMessages = 0;
         let lastProcessedMessageId = lastMessageId;
+        let allEmails: Email[] = [];
+        
+        // Check if we're currently rate limited
+        const { justcallRateLimitInfo } = get();
+        if (justcallRateLimitInfo.isRateLimited) {
+          const now = Date.now();
+          if (now < justcallRateLimitInfo.resetTimestamp) {
+            const waitTimeSeconds = Math.ceil((justcallRateLimitInfo.resetTimestamp - now) / 1000);
+            console.log(`JustCall API rate limited. Waiting for ${waitTimeSeconds}s before retrying`);
+            
+            set(state => ({ 
+              ...state, 
+              syncStatus: {
+                ...state.syncStatus,
+                isActive: false,
+                message: `Rate limit reached. Try again in ${waitTimeSeconds}s`
+              }
+            }));
+
+            // If we're still rate limited, return early
+            return 0;
+          } else {
+            // Reset rate limit info since the waiting period has passed
+            set(state => ({ 
+              ...state, 
+              justcallRateLimitInfo: defaultRateLimitInfo 
+            }));
+          }
+        }
+        
+        // Update sync UI with account count
+        set(state => ({ 
+          ...state, 
+          syncStatus: {
+            ...state.syncStatus,
+            total: accounts.length
+          }
+        }));
         
         // Process each account separately to ensure phone number filtering
-        for (const account of accounts) {
+        for (let accountIndex = 0; accountIndex < accounts.length; accountIndex++) {
+          const account = accounts[accountIndex];
+          
+          // Update progress in sync status
+          set(state => ({ 
+            ...state, 
+            syncStatus: {
+              ...state.syncStatus,
+              progress: accountIndex,
+              message: `Syncing JustCall account ${accountIndex + 1}/${accounts.length}`
+            }
+          }));
+          
           // Make sure we have the accountIdentifier (phone number)
           if (!account.accountIdentifier) {
             console.warn(`JustCall account ${account.id} has no accountIdentifier (phone number), skipping`);
@@ -694,10 +800,28 @@ export const useEmailStore = create<EmailStore>((set, get) => {
           let allMessages: any[] = [];
           let currentBatchCursor = paginationCursor;
           let lastBatchProcessedMessage = null;
+          let isRateLimited = false;
           
           // Fetch each batch sequentially
           for (let batch = 0; batch < batchCount; batch++) {
+            // Check if we're still rate limited
+            const { justcallRateLimitInfo } = get();
+            if (justcallRateLimitInfo.isRateLimited) {
+              console.log(`Stopping JustCall sync due to rate limit. Will retry after ${justcallRateLimitInfo.retryAfterSeconds}s`);
+              isRateLimited = true;
+              break;
+            }
+            
             console.log(`Fetching JustCall batch ${batch + 1}/${batchCount} with cursor: ${currentBatchCursor || 'none'}`);
+            
+            // Update sync status for batch progress
+            set(state => ({ 
+              ...state, 
+              syncStatus: {
+                ...state.syncStatus,
+                message: `Syncing JustCall account ${accountIndex + 1}/${accounts.length} (batch ${batch + 1}/${batchCount})`
+              }
+            }));
             
             // Sync messages for this specific account/phone number (one batch)
             const syncResult = await fetch("/api/sync/messages", {
@@ -715,34 +839,92 @@ export const useEmailStore = create<EmailStore>((set, get) => {
             });
             
             if (!syncResult.ok) {
-              console.error(`Failed to sync JustCall batch ${batch + 1}:`, await syncResult.text());
-              break; // Stop batching on error
+              const errorText = await syncResult.text();
+              console.error(`Failed to sync JustCall batch ${batch + 1}:`, errorText);
+              
+              // Check for rate limit error
+              if (syncResult.status === 429) {
+                console.warn("JustCall API rate limit reached");
+                
+                // Try to extract rate limit headers from the response if possible
+                const retryAfter = syncResult.headers.get('Retry-After');
+                const resetTime = syncResult.headers.get('X-Rate-Limit-Reset');
+                const waitTimeSeconds = parseInt(retryAfter || '60', 10);
+                
+                // Set rate limit info in store
+                set(state => ({ 
+                  ...state, 
+                  justcallRateLimitInfo: {
+                    isRateLimited: true,
+                    remaining: 0,
+                    limit: 1000,
+                    resetTimestamp: resetTime ? new Date(resetTime).getTime() : Date.now() + (waitTimeSeconds * 1000),
+                    retryAfterSeconds: waitTimeSeconds
+                  }
+                }));
+                
+                isRateLimited = true;
+                break; // Stop batching on rate limit
+              }
+              
+              // Other errors, skip this batch but continue with others
+              continue;
             }
             
-            // After syncing, get messages for this specific phone number
+            // Get the actual messages using the plain messages endpoint
             const messagesResponse = await fetch(`/api/messages?platform=justcall&pageSize=${batchSize}&phoneNumber=${encodeURIComponent(account.accountIdentifier)}&accountId=${account.id}&lastSmsIdFetched=${currentBatchCursor || ''}&sortDirection=desc`);
             
+            // Check if we got rate limited on the messages endpoint
+            if (messagesResponse.status === 429) {
+              console.warn("JustCall API rate limit reached");
+              
+              // Extract rate limit info from headers
+              const retryAfter = messagesResponse.headers.get('Retry-After');
+              const resetTime = messagesResponse.headers.get('X-Rate-Limit-Reset');
+              const waitTimeSeconds = parseInt(retryAfter || '60', 10);
+              
+              // Set rate limit info in store
+              set(state => ({ 
+                ...state, 
+                justcallRateLimitInfo: {
+                  isRateLimited: true,
+                  remaining: 0,
+                  limit: 1000,
+                  resetTimestamp: resetTime ? new Date(resetTime).getTime() : Date.now() + (waitTimeSeconds * 1000),
+                  retryAfterSeconds: waitTimeSeconds
+                }
+              }));
+              
+              isRateLimited = true;
+              break; // Stop batching on rate limit
+            }
+            
             if (messagesResponse.ok) {
-              const { messages } = await messagesResponse.json();
-              const batchMessageCount = messages?.length || 0;
-              console.log(`Retrieved ${batchMessageCount} JustCall messages in batch ${batch + 1}`);
+              const { messages, rateLimitInfo } = await messagesResponse.json();
+              
+              // Update rate limit info if provided
+              if (rateLimitInfo) {
+                set(state => ({ ...state, justcallRateLimitInfo: rateLimitInfo }));
+                
+                // If we're now rate limited, stop fetching
+                if (rateLimitInfo.isRateLimited) {
+                  console.warn(`JustCall API rate limited. Retry after ${rateLimitInfo.retryAfterSeconds}s`);
+                  isRateLimited = true;
+                  break;
+                }
+              }
               
               if (messages && messages.length > 0) {
-                // Save the ID of the last message for pagination
-                const lastMessage = messages[messages.length - 1]; // Last is oldest in desc order
+                console.log(`Got ${messages.length} messages in batch ${batch + 1}`);
+                
+                // Keep track of the last message ID for pagination
+                const lastMessage = messages[messages.length - 1];
                 if (lastMessage && lastMessage.id) {
-                  // Update the cursor for the next batch
                   lastBatchProcessedMessage = lastMessage.id;
                   currentBatchCursor = lastMessage.id;
-                  
-                  if (batch === batchCount - 1 && isLoadingMore) {
-                    // If this is the last batch and we're loading more, update the final cursor
-                    lastProcessedMessageId = lastMessage.id;
-                    console.log(`Updated cursor to last message ID: ${lastMessage.id} (final batch)`);
-                  }
                 }
                 
-                // Add messages to our collection
+                // Add these messages to our running collection
                 allMessages = [...allMessages, ...messages];
                 
                 // If we have enough messages across all batches or if this batch was less than batchSize
@@ -758,121 +940,201 @@ export const useEmailStore = create<EmailStore>((set, get) => {
               }
             } else {
               console.error(`Failed to fetch JustCall messages in batch ${batch + 1}:`, await messagesResponse.text());
+              // Don't break completely - continue with next account
               break;
             }
           }
           
+          // If we hit a rate limit, process what we have so far but stop fetching more
+          if (isRateLimited) {
+            console.log(`Rate limit reached. Processing ${allMessages.length} messages collected so far.`);
+            // We'll process the messages we got and return early
+          }
+          
           console.log(`Fetched a total of ${allMessages.length} JustCall messages across all batches`);
           
-          // Now process all messages from all batches
+          // Even if no messages in this batch, continue with other accounts
           if (allMessages.length > 0) {
-            // Convert JustCall messages to Email format
-            const justcallEmails = allMessages.map((msg: any) => {
-              // Format timestamp using the utility function with priority:
-              // 1. User date/time (timezone-adjusted)
-              // 2. Server date/time
-              // 3. Current time as fallback
-              let timestamp;
+            // Update the lastJustcallMessageId for pagination if this is a load more operation
+            if (isLoadingMore && lastBatchProcessedMessage) {
+              lastProcessedMessageId = lastBatchProcessedMessage;
+            }
+            
+            // Map JustCall messages to Email format
+            const justcallEmails: Email[] = allMessages.map((message: any) => {
+              const isInbound = message.direction === "inbound";
+              const threadId = message.threadId || [message.contact_number, message.justcall_number || message.number].sort().join('-');
               
-              // First check if we have the user's timezone values (preferred)
-              if (msg.sms_user_date && msg.sms_user_time) {
-                timestamp = formatJustCallTimestamp(msg.sms_user_date, msg.sms_user_time);
-              } 
-              // Then try the server timezone values
-              else if (msg.sms_date && msg.sms_time) {
-                timestamp = formatJustCallTimestamp(msg.sms_date, msg.sms_time);
-              }
-              // Use the created_at field if available
-              else if (msg.created_at) {
-                timestamp = msg.created_at;
-              }
-              // Fallback to current time
-              else {
-                timestamp = new Date().toISOString();
-              }
+              // Format the date using our utility function
+              const timestamp = message.created_at || formatJustCallTimestamp(
+                message.sms_user_date || message.sms_date,
+                message.sms_user_time || message.sms_time
+              );
+              
+              // Collect all time-related fields to preserve them
+              const justcallTimes = {
+                created_at: message.created_at,
+                updated_at: message.updated_at,
+                sms_user_time: message.sms_user_time,
+                sms_time: message.sms_time,
+                sms_user_date: message.sms_user_date,
+                sms_date: message.sms_date
+              };
               
               return {
-                id: msg.id,
-                threadId: msg.threadId, // Use the threadId for grouping
+                id: `justcall-${message.id}`,
+                threadId,
                 from: {
-                  name: msg.direction === 'inbound' ? 
-                    (msg.contact_name || msg.contact_number || 'Unknown') : 
-                    'You',
-                  email: msg.direction === 'inbound' ? 
-                    msg.contact_number : 
-                    msg.number,
+                  name: isInbound ? message.contact_name || message.contact_number : "You",
+                  email: isInbound ? message.contact_number : account.accountIdentifier,
                 },
                 to: [{
-                  name: msg.direction === 'inbound' ? 'You' : 
-                    (msg.contact_name || msg.contact_number || 'Unknown'),
-                  email: msg.direction === 'inbound' ? 
-                    msg.number : 
-                    msg.contact_number,
+                  name: isInbound ? "You" : message.contact_name || message.contact_number,
+                  email: isInbound ? account.accountIdentifier : message.contact_number,
                 }],
-                subject: 'SMS Message',
-                // Access body from sms_info object for V2 API
-                body: msg.sms_info?.body || msg.body || '',
-                // Use the properly formatted timestamp
+                cc: [],
+                bcc: [],
+                subject: "SMS Message",
+                body: message.body || "",
+                html: `<p>${message.body || ""}</p>`,
+                attachments: message.media ? message.media.map((url: any) => {
+                  // Ensure url is a string before calling split
+                  const urlStr = typeof url === 'string' ? url : 
+                                (url && typeof url.url === 'string') ? url.url : '';
+                  
+                  return {
+                    filename: urlStr ? urlStr.split('/').pop() || 'attachment' : 'attachment',
+                    url: urlStr,
+                    contentType: urlStr.endsWith('.jpg') || urlStr.endsWith('.jpeg') ? 'image/jpeg' : 
+                              urlStr.endsWith('.png') ? 'image/png' : 
+                              urlStr.endsWith('.gif') ? 'image/gif' : 
+                              'application/octet-stream'
+                  };
+                }) : [],
                 date: timestamp,
-                labels: ['JUSTCALL'],
-                accountType: 'justcall' as const,
+                labels: ["SMS"],
+                read: true,
+                flagged: false,
+                accountType: "justcall",
                 accountId: account.id,
-                platform: 'justcall',
-                phoneNumber: account.accountIdentifier, // Store the phone number for reference
-                // Add all justcall time fields for debugging
-                justcallTimes: {
-                  sms_user_time: msg.sms_user_time,
-                  sms_time: msg.sms_time,
-                  sms_user_date: msg.sms_user_date,
-                  sms_date: msg.sms_date,
-                  formatted: timestamp
-                }
+                justcallTimes, // Save all time information for debugging
+                // Add original message properties that might be useful
+                originalId: message.id,
+                direction: message.direction,
+                status: message.status,
+                contact_number: message.contact_number,
+                justcall_number: message.justcall_number || message.number
               };
             });
             
-            console.log(`Converted ${justcallEmails.length} JustCall messages to Email format`);
+            totalNewMessages += justcallEmails.length;
             
-            // Check for duplicates by ID
-            const existingIds = new Set(currentEmails.map(email => email.id));
-            const newEmails = justcallEmails.filter((email: Email) => !existingIds.has(email.id));
+            // Add these emails to our collection
+            allEmails = [...allEmails, ...justcallEmails];
+          }
+          
+          // If we're rate limited, update UI and break out of account loop
+          if (isRateLimited) {
+            const { justcallRateLimitInfo } = get();
+            const waitTimeSeconds = justcallRateLimitInfo.retryAfterSeconds;
             
-            if (newEmails.length > 0) {
-              totalNewMessages += newEmails.length;
-              
-              // Merge with existing emails
-              const mergedEmails = [...currentEmails, ...newEmails];
-              
-              // Sort by date descending (newest first) after merging
-              mergedEmails.sort((a, b) => {
-                // Safely parse dates and convert to timestamp
-                const dateA = a.date ? new Date(a.date).getTime() : 0;
-                const dateB = b.date ? new Date(b.date).getTime() : 0;
-                return dateB - dateA; // Newest first
-              });
-              
-              get().setEmails(mergedEmails);
-              console.log(`Updated email store with ${newEmails.length} JustCall messages for phone ${account.accountIdentifier}. New count: ${mergedEmails.length}`);
-              setCacheValue("emails", mergedEmails);
-            } else {
-              console.log(`No new JustCall messages for phone ${account.accountIdentifier}`);
-            }
+            set(state => ({ 
+              ...state, 
+              syncStatus: {
+                isActive: false,
+                message: `Rate limit reached. Try again in ${waitTimeSeconds}s`,
+                progress: accountIndex + 1,
+                total: accounts.length
+              }
+            }));
+            
+            // Process the messages we did get so far
+            break;
           }
         }
         
-        // Update the lastJustcallMessageId for next pagination only if this was a "Load More" operation
+        // Update lastJustcallMessageId in store if it changed
         if (isLoadingMore && lastProcessedMessageId && lastProcessedMessageId !== lastMessageId) {
-          set((state) => ({ ...state, lastJustcallMessageId: lastProcessedMessageId }));
-          setCacheValue("lastJustcallMessageId", lastProcessedMessageId);
-          console.log(`Updated last JustCall message ID to: ${lastProcessedMessageId} (Load More operation)`);
-        } else if (!isLoadingMore) {
-          console.log(`Skipping cursor update during sync operation`);
+          set((state) => ({
+            ...state,
+            lastJustcallMessageId: lastProcessedMessageId,
+          }));
+          
+          // Persist to cache
+          await setCacheValue("lastJustcallMessageId", lastProcessedMessageId);
+          console.log(`Updated lastJustcallMessageId to: ${lastProcessedMessageId}`);
         }
         
-        // Return the count of new messages found
+        // If we have new emails, merge them with existing ones
+        if (allEmails.length > 0) {
+          // Create a map for faster lookups when merging
+          const emailMap = new Map<string, Email>();
+          
+          // Add current emails to map
+          currentEmails.forEach((email) => {
+            const key = generateEmailKey(email);
+            emailMap.set(key, email);
+          });
+          
+          // Add or update with new emails
+          allEmails.forEach((email) => {
+            const key = generateEmailKey(email);
+            
+            // If email doesn't exist, or new one is more recent, use it
+            const existingEmail = emailMap.get(key);
+            if (!existingEmail || new Date(email.date) >= new Date(existingEmail.date)) {
+              emailMap.set(key, email);
+            }
+          });
+          
+          // Convert map back to array
+          const mergedEmails = Array.from(emailMap.values());
+          
+          // Update store with merged emails
+          set((state) => ({
+            ...state,
+            emails: mergedEmails,
+          }));
+          
+          // Update contacts
+          const contacts = generateContactsFromEmails(mergedEmails);
+          set({ contacts });
+          
+          // Cache the updated emails
+          await setCacheValue("emails", mergedEmails);
+          
+          console.log(`Added ${totalNewMessages} new JustCall messages to store`);
+        } else {
+          console.log("No new JustCall messages found");
+        }
+        
+        // Update sync status to complete
+        set(state => ({ 
+          ...state, 
+          syncStatus: {
+            isActive: false,
+            message: totalNewMessages > 0 ? `Added ${totalNewMessages} new messages` : "No new messages",
+            progress: accounts.length,
+            total: accounts.length
+          }
+        }));
+        
         return totalNewMessages;
       } catch (error) {
         console.error("Error syncing JustCall accounts:", error);
-        return 0; // Return 0 new messages on error
+        
+        // Update sync status to error
+        set(state => ({ 
+          ...state, 
+          syncStatus: {
+            isActive: false,
+            message: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            progress: 0,
+            total: 0
+          }
+        }));
+        
+        return 0;
       }
     },
 
@@ -1232,6 +1494,27 @@ export const useEmailStore = create<EmailStore>((set, get) => {
       if (typeof window !== "undefined") {
         localStorage.setItem('loadPageSize', size.toString());
       }
+    },
+
+    // Add new methods for sync status and rate limit info
+    updateSyncStatus: (status: Partial<SyncStatus>) => {
+      set(state => ({
+        ...state,
+        syncStatus: {
+          ...state.syncStatus,
+          ...status
+        }
+      }));
+    },
+
+    updateJustcallRateLimitInfo: (info: Partial<RateLimitInfo>) => {
+      set(state => ({
+        ...state,
+        justcallRateLimitInfo: {
+          ...state.justcallRateLimitInfo,
+          ...info
+        }
+      }));
     },
   };
 });

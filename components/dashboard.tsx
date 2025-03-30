@@ -16,6 +16,7 @@ import {
   ResizablePanelGroup,
 } from "./ui/resizable";
 import { getCacheValue, setCacheValue, removeCacheValue } from "@/lib/client-cache-browser";
+import { SyncStatus } from "@/components/ui/sync-status";
 
 export function EmailDashboard() {
   const { data: session } = useSession();
@@ -222,6 +223,8 @@ export function EmailDashboard() {
      * Full-screen container with overflow hidden so only the panels themselves scroll.
      */
     <div className="flex h-screen w-screen overflow-hidden bg-background">
+      <SyncStatus />
+      
       <ResizablePanelGroup
         direction="horizontal"
         className="flex-1 h-full overflow-hidden"

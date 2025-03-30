@@ -252,13 +252,16 @@ export const syncJustCallAccounts = async (
           console.log(`- Pagination cursor: ${options?.lastSmsIdFetched || 'none'}`);
           
           // Get messages using the lastSmsIdFetched for pagination instead of date-based filtering
-          const messages = await justCallService.getMessages(
+          const response = await justCallService.getMessages(
             phoneNumber, 
             undefined, // No date filtering needed
             options?.pageSize || 100,
             options?.lastSmsIdFetched,
             options?.sortDirection || 'desc'  // Default to desc for newest first
           );
+          
+          // Extract messages and rate limit info from the response
+          const { messages, rateLimitInfo } = response;
           
           // Add debug logging to inspect the retrieved messages
           if (messages.length > 0) {
@@ -276,6 +279,18 @@ export const syncJustCallAccounts = async (
             });
           } else {
             console.log(`No messages retrieved for account ${account.id}`);
+            
+            // Check if this was due to rate limiting
+            if (rateLimitInfo.isRateLimited) {
+              console.warn(`JustCall account ${account.id} is rate limited. Retry after ${rateLimitInfo.retryAfterSeconds}s`);
+              return { 
+                accountId: account.id, 
+                processed: 0, 
+                skipped: 0, 
+                error: `Rate limited. Retry after ${rateLimitInfo.retryAfterSeconds}s`,
+                rateLimitInfo
+              };
+            }
           }
           
           let processedCount = 0;
@@ -316,7 +331,8 @@ export const syncJustCallAccounts = async (
             accountId: account.id, 
             processed: processedCount, 
             skipped: skippedCount, 
-            lastMessageId: oldestMessageId // Return the oldest message ID for pagination
+            lastMessageId: oldestMessageId, // Return the oldest message ID for pagination
+            rateLimitInfo // Include rate limit info in the result
           };
         } catch (error) {
           console.error(`Error syncing JustCall account ${account.id}:`, error);
