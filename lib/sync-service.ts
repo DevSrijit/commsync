@@ -25,7 +25,7 @@ export class SyncService {
     gmailToken: string | null,
     imapAccounts: ImapAccount[],
     page: number = 1,
-    pageSize: number = 100000 // Increased from 100 to 100000
+    pageSize: number = 100 // Default to 100, but will use provided value
   ): Promise<void> {
     if (this.syncInProgress) {
       console.log("Sync already in progress");
@@ -41,6 +41,7 @@ export class SyncService {
       if (gmailToken) {
         // Use a try-catch block specifically for Gmail to handle auth errors properly
         try {
+          console.log(`Fetching Gmail emails with page ${page}, pageSize ${pageSize}`);
           const gmailEmails = await fetchGmailEmails(gmailToken, page, pageSize);
           if (gmailEmails && gmailEmails.length > 0) {
             syncPromises.push(Promise.resolve(gmailEmails));
@@ -68,6 +69,7 @@ export class SyncService {
       // Add IMAP sync for each account
       for (const account of imapAccounts) {
         try {
+          console.log(`Fetching IMAP emails for account ${account.id} with page ${page}, pageSize ${pageSize}`);
           const response = await fetch("/api/imap", {
             method: "POST",
             headers: {
@@ -79,7 +81,7 @@ export class SyncService {
               data: {
                 page: page,
                 pageSize: pageSize,
-                fetchAll: true // Add a flag to fetch all emails
+                fetchAll: false // Don't fetch all, respect the pageSize
               },
             }),
           });

@@ -20,6 +20,7 @@ interface EmailStore {
   currentImapPage: number;
   currentTwilioPage: number;
   lastJustcallMessageId: string | null;
+  loadPageSize: number;
   setEmails: (emails: Email[]) => void;
   setActiveFilter: (filter: MessageCategory) => void;
   addEmail: (email: Email) => void;
@@ -34,6 +35,7 @@ interface EmailStore {
   setImapAccounts: (accounts: ImapAccount[]) => void;
   setTwilioAccounts: (accounts: any[]) => void;
   setJustcallAccounts: (accounts: any[]) => void;
+  setLoadPageSize: (size: number) => void;
   addGroup: (group: Group) => void;
   updateGroup: (group: Group) => void;
   deleteGroup: (groupId: string) => void;
@@ -267,6 +269,11 @@ export const useEmailStore = create<EmailStore>((set, get) => {
     lastJustcallMessageId: null
   };
 
+  // Load saved page size from localStorage if available
+  const savedPageSize = typeof window !== "undefined" 
+    ? parseInt(localStorage.getItem('loadPageSize') || '100') 
+    : 100;
+
   // Load data asynchronously after initialization
   if (typeof window !== "undefined") {
     // Need to use void to tell TypeScript this is intentionally not being awaited
@@ -300,16 +307,18 @@ export const useEmailStore = create<EmailStore>((set, get) => {
     currentImapPage: 1,
     currentTwilioPage: 1,
     lastJustcallMessageId: initialData.lastJustcallMessageId,
+    loadPageSize: savedPageSize,
 
     syncEmails: async (gmailToken: string | null) => {
-      const { imapAccounts } = get();
+      const { imapAccounts, loadPageSize } = get();
       try {
         if (!gmailToken) {
           console.log("No Gmail token provided, skipping Gmail sync");
         } else {
           try {
-            // Set very large page size to fetch all emails
-            await SyncService.getInstance().syncAllEmails(gmailToken, imapAccounts, 1, 100000);
+            // Use the configured page size
+            console.log(`Using configured page size: ${loadPageSize}`);
+            await SyncService.getInstance().syncAllEmails(gmailToken, imapAccounts, 1, loadPageSize);
           } catch (apiError: any) {
             // Handle auth errors
             console.error("Error syncing emails:", apiError);
@@ -330,8 +339,8 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                   const refreshData = await response.json();
                   if (refreshData.accessToken) {
                     console.log("Token refreshed successfully, retrying API call");
-                    // Retry the API call with the new token
-                    await SyncService.getInstance().syncAllEmails(refreshData.accessToken, imapAccounts, 1, 100000);
+                    // Retry the API call with the new token and configured page size
+                    await SyncService.getInstance().syncAllEmails(refreshData.accessToken, imapAccounts, 1, loadPageSize);
                     return; // Success, exit function
                   }
                 } else {
@@ -359,9 +368,10 @@ export const useEmailStore = create<EmailStore>((set, get) => {
     syncImapAccounts: async () => {
       try {
         console.log("Starting IMAP accounts sync");
-        // Get current page
+        // Get current page and page size
         const currentPage = get().currentImapPage;
-        console.log(`Fetching IMAP accounts, page ${currentPage}`);
+        const loadPageSize = get().loadPageSize;
+        console.log(`Fetching IMAP accounts, page ${currentPage}, pageSize ${loadPageSize}`);
         
         // For loading older messages, we need to track the oldest message date
         // Get all current emails to find the oldest date
@@ -415,7 +425,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
               account,
               data: {
                 page: currentPage,
-                pageSize: 100, // Use a reasonable page size
+                pageSize: loadPageSize, // Use configured page size
                 filter: filter
               },
             }),
@@ -493,9 +503,10 @@ export const useEmailStore = create<EmailStore>((set, get) => {
     syncTwilioAccounts: async () => {
       try {
         console.log("Starting Twilio accounts sync");
-        // Get current page
+        // Get current page and page size
         const currentPage = get().currentTwilioPage;
-        console.log(`Fetching Twilio accounts, page ${currentPage}`);
+        const loadPageSize = get().loadPageSize;
+        console.log(`Fetching Twilio accounts, page ${currentPage}, pageSize ${loadPageSize}`);
         
         // For loading older messages, we need to track the oldest message date
         // Get all current emails to find the oldest date
@@ -536,7 +547,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
           body: JSON.stringify({
             platform: "twilio",
             page: currentPage,
-            pageSize: 100,
+            pageSize: loadPageSize, // Use configured page size
             oldestDate: oldestDate ? oldestDate.toISOString() : undefined,
             sortDirection: 'asc' // Important: Load older messages, not newer
           }),
@@ -545,7 +556,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
         if (syncResult.ok) {
           // After syncing, get all the messages to update the store
           console.log(`Current email count before Twilio sync: ${currentEmails.length}`);
-          const messagesResponse = await fetch(`/api/messages?platform=twilio&page=${currentPage}&pageSize=100&sortDirection=asc&oldestDate=${oldestDate ? encodeURIComponent(oldestDate.toISOString()) : ''}`);
+          const messagesResponse = await fetch(`/api/messages?platform=twilio&page=${currentPage}&pageSize=${loadPageSize}&sortDirection=asc&oldestDate=${oldestDate ? encodeURIComponent(oldestDate.toISOString()) : ''}`);
           if (messagesResponse.ok) {
             const { messages } = await messagesResponse.json();
             console.log(`Retrieved ${messages?.length || 0} older Twilio messages for page ${currentPage}`);
@@ -626,15 +637,16 @@ export const useEmailStore = create<EmailStore>((set, get) => {
       try {
         console.log("Starting JustCall accounts sync");
         
-        // Get the current lastJustcallMessageId for pagination
+        // Get the current lastJustcallMessageId for pagination and page size
         const lastMessageId = get().lastJustcallMessageId;
+        const loadPageSize = get().loadPageSize;
         
         // Only use lastMessageId for pagination if this is a "Load More" operation
         const paginationCursor = isLoadingMore ? lastMessageId : null;
         
         console.log(`Fetching JustCall messages: ${isLoadingMore ? 'LOAD MORE operation' : 'SYNC operation'}`);
         if (isLoadingMore) {
-          console.log(`Using pagination cursor: ${paginationCursor || 'none'}`);
+          console.log(`Using pagination cursor: ${paginationCursor || 'none'}, pageSize: ${loadPageSize}`);
         } else {
           console.log('Getting most recent messages (no cursor - sync operation)');
         }
@@ -671,142 +683,179 @@ export const useEmailStore = create<EmailStore>((set, get) => {
           
           console.log(`Syncing JustCall account ${account.id} for phone number: ${account.accountIdentifier}`);
           
-          // Sync messages for this specific account/phone number
-          const syncResult = await fetch("/api/sync/messages", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              platform: "justcall",
-              pageSize: 100,
-              phoneNumber: account.accountIdentifier,
-              accountId: account.id,
-              lastSmsIdFetched: paginationCursor, // Only use cursor for "Load More" operations
-              sortDirection: 'desc', // Always use desc for newest messages first
-              isLoadingMore: isLoadingMore // Indicate whether this is a "Load More" operation
-            }),
-          });
+          // For JustCall, we need to handle batching since the API has a 100 message limit
+          // Calculate how many batches we need
+          const batchSize = 100; // JustCall API limit
+          const totalDesiredMessages = isLoadingMore ? loadPageSize : 100;
+          const batchCount = Math.ceil(totalDesiredMessages / batchSize);
           
-          if (syncResult.ok) {
+          console.log(`Will fetch JustCall messages in ${batchCount} batches of ${batchSize} each to get ${totalDesiredMessages} messages`);
+          
+          let allMessages: any[] = [];
+          let currentBatchCursor = paginationCursor;
+          let lastBatchProcessedMessage = null;
+          
+          // Fetch each batch sequentially
+          for (let batch = 0; batch < batchCount; batch++) {
+            console.log(`Fetching JustCall batch ${batch + 1}/${batchCount} with cursor: ${currentBatchCursor || 'none'}`);
+            
+            // Sync messages for this specific account/phone number (one batch)
+            const syncResult = await fetch("/api/sync/messages", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                platform: "justcall",
+                pageSize: batchSize, // Always use batchSize (100) for JustCall API
+                phoneNumber: account.accountIdentifier,
+                accountId: account.id,
+                lastSmsIdFetched: currentBatchCursor, // Use the cursor for this batch
+                sortDirection: 'desc', // Always use desc for newest messages first
+                isLoadingMore: isLoadingMore // Indicate whether this is a "Load More" operation
+              }),
+            });
+            
+            if (!syncResult.ok) {
+              console.error(`Failed to sync JustCall batch ${batch + 1}:`, await syncResult.text());
+              break; // Stop batching on error
+            }
+            
             // After syncing, get messages for this specific phone number
-            console.log(`Current email count before JustCall sync: ${currentEmails.length}`);
-            const messagesResponse = await fetch(`/api/messages?platform=justcall&pageSize=100&phoneNumber=${encodeURIComponent(account.accountIdentifier)}&accountId=${account.id}&lastSmsIdFetched=${paginationCursor || ''}&sortDirection=desc`);
+            const messagesResponse = await fetch(`/api/messages?platform=justcall&pageSize=${batchSize}&phoneNumber=${encodeURIComponent(account.accountIdentifier)}&accountId=${account.id}&lastSmsIdFetched=${currentBatchCursor || ''}&sortDirection=desc`);
             
             if (messagesResponse.ok) {
               const { messages } = await messagesResponse.json();
-              console.log(`Retrieved ${messages?.length || 0} JustCall messages for phone ${account.accountIdentifier}`);
+              const batchMessageCount = messages?.length || 0;
+              console.log(`Retrieved ${batchMessageCount} JustCall messages in batch ${batch + 1}`);
               
               if (messages && messages.length > 0) {
                 // Save the ID of the last message for pagination
-                // In descending order, the last message (oldest) should be used for pagination
                 const lastMessage = messages[messages.length - 1]; // Last is oldest in desc order
                 if (lastMessage && lastMessage.id) {
-                  // Only update lastProcessedMessageId if we're loading more
-                  if (isLoadingMore) {
+                  // Update the cursor for the next batch
+                  lastBatchProcessedMessage = lastMessage.id;
+                  currentBatchCursor = lastMessage.id;
+                  
+                  if (batch === batchCount - 1 && isLoadingMore) {
+                    // If this is the last batch and we're loading more, update the final cursor
                     lastProcessedMessageId = lastMessage.id;
-                    console.log(`Updated cursor to last message ID: ${lastMessage.id} (Load More operation)`);
-                  } else {
-                    console.log(`Not updating pagination cursor during sync operation`);
+                    console.log(`Updated cursor to last message ID: ${lastMessage.id} (final batch)`);
                   }
                 }
                 
-                // Convert JustCall messages to Email format
-                const justcallEmails = messages.map((msg: any) => {
-                  // Format timestamp using the utility function with priority:
-                  // 1. User date/time (timezone-adjusted)
-                  // 2. Server date/time
-                  // 3. Current time as fallback
-                  let timestamp;
-                  
-                  // First check if we have the user's timezone values (preferred)
-                  if (msg.sms_user_date && msg.sms_user_time) {
-                    timestamp = formatJustCallTimestamp(msg.sms_user_date, msg.sms_user_time);
-                  } 
-                  // Then try the server timezone values
-                  else if (msg.sms_date && msg.sms_time) {
-                    timestamp = formatJustCallTimestamp(msg.sms_date, msg.sms_time);
-                  }
-                  // Use the created_at field if available
-                  else if (msg.created_at) {
-                    timestamp = msg.created_at;
-                  }
-                  // Fallback to current time
-                  else {
-                    timestamp = new Date().toISOString();
-                  }
-                  
-                  return {
-                    id: msg.id,
-                    threadId: msg.threadId, // Use the threadId for grouping
-                    from: {
-                      name: msg.direction === 'inbound' ? 
-                        (msg.contact_name || msg.contact_number || 'Unknown') : 
-                        'You',
-                      email: msg.direction === 'inbound' ? 
-                        msg.contact_number : 
-                        msg.number,
-                    },
-                    to: [{
-                      name: msg.direction === 'inbound' ? 'You' : 
-                        (msg.contact_name || msg.contact_number || 'Unknown'),
-                      email: msg.direction === 'inbound' ? 
-                        msg.number : 
-                        msg.contact_number,
-                    }],
-                    subject: 'SMS Message',
-                    // Access body from sms_info object for V2 API
-                    body: msg.sms_info?.body || msg.body || '',
-                    // Use the properly formatted timestamp
-                    date: timestamp,
-                    labels: ['JUSTCALL'],
-                    accountType: 'justcall',
-                    accountId: account.id,
-                    platform: 'justcall',
-                    phoneNumber: account.accountIdentifier, // Store the phone number for reference
-                    // Add all justcall time fields for debugging
-                    justcallTimes: {
-                      sms_user_time: msg.sms_user_time,
-                      sms_time: msg.sms_time,
-                      sms_user_date: msg.sms_user_date,
-                      sms_date: msg.sms_date,
-                      formatted: timestamp
-                    }
-                  };
-                });
+                // Add messages to our collection
+                allMessages = [...allMessages, ...messages];
                 
-                console.log(`Converted ${justcallEmails.length} JustCall messages to Email format`);
-                
-                // Check for duplicates by ID
-                const existingIds = new Set(currentEmails.map(email => email.id));
-                const newEmails = justcallEmails.filter((email: Email) => !existingIds.has(email.id));
-                
-                if (newEmails.length > 0) {
-                  totalNewMessages += newEmails.length;
-                  
-                  // Merge with existing emails
-                  const mergedEmails = [...currentEmails, ...newEmails];
-                  
-                  // Sort by date descending (newest first) after merging
-                  mergedEmails.sort((a, b) => {
-                    // Safely parse dates and convert to timestamp
-                    const dateA = a.date ? new Date(a.date).getTime() : 0;
-                    const dateB = b.date ? new Date(b.date).getTime() : 0;
-                    return dateB - dateA; // Newest first
-                  });
-                  
-                  get().setEmails(mergedEmails);
-                  console.log(`Updated email store with ${newEmails.length} JustCall messages for phone ${account.accountIdentifier}. New count: ${mergedEmails.length}`);
-                  setCacheValue("emails", mergedEmails);
-                } else {
-                  console.log(`No new JustCall messages for phone ${account.accountIdentifier}`);
+                // If we have enough messages across all batches or if this batch was less than batchSize
+                // (meaning there are no more messages), break the loop
+                if (allMessages.length >= totalDesiredMessages || messages.length < batchSize) {
+                  console.log(`Received enough messages (${allMessages.length}) or last batch was smaller than limit`);
+                  break;
                 }
               } else {
-                console.log(`No JustCall messages for phone ${account.accountIdentifier}`);
+                // No messages in this batch, stop fetching
+                console.log(`No JustCall messages in batch ${batch + 1}, stopping`);
+                break;
               }
             } else {
-              console.error(`Failed to fetch JustCall messages for phone ${account.accountIdentifier}:`, await messagesResponse.text());
+              console.error(`Failed to fetch JustCall messages in batch ${batch + 1}:`, await messagesResponse.text());
+              break;
             }
-          } else {
-            console.error(`Failed to sync JustCall messages for phone ${account.accountIdentifier}:`, await syncResult.text());
+          }
+          
+          console.log(`Fetched a total of ${allMessages.length} JustCall messages across all batches`);
+          
+          // Now process all messages from all batches
+          if (allMessages.length > 0) {
+            // Convert JustCall messages to Email format
+            const justcallEmails = allMessages.map((msg: any) => {
+              // Format timestamp using the utility function with priority:
+              // 1. User date/time (timezone-adjusted)
+              // 2. Server date/time
+              // 3. Current time as fallback
+              let timestamp;
+              
+              // First check if we have the user's timezone values (preferred)
+              if (msg.sms_user_date && msg.sms_user_time) {
+                timestamp = formatJustCallTimestamp(msg.sms_user_date, msg.sms_user_time);
+              } 
+              // Then try the server timezone values
+              else if (msg.sms_date && msg.sms_time) {
+                timestamp = formatJustCallTimestamp(msg.sms_date, msg.sms_time);
+              }
+              // Use the created_at field if available
+              else if (msg.created_at) {
+                timestamp = msg.created_at;
+              }
+              // Fallback to current time
+              else {
+                timestamp = new Date().toISOString();
+              }
+              
+              return {
+                id: msg.id,
+                threadId: msg.threadId, // Use the threadId for grouping
+                from: {
+                  name: msg.direction === 'inbound' ? 
+                    (msg.contact_name || msg.contact_number || 'Unknown') : 
+                    'You',
+                  email: msg.direction === 'inbound' ? 
+                    msg.contact_number : 
+                    msg.number,
+                },
+                to: [{
+                  name: msg.direction === 'inbound' ? 'You' : 
+                    (msg.contact_name || msg.contact_number || 'Unknown'),
+                  email: msg.direction === 'inbound' ? 
+                    msg.number : 
+                    msg.contact_number,
+                }],
+                subject: 'SMS Message',
+                // Access body from sms_info object for V2 API
+                body: msg.sms_info?.body || msg.body || '',
+                // Use the properly formatted timestamp
+                date: timestamp,
+                labels: ['JUSTCALL'],
+                accountType: 'justcall' as const,
+                accountId: account.id,
+                platform: 'justcall',
+                phoneNumber: account.accountIdentifier, // Store the phone number for reference
+                // Add all justcall time fields for debugging
+                justcallTimes: {
+                  sms_user_time: msg.sms_user_time,
+                  sms_time: msg.sms_time,
+                  sms_user_date: msg.sms_user_date,
+                  sms_date: msg.sms_date,
+                  formatted: timestamp
+                }
+              };
+            });
+            
+            console.log(`Converted ${justcallEmails.length} JustCall messages to Email format`);
+            
+            // Check for duplicates by ID
+            const existingIds = new Set(currentEmails.map(email => email.id));
+            const newEmails = justcallEmails.filter((email: Email) => !existingIds.has(email.id));
+            
+            if (newEmails.length > 0) {
+              totalNewMessages += newEmails.length;
+              
+              // Merge with existing emails
+              const mergedEmails = [...currentEmails, ...newEmails];
+              
+              // Sort by date descending (newest first) after merging
+              mergedEmails.sort((a, b) => {
+                // Safely parse dates and convert to timestamp
+                const dateA = a.date ? new Date(a.date).getTime() : 0;
+                const dateB = b.date ? new Date(b.date).getTime() : 0;
+                return dateB - dateA; // Newest first
+              });
+              
+              get().setEmails(mergedEmails);
+              console.log(`Updated email store with ${newEmails.length} JustCall messages for phone ${account.accountIdentifier}. New count: ${mergedEmails.length}`);
+              setCacheValue("emails", mergedEmails);
+            } else {
+              console.log(`No new JustCall messages for phone ${account.accountIdentifier}`);
+            }
           }
         }
         
@@ -1176,6 +1225,13 @@ export const useEmailStore = create<EmailStore>((set, get) => {
       console.log(`Deleted conversation with ${contactEmail}. Remaining emails: ${filteredEmails.length}`);
       
       return filteredEmails.length;
+    },
+
+    setLoadPageSize: (size: number) => {
+      set((state) => ({ ...state, loadPageSize: size }));
+      if (typeof window !== "undefined") {
+        localStorage.setItem('loadPageSize', size.toString());
+      }
     },
   };
 });

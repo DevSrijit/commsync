@@ -247,6 +247,10 @@ export function EmailList({
 
       // Get the current store state
       const store = useEmailStore.getState();
+      
+      // Get the user's configured page size
+      const pageSize = store.loadPageSize || 100;
+      console.log(`Loading more messages with pageSize: ${pageSize}`);
 
       const initialEmailCount = store.emails.length;
       const initialCursor = store.lastJustcallMessageId;
@@ -256,12 +260,13 @@ export function EmailList({
       console.log('- IMAP page:', store.currentImapPage);
       console.log('- Twilio page:', store.currentTwilioPage);
       console.log('- JustCall cursor (lastMessageId):', store.lastJustcallMessageId || 'none');
+      console.log('- Page size:', pageSize);
 
       // Track which services returned new messages
       const results = await Promise.all([
-        store.syncImapAccounts().then(count => ({ service: 'IMAP', count })),
-        store.syncTwilioAccounts().then(count => ({ service: 'Twilio', count })),
-        store.syncJustcallAccounts(true).then(count => ({ service: 'JustCall', count }))
+        store.syncImapAccounts(),
+        store.syncTwilioAccounts(),
+        store.syncJustcallAccounts(true)
       ]);
 
       // Check if we got new emails
@@ -278,9 +283,10 @@ export function EmailList({
       }
 
       // Log results by service
-      results.forEach(result => {
-        if (result.count !== undefined) {
-          console.log(`${result.service} loaded ${result.count} new messages`);
+      results.forEach((result, index) => {
+        const serviceName = ['IMAP', 'Twilio', 'JustCall'][index];
+        if (result !== undefined) {
+          console.log(`${serviceName} loaded ${result} new messages`);
         }
       });
 
