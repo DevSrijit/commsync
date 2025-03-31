@@ -1,6 +1,6 @@
 export interface EmailAddress {
-  name: string
-  email: string
+  name: string;
+  email: string;
 }
 
 export interface EmailAttachment {
@@ -30,7 +30,7 @@ export interface Email {
   labels: string[]; // Keep this required
   attachments?: EmailAttachment[];
   accountId?: string;
-  accountType?: 'gmail' | 'imap' | 'justcall' | 'twilio';
+  accountType?: "gmail" | "imap" | "justcall" | "twilio";
   read?: boolean;
   platform?: string; // Added for platform indication
   source?: string; // Added to track data source (gmail-api, imap, etc.)
@@ -52,7 +52,9 @@ export interface Contact {
   lastMessageSubject: string;
   labels: string[]; // Keep this required
   accountId?: string;
-  accountType?: 'gmail' | 'imap' | 'justcall' | 'twilio';
+  accountType?: "gmail" | "imap" | "justcall" | "twilio";
+  searchScore?: number;
+  matchedFields?: Set<string>;
 }
 
 export interface Group {
@@ -113,7 +115,7 @@ export interface MessageModel {
   syncAccountId?: string;
   platform: string;
   externalId?: string;
-  direction: 'inbound' | 'outbound';
+  direction: "inbound" | "outbound";
   content: string;
   contentType: string;
   metadata?: any;
@@ -129,7 +131,7 @@ export interface JustCallMessage {
   number: string;
   contact_number: string;
   body: string;
-  direction: 'inbound' | 'outbound';
+  direction: "inbound" | "outbound";
   created_at: string;
   updated_at: string;
   status: string;

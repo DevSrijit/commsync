@@ -1,17 +1,19 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Search, Users, RotateCw, ChevronLeft, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useEmailStore } from "@/lib/email-store";
 import { ContactItem } from "@/components/contact-item";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { Group, Email } from "@/lib/types";
+import { Group, Email, Contact } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { useSession } from "next-auth/react";
 import { MessageCategory } from "@/components/sidebar";
 import { useToast } from "@/hooks/use-toast";
+import Fuse from 'fuse.js';
+import Highlighter from 'react-highlight-words';
 
 // Pagination component with Apple-inspired design
 const Pagination = ({
@@ -120,6 +122,201 @@ export function EmailList({
   const containerRef = useRef<HTMLDivElement>(null);
   const { data: session } = useSession();
   const { toast } = useToast();
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Configure Fuse.js for contact search with optimized settings
+  const fuseOptions = useMemo(() => ({
+    keys: [
+      { name: 'name', weight: 0.5 },
+      { name: 'email', weight: 0.3 },
+      { name: 'lastMessageSubject', weight: 0.2 }
+    ],
+    threshold: 0.4,
+    includeScore: true,
+    minMatchCharLength: 2,
+    useExtendedSearch: true,
+    ignoreLocation: true,
+    shouldSort: true,
+    findAllMatches: false,
+    distance: 100,
+    includeMatches: true
+  }), []);
+
+  // Configure Fuse.js for email content search with optimized settings
+  const emailFuseOptions = useMemo(() => ({
+    keys: [
+      { name: 'subject', weight: 0.4 },
+      { name: 'body', weight: 0.6 }
+    ],
+    threshold: 0.5,
+    includeScore: true,
+    minMatchCharLength: 2,
+    useExtendedSearch: true,
+    ignoreLocation: true,
+    shouldSort: true,
+    findAllMatches: false,
+    distance: 100,
+    includeMatches: true
+  }), []);
+
+  // Create Fuse instances with debounced updates
+  const [fuseInstances, setFuseInstances] = useState({
+    contacts: new Fuse(contacts, fuseOptions),
+    emails: new Fuse(emails, emailFuseOptions)
+  });
+
+  // Update Fuse instances when data changes
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      setFuseInstances({
+        contacts: new Fuse(contacts, fuseOptions),
+        emails: new Fuse(emails, emailFuseOptions)
+      });
+    }, 1000);
+
+    return () => clearTimeout(timeoutId);
+  }, [contacts, emails, fuseOptions, emailFuseOptions]);
+
+  // Enhanced search function with debouncing and ranking
+  const performSearch = useCallback((query: string) => {
+    if (!query.trim()) {
+      return {
+        contacts: contacts,
+        emails: emails,
+        matches: new Set<string>(),
+        rankedResults: contacts
+      };
+    }
+
+    // Search contacts and emails
+    const contactResults = fuseInstances.contacts.search(query);
+    const emailResults = fuseInstances.emails.search(query);
+
+    // Create a map to track contact scores
+    const contactScores = new Map<string, number>();
+    const contactMatches = new Map<string, Set<string>>();
+
+    // Process contact results with scoring
+    contactResults.forEach(result => {
+      const contact = result.item;
+      if (contact.email) {
+        const score = 1 - (result.score || 0);
+        contactScores.set(contact.email, score);
+
+        const matches = new Set<string>();
+        result.matches?.forEach(match => {
+          if (match.key) matches.add(match.key);
+        });
+        contactMatches.set(contact.email, matches);
+      }
+    });
+
+    // Process email results to enhance contact scores
+    emailResults.forEach(result => {
+      const email = result.item;
+      const score = 1 - (result.score || 0);
+
+      if (email.from.email) {
+        const currentScore = contactScores.get(email.from.email) || 0;
+        contactScores.set(email.from.email, Math.max(currentScore, score * 0.8));
+      }
+
+      email.to.forEach(to => {
+        if (to.email) {
+          const currentScore = contactScores.get(to.email) || 0;
+          contactScores.set(to.email, Math.max(currentScore, score * 0.8));
+        }
+      });
+    });
+
+    // Create a set of matched contact emails
+    const matchedContactEmails = new Set(contactScores.keys());
+
+    // Get all unique matched contacts with scores
+    const rankedContacts = contacts
+      .filter(contact => matchedContactEmails.has(contact.email))
+      .map(contact => ({
+        ...contact,
+        searchScore: contactScores.get(contact.email) || 0,
+        matchedFields: contactMatches.get(contact.email) || new Set()
+      }))
+      .sort((a, b) => b.searchScore - a.searchScore);
+
+    return {
+      contacts: rankedContacts,
+      emails: emailResults.map(result => result.item),
+      matches: matchedContactEmails,
+      rankedResults: rankedContacts
+    };
+  }, [contacts, emails, fuseInstances]);
+
+  // Debounced search results
+  const [searchResults, setSearchResults] = useState({
+    contacts: contacts,
+    emails: emails,
+    matches: new Set<string>(),
+    rankedResults: contacts
+  });
+
+  // Handle search with debouncing
+  const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const query = e.target.value;
+    setSearchQuery(query);
+    setCurrentPage(1);
+
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    searchTimeoutRef.current = setTimeout(() => {
+      const results = performSearch(query);
+      setSearchResults(results);
+    }, 150);
+  }, [performSearch]);
+
+  // Enhanced contact filtering with ranking
+  const filteredContacts = useMemo(() => {
+    return searchResults.rankedResults.filter((contact) => {
+      // Skip contacts that are the user's own Gmail address and likely error placeholders
+      if (session?.user?.email && contact.email === session.user.email &&
+        contact.accountType !== 'imap' && !contact.accountId) {
+        return false;
+      }
+
+      // Then filter by category
+      const contactEmails = emails.filter(
+        (email) =>
+          email.from.email === contact.email ||
+          email.to.some((to) => to.email === contact.email)
+      );
+
+      switch (activeFilter) {
+        case "inbox":
+          return contactEmails.some(
+            (email) =>
+              !email.labels.includes("TRASH") && !email.labels.includes("SENT")
+          );
+        case "sent":
+          return contactEmails.some((email) =>
+            email.labels.includes("SENT")
+          );
+        case "trash":
+          return contactEmails.some((email) =>
+            email.labels.includes("TRASH")
+          );
+        case "sms":
+          return contactEmails.some((email) =>
+          (email.accountType === 'twilio' ||
+            email.accountType === 'justcall' ||
+            (email.labels && email.labels.includes("SMS")))
+          );
+        case "contacts":
+          return false;
+        default:
+          return true;
+      }
+    });
+  }, [searchResults.rankedResults, session?.user?.email, emails, activeFilter]);
 
   // Reset to page 1 when activeFilter changes
   useEffect(() => {
@@ -202,8 +399,10 @@ export function EmailList({
         lastMessageSubject: 'SMS Message',
         labels: ['SMS'],
         accountId: email.accountId,
-        accountType: email.accountType
-      }))
+        accountType: email.accountType,
+        searchScore: 0,
+        matchedFields: new Set<string>()
+      } as Contact))
       // Remove duplicates by email address
       .filter((contact, index, self) =>
         index === self.findIndex(c => c.email === contact.email)
@@ -216,71 +415,17 @@ export function EmailList({
       })
     : [];
 
-  const filteredContacts = contacts.filter((contact) => {
-    // First filter by search query
-    const matchesSearch =
-      contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      contact.email.toLowerCase().includes(searchQuery.toLowerCase());
-
-    if (!matchesSearch) return false;
-
-    // Skip contacts that are the user's own Gmail address and likely error placeholders
-    if (session?.user?.email && contact.email === session.user.email &&
-      contact.accountType !== 'imap' && !contact.accountId) {
-      return false;
-    }
-
-    // Then filter by category
-    const contactEmails = emails.filter(
-      (email) =>
-        email.from.email === contact.email ||
-        email.to.some((to) => to.email === contact.email)
-    );
-
-    switch (activeFilter) {
-      case "inbox":
-        return contactEmails.some(
-          (email) =>
-            !email.labels.includes("TRASH") && !email.labels.includes("SENT")
-        );
-      case "sent":
-        return contactEmails.some((email) =>
-          email.labels.includes("SENT")
-        );
-      case "trash":
-        return contactEmails.some((email) =>
-          email.labels.includes("TRASH")
-        );
-      case "sms":
-        return contactEmails.some((email) =>
-        (email.accountType === 'twilio' ||
-          email.accountType === 'justcall' ||
-          (email.labels && email.labels.includes("SMS")))
-        );
-      case "contacts":
-        // When on contacts filter, we don't show individual contacts
-        return false;
-      default:
-        return true;
-    }
-  });
-
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchQuery(e.target.value);
-    setCurrentPage(1); // Reset to first page on search
-  };
-
-  const handleGroupSelect = (group: Group) => {
-    setSelectedGroupId(group.id);
-    onSelectContact(`group:${group.id}`, true, group.id);
-  };
-
   // Only show SMS contacts when SMS filter is active
   const displayedContacts = activeFilter === 'sms'
     ? [...sortedSMSContacts, ...syntheticSMSContacts]
     : activeFilter === 'contacts'
       ? [] // Show no regular contacts when on contacts filter
       : filteredContacts;
+
+  const handleGroupSelect = (group: Group) => {
+    setSelectedGroupId(group.id);
+    onSelectContact(`group:${group.id}`, true, group.id);
+  };
 
   const handleDeleteContact = (contactEmail: string) => {
     // Add to deleted contacts array so it's filtered from UI immediately
@@ -373,16 +518,16 @@ export function EmailList({
       console.log('Current pagination state:');
       console.log('- IMAP page:', store.currentImapPage);
       console.log('- Twilio page:', store.currentTwilioPage);
-      console.log('- JustCall cursors:', Object.keys(initialJustcallCursors).length > 0 
+      console.log('- JustCall cursors:', Object.keys(initialJustcallCursors).length > 0
         ? Object.entries(initialJustcallCursors).map(([id, cursor]) => `Account ${id}: ${cursor}`).join(', ')
         : 'none');
       console.log('- Page size:', pageSize);
 
       // Find the oldest Gmail email to use for filtering
-      const gmailEmails = store.emails.filter(email => 
+      const gmailEmails = store.emails.filter(email =>
         !email.accountId || email.accountType === 'gmail' || email.source === 'gmail-api'
       );
-      
+
       let oldestGmailEmail = null;
       if (gmailEmails.length > 0) {
         // Sort by date ascending to find oldest
@@ -399,11 +544,11 @@ export function EmailList({
       // Track which services returned new messages
       const results = await Promise.all([
         // For Gmail, we'll pass the oldest email date for backwards loading
-        oldestGmailEmail 
+        oldestGmailEmail
           ? store.syncEmails(session?.user?.accessToken || '', {
-              isLoadingMore: true,
-              oldestEmailDate: oldestGmailEmail.date
-            })
+            isLoadingMore: true,
+            oldestEmailDate: oldestGmailEmail.date
+          })
           : store.syncEmails(session?.user?.accessToken || ''),
         store.syncImapAccounts(),
         store.syncTwilioAccounts(),
@@ -417,10 +562,10 @@ export function EmailList({
 
       // Check if JustCall cursors changed
       const newJustcallCursors = newStore.lastJustcallMessageIds;
-      const cursorChanges = Object.keys(newJustcallCursors).filter(accountId => 
+      const cursorChanges = Object.keys(newJustcallCursors).filter(accountId =>
         newJustcallCursors[accountId] !== (initialJustcallCursors[accountId] || null)
       );
-      
+
       if (cursorChanges.length > 0) {
         console.log(`JustCall cursors updated for ${cursorChanges.length} accounts:`);
         cursorChanges.forEach(accountId => {
@@ -570,6 +715,8 @@ export function EmailList({
                 <p>No contact groups found.</p>
                 <p className="text-xs mt-1">Add contact groups from the sidebar menu.</p>
               </>
+            ) : searchQuery.trim() ? (
+              <p>No conversations found matching "{searchQuery}"</p>
             ) : (
               <p>No conversations found.</p>
             )}
@@ -596,7 +743,7 @@ export function EmailList({
                 </div>
               )}
 
-              {/* Show contacts */}
+              {/* Show contacts with ranking indicators */}
               {currentContacts.length > 0 && activeFilter !== 'contacts' && (
                 <div className="px-3">
                   <h2 className="text-sm font-medium text-muted-foreground mb-2">
@@ -610,6 +757,10 @@ export function EmailList({
                         isSelected={selectedContact === contact.email}
                         onClick={() => onSelectContact(contact.email)}
                         onDelete={handleDeleteContact}
+                        searchQuery={searchQuery}
+                        searchMatches={searchResults.matches}
+                        searchScore={contact.searchScore}
+                        matchedFields={contact.matchedFields}
                       />
                     ))}
                   </div>
