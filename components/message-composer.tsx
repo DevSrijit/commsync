@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select";
 import { useSendMessage } from "@/lib/messaging";
 import { Switch } from "@/components/ui/switch";
+import { htmlToSmsText } from "@/lib/utils";
 
 // Define updated message platform types
 export type MessagePlatform = "gmail" | "imap" | "twilio" | "justcall";
@@ -55,7 +56,7 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
     useEffect(() => {
         // Reset selected account when platform changes
         setSelectedAccountId("");
-        
+
         // Auto-select first account if there's only one for the platform
         if (platform === "imap" && imapAccounts.length === 1 && imapAccounts[0].id) {
             setSelectedAccountId(imapAccounts[0].id);
@@ -108,7 +109,7 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
         try {
             // Support batch sending - split recipients by comma, semicolon, or space
             const recipientList = recipients.split(/[,;\s]+/).filter(r => r.trim().length > 0);
-            
+
             if (recipientList.length === 0) {
                 toast({
                     title: "Invalid recipients",
@@ -120,25 +121,28 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
 
             // For twilio and justcall, send individual messages
             if (platform === "twilio" || platform === "justcall") {
+                // Convert HTML to SMS text for SMS platforms
+                const formattedContent = htmlToSmsText(contentToSend);
+
                 // Send messages sequentially
                 for (const recipient of recipientList) {
                     // Get account details for JustCall specifically
                     let justcallNumber = undefined;
                     let restrictOnceValue = undefined;
-                    
+
                     if (platform === "justcall") {
                         const account = justcallAccounts.find(a => a.id === selectedAccountId);
                         justcallNumber = account?.accountIdentifier || undefined;
-                        
+
                         // Convert boolean to "Yes"/"No" string for JustCall API
                         restrictOnceValue = restrictOnce ? "Yes" as const : "No" as const;
                     }
-                    
+
                     await sendMessage({
                         platform,
                         recipients: recipient.trim(),
                         subject,
-                        content: contentToSend,
+                        content: formattedContent,
                         attachments: attachmentsToSend,
                         accountId: selectedAccountId,
                         justcallNumber: justcallNumber,
@@ -178,7 +182,7 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
             setAttachments([]);
             setSelectedAccountId("");
             onOpenChange(false);
-            
+
             // Trigger a sync of all platforms to fetch the latest messages
             setTimeout(() => {
                 useEmailStore.getState().syncAllPlatforms(session?.user?.accessToken || null);
@@ -297,15 +301,15 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
     const renderRecipientField = () => {
         // For email platforms, show subject field
         const showSubjectField = platform === "gmail" || platform === "imap";
-        
+
         return (
             <>
                 <div className="flex items-center gap-2">
                     <Label htmlFor="recipients" className="w-20 text-sm font-medium">To:</Label>
                     <Input
                         id="recipients"
-                        placeholder={platform === "twilio" || platform === "justcall" 
-                            ? "Phone number(s) with country code" 
+                        placeholder={platform === "twilio" || platform === "justcall"
+                            ? "Phone number(s) with country code"
                             : "Email address(es)"
                         }
                         value={recipients}

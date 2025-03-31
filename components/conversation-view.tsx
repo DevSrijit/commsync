@@ -22,6 +22,7 @@ import { Email } from "@/lib/types";
 import { useSendMessage } from "@/lib/messaging";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { htmlToSmsText } from "@/lib/utils";
 
 interface WelcomeScreenProps {
   userEmail?: string | null;
@@ -38,14 +39,14 @@ function WelcomeScreen({ userEmail }: WelcomeScreenProps) {
           </div>
         </div>
       </div>
-      
+
       <h1 className="text-3xl font-bold tracking-tight mb-3">Welcome to CommSync</h1>
       {userEmail && (
         <p className="text-muted-foreground mb-8">
           Connected as <span className="font-medium text-foreground">{userEmail}</span>
         </p>
       )}
-      
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10 w-full max-w-2xl mx-auto">
         <div className="border rounded-lg p-4 flex items-start gap-3 bg-card hover:bg-accent/50 transition-colors">
           <div className="h-10 w-10 rounded-full bg-primary/10 flex-shrink-0 flex items-center justify-center">
@@ -56,7 +57,7 @@ function WelcomeScreen({ userEmail }: WelcomeScreenProps) {
             <p className="text-sm text-muted-foreground">Choose from your existing conversations in the sidebar to get started.</p>
           </div>
         </div>
-        
+
         <div className="border rounded-lg p-4 flex items-start gap-3 bg-card hover:bg-accent/50 transition-colors">
           <div className="h-10 w-10 rounded-full bg-primary/10 flex-shrink-0 flex items-center justify-center">
             <Users className="h-5 w-5 text-primary" />
@@ -67,7 +68,7 @@ function WelcomeScreen({ userEmail }: WelcomeScreenProps) {
           </div>
         </div>
       </div>
-      
+
       <div className="border border-dashed rounded-lg p-5 w-full max-w-2xl text-left bg-muted/40">
         <div className="flex items-start gap-3">
           <Info className="h-5 w-5 text-blue-500 mt-0.5 flex-shrink-0" />
@@ -136,10 +137,10 @@ export function ConversationView({
   } = useEmailStore();
   const { toast } = useToast();
   const { sendMessage } = useSendMessage();
-  
+
   // State to track whether we've already shown a Gmail error
   const [shownGmailError, setShownGmailError] = useState(false);
-  
+
   // Determine if we're dealing with a group based on contactEmail format
   const isContactGroup = useMemo(() => {
     return contactEmail?.startsWith('group:') || isGroup;
@@ -175,7 +176,7 @@ export function ConversationView({
               email.from?.email === addr ||
               email.to?.some((to) => to.email === addr)
           );
-          
+
           // For SMS/phone conversations
           const phoneMatches = group.phoneNumbers.some(
             (phone) => {
@@ -183,18 +184,18 @@ export function ConversationView({
               const normalizedPhone = phone.replace(/\D/g, '');
               const normalizedFrom = email.from?.email.replace(/\D/g, '');
               const normalizedToPhones = email.to?.map(to => to.email.replace(/\D/g, ''));
-              
+
               return (
                 // Check if the SMS is from this phone number
                 (normalizedFrom && normalizedFrom.includes(normalizedPhone)) ||
                 // Check if the SMS is to this phone number
-                (normalizedToPhones && normalizedToPhones.some(toPhone => 
+                (normalizedToPhones && normalizedToPhones.some(toPhone =>
                   toPhone && toPhone.includes(normalizedPhone)
                 ))
               );
             }
           );
-          
+
           // Return emails that match either email addresses or phone numbers
           return emailMatches || phoneMatches;
         });
@@ -215,7 +216,7 @@ export function ConversationView({
               email.from?.email === addr ||
               email.to?.some((to) => to.email === addr)
           );
-          
+
           // For SMS/phone conversations
           const phoneMatches = group.phoneNumbers.some(
             (phone) => {
@@ -223,18 +224,18 @@ export function ConversationView({
               const normalizedPhone = phone.replace(/\D/g, '');
               const normalizedFrom = email.from?.email.replace(/\D/g, '');
               const normalizedToPhones = email.to?.map(to => to.email.replace(/\D/g, ''));
-              
+
               return (
                 // Check if the SMS is from this phone number
                 (normalizedFrom && normalizedFrom.includes(normalizedPhone)) ||
                 // Check if the SMS is to this phone number
-                (normalizedToPhones && normalizedToPhones.some(toPhone => 
+                (normalizedToPhones && normalizedToPhones.some(toPhone =>
                   toPhone && toPhone.includes(normalizedPhone)
                 ))
               );
             }
           );
-          
+
           // Return emails that match either email addresses or phone numbers
           return emailMatches || phoneMatches;
         });
@@ -291,7 +292,7 @@ export function ConversationView({
   const allEmails = emails;
 
   // Update conversation filtering to handle group conversations
-  const conversation = useMemo(() => 
+  const conversation = useMemo(() =>
     emails
       .filter((email) => {
         // If we're looking at a group conversation
@@ -302,7 +303,7 @@ export function ConversationView({
               email.from?.email === addr ||
               email.to?.some((to) => to.email === addr)
           );
-          
+
           // For SMS/phone conversations
           const phoneMatches = selectedGroup.phoneNumbers.some(
             (phone) => {
@@ -310,18 +311,18 @@ export function ConversationView({
               const normalizedPhone = phone.replace(/\D/g, '');
               const normalizedFrom = email.from?.email.replace(/\D/g, '');
               const normalizedToPhones = email.to?.map(to => to.email.replace(/\D/g, ''));
-              
+
               return (
                 // Check if the SMS is from this phone number
                 (normalizedFrom && normalizedFrom.includes(normalizedPhone)) ||
                 // Check if the SMS is to this phone number
-                (normalizedToPhones && normalizedToPhones.some(toPhone => 
+                (normalizedToPhones && normalizedToPhones.some(toPhone =>
                   toPhone && toPhone.includes(normalizedPhone)
                 ))
               );
             }
           );
-          
+
           return emailMatches || phoneMatches;
         }
 
@@ -359,7 +360,7 @@ export function ConversationView({
         return false;
       })
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
-  [emails, contactEmail, session?.user?.email, contacts, isContactGroup, selectedGroup]);
+    [emails, contactEmail, session?.user?.email, contacts, isContactGroup, selectedGroup]);
 
   useEffect(() => {
     console.log(`Conversation contains ${conversation.length} emails`);
@@ -372,7 +373,7 @@ export function ConversationView({
       if (!contactEmail) {
         return;
       }
-      
+
       if (
         !isLoading &&
         !isRefetching &&
@@ -381,7 +382,7 @@ export function ConversationView({
         conversation.length === 0 // Only fetch if conversation is empty
       ) {
         setIsRefetching(true);
-        
+
         try {
           // For Gmail accounts
           if (!contact.accountId) {
@@ -406,7 +407,7 @@ export function ConversationView({
               title: "Loading conversation",
               description: "Fetching messages for this contact...",
             });
-            
+
             const imapAccount = imapAccounts.find(
               (acc) => acc.id === contact.accountId
             );
@@ -490,7 +491,7 @@ export function ConversationView({
       const latestEmail = [...conversation].sort(
         (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
       )[0];
-      
+
       // Set platform based on latest message
       if (latestEmail.accountType) {
         setSelectedPlatform(latestEmail.accountType);
@@ -529,12 +530,12 @@ export function ConversationView({
     if (isContactGroup && selectedGroup) {
       return selectedGroup.name;
     }
-    
+
     if (contactEmail) {
       const contact = contacts.find((c) => c.email === contactEmail);
       return contact?.name || contactEmail.split('@')[0];
     }
-    
+
     return "Conversation";
   }, [contactEmail, contacts, isContactGroup, selectedGroup]);
 
@@ -640,18 +641,18 @@ export function ConversationView({
               conversation.map((email) => {
                 // Determine if message is from the user (outbound) or to the user (inbound)
                 let isFromMe = false;
-                
+
                 // Check based on platform/account type
                 if (email.accountType === "gmail") {
                   // For Gmail: check against session.user.email
                   isFromMe = email.from.email === session?.user?.email;
                 } else if (email.accountType === "imap") {
                   // For IMAP: check if this is the account owner's email
-                  isFromMe = email.accountId === contact?.accountId && 
+                  isFromMe = email.accountId === contact?.accountId &&
                     !email.from.email.includes(contactEmail);
                 } else if (email.accountType === "twilio" || email.accountType === "justcall") {
                   // For SMS platforms: check direction property directly
-                  
+
                   // First check if there's an explicit direction label
                   if (email.labels?.includes("OUTBOUND")) {
                     isFromMe = true;
@@ -660,20 +661,20 @@ export function ConversationView({
                   } else {
                     // For JustCall: messages they create have direction set to "inbound" when coming TO the user
                     // and "outbound" when sent FROM the user
-                    const isOutbound = email.labels?.some(label => 
-                      label === "outbound" || 
-                      label === "OUTBOUND" || 
-                      label === "Outbound" || 
-                      label === "outbound-api" || 
+                    const isOutbound = email.labels?.some(label =>
+                      label === "outbound" ||
+                      label === "OUTBOUND" ||
+                      label === "Outbound" ||
+                      label === "outbound-api" ||
                       label === "outbound-reply"
                     );
-                    
-                    const isInbound = email.labels?.some(label => 
-                      label === "inbound" || 
-                      label === "INBOUND" || 
+
+                    const isInbound = email.labels?.some(label =>
+                      label === "inbound" ||
+                      label === "INBOUND" ||
                       label === "Inbound"
                     );
-                    
+
                     if (isOutbound) {
                       isFromMe = true;
                     } else if (isInbound) {
@@ -682,37 +683,37 @@ export function ConversationView({
                       // Check for typical JustCall pattern: 
                       // If FROM.EMAIL contains an account phone number, it's outbound (from us)
                       // If TO contains an account phone number, it's inbound (to us)
-                      
+
                       const accountPhoneNumbers: string[] = [];
-                      
+
                       // Get all phone numbers from Twilio accounts
                       twilioAccounts.forEach(acc => {
                         if (acc.phoneNumber) {
                           accountPhoneNumbers.push(acc.phoneNumber.replace(/\D/g, ''));
                         }
                       });
-                      
+
                       // Get all phone numbers from JustCall accounts
                       justcallAccounts.forEach(acc => {
                         if (acc.accountIdentifier) {
                           accountPhoneNumbers.push(acc.accountIdentifier.replace(/\D/g, ''));
                         }
                       });
-                      
+
                       // Clean phone numbers for comparison
                       const fromPhone = email.from.email.replace(/\D/g, '');
                       const toPhones = email.to.map(to => to.email.replace(/\D/g, ''));
-                      
+
                       // If the message is FROM one of our account phone numbers, it's from us
-                      const isFromAccountPhone = accountPhoneNumbers.some(phone => 
+                      const isFromAccountPhone = accountPhoneNumbers.some(phone =>
                         fromPhone.includes(phone) || phone.includes(fromPhone)
                       );
-                      
+
                       // If the message is TO one of our account phone numbers, it's to us
                       const isToAccountPhone = accountPhoneNumbers.some(phone =>
                         toPhones.some(toPhone => toPhone.includes(phone) || phone.includes(toPhone))
                       );
-                      
+
                       if (isFromAccountPhone) {
                         isFromMe = true;
                       } else if (isToAccountPhone) {
@@ -721,7 +722,7 @@ export function ConversationView({
                         // Fall back to account-specific checks
                         const twilioAccount = twilioAccounts.find(a => a.id === email.accountId);
                         const justcallAccount = justcallAccounts.find(a => a.id === email.accountId);
-                        
+
                         if (twilioAccount) {
                           // In Twilio, if our phone number is the "from", it's an outbound message (from us)
                           isFromMe = email.from.email.replace(/\D/g, '').includes(twilioAccount.phoneNumber.replace(/\D/g, ''));
@@ -731,7 +732,7 @@ export function ConversationView({
                         } else {
                           // Last resort - If the contact's phone is in the "to" field, it's from us
                           const contactPhone = contactEmail?.replace(/\D/g, '');
-                          
+
                           if (contactPhone) {
                             const toPhones = email.to.map(to => to.email.replace(/\D/g, ''));
                             isFromMe = toPhones.some(toPhone => toPhone.includes(contactPhone) || contactPhone.includes(toPhone));
@@ -748,9 +749,8 @@ export function ConversationView({
                 return (
                   <div
                     key={email.id}
-                    className={`flex ${
-                      isFromMe ? "justify-end" : "justify-start"
-                    } gap-3 items-end`}
+                    className={`flex ${isFromMe ? "justify-end" : "justify-start"
+                      } gap-3 items-end`}
                   >
                     {/* Avatar on the left if it's from the contact */}
                     {!isFromMe && (
@@ -763,11 +763,10 @@ export function ConversationView({
                     )}
                     {/* Message bubble */}
                     <div
-                      className={`max-w-[85%] rounded-2xl p-4 ${
-                        isFromMe
-                          ? "bg-primary text-primary-foreground rounded-br-sm"
-                          : "bg-muted rounded-bl-sm"
-                      }`}
+                      className={`max-w-[85%] rounded-2xl p-4 ${isFromMe
+                        ? "bg-primary text-primary-foreground rounded-br-sm"
+                        : "bg-muted rounded-bl-sm"
+                        }`}
                     >
                       <div className="flex flex-col gap-1">
                         <div className="flex justify-between items-baseline gap-4">
@@ -787,7 +786,14 @@ export function ConversationView({
                             )}
                           </span>
                         </div>
-                        <EncapsulatedEmailContent html={DOMPurify.sanitize(email.body)} />
+                        {/* Handle SMS message display */}
+                        {(email.accountType === "twilio" || email.accountType === "justcall") ? (
+                          <div className="whitespace-pre-wrap font-mono text-sm">
+                            {email.body}
+                          </div>
+                        ) : (
+                          <EncapsulatedEmailContent html={DOMPurify.sanitize(email.body)} />
+                        )}
                         {/* Attachments */}
                         {email.attachments && email.attachments.length > 0 && (
                           <div
@@ -955,7 +961,7 @@ export function ConversationView({
               // Handle group emails
               if (isGroup && groupId) {
                 const group = groups.find((g) => g.id === groupId);
-                
+
                 if (group) {
                   if (selectedPlatform === "gmail" || selectedPlatform === "imap") {
                     // For email platforms with group
@@ -976,7 +982,7 @@ export function ConversationView({
                             title: "Message sent",
                             description: `Your message has been sent to ${group.addresses.length} recipients`,
                           });
-                          
+
                           // Trigger sync after message is sent
                           setTimeout(() => {
                             useEmailStore.getState().syncAllPlatforms(session.user.accessToken);
@@ -986,10 +992,10 @@ export function ConversationView({
                     });
                   } else if (selectedPlatform === "twilio" || selectedPlatform === "justcall") {
                     // For SMS platforms with group, send individual messages
-                    const phoneNumbers = group.phoneNumbers.length > 0 
+                    const phoneNumbers = group.phoneNumbers.length > 0
                       ? group.phoneNumbers
                       : group.addresses; // Fallback to addresses if no phone numbers
-                      
+
                     for (const phoneNumber of phoneNumbers) {
                       await sendMessage({
                         platform: selectedPlatform,
@@ -1006,12 +1012,12 @@ export function ConversationView({
                         }
                       });
                     }
-                    
+
                     toast({
                       title: "Messages sent",
                       description: `Your message has been sent to ${phoneNumbers.length} recipients`,
                     });
-                    
+
                     // Trigger sync after all messages are sent
                     setTimeout(() => {
                       useEmailStore.getState().syncAllPlatforms(session.user.accessToken);
@@ -1027,7 +1033,7 @@ export function ConversationView({
                     ? conversation.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
                     : null;
                   const threadId = latestEmailInConversation?.threadId || null;
-                  
+
                   await sendMessage({
                     platform: selectedPlatform,
                     recipients: contactEmail,
@@ -1045,7 +1051,7 @@ export function ConversationView({
                           title: "Message sent",
                           description: "Your reply has been sent successfully",
                         });
-                        
+
                         // Trigger sync after message is sent
                         setTimeout(() => {
                           useEmailStore.getState().syncAllPlatforms(session.user.accessToken);
@@ -1056,13 +1062,13 @@ export function ConversationView({
                 } else if (selectedPlatform === "twilio" || selectedPlatform === "justcall") {
                   // For SMS platforms
                   let justcallNumber = undefined;
-                  
+
                   // Get JustCall phone number if needed
                   if (selectedPlatform === "justcall" && selectedAccountId) {
                     const account = justcallAccounts.find(a => a.id === selectedAccountId);
                     justcallNumber = account?.accountIdentifier || undefined;
                   }
-                  
+
                   await sendMessage({
                     platform: selectedPlatform,
                     recipients: contactEmail,
@@ -1079,7 +1085,7 @@ export function ConversationView({
                           title: "Message sent",
                           description: "Your message has been sent successfully",
                         });
-                        
+
                         // Trigger sync after message is sent
                         setTimeout(() => {
                           useEmailStore.getState().syncAllPlatforms(session.user.accessToken);

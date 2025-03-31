@@ -44,6 +44,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { htmlToSmsText } from "@/lib/utils";
 
 // Add MessagePlatform type
 export type MessagePlatform = "gmail" | "imap" | "twilio" | "justcall";
@@ -161,7 +162,11 @@ export function MessageInput({
   const handleSend = () => {
     if (editor && !editor.isEmpty) {
       const content = editor.getHTML();
-      onSend(content, attachments);
+      // Convert HTML to SMS text if platform is SMS
+      const formattedContent = platform === "twilio" || platform === "justcall"
+        ? htmlToSmsText(content)
+        : content;
+      onSend(formattedContent, attachments);
     }
   };
 
@@ -553,13 +558,18 @@ export function MessageInput({
               onClick={async () => {
                 if (editor && !editor.isEmpty) {
                   const content = editor.getHTML();
+                  // Convert HTML to SMS text if platform is SMS
+                  const formattedContent = platform === "twilio" || platform === "justcall"
+                    ? htmlToSmsText(content)
+                    : content;
+
                   // First save content via handleSend to update parent state
-                  onSend(content, attachments);
+                  onSend(formattedContent, attachments);
 
                   // Then trigger custom send action if provided, passing current content directly
                   if (customSend) {
                     try {
-                      const result = await Promise.resolve(customSend(content, attachments));
+                      const result = await Promise.resolve(customSend(formattedContent, attachments));
                       // If customSend returns successfully or returns true, clear the editor
                       if (result !== false) {
                         clearEditor();
