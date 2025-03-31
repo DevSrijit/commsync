@@ -688,26 +688,27 @@ export function EmailList({
       ref={containerRef}
     >
       <div className="sticky top-0 z-10 px-2 py-4 bg-background">
-        <div className="relative">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <div className="relative group">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground transition-colors group-focus-within:text-primary" />
           <Input
             ref={searchInputRef}
             placeholder="Search conversations..."
-            className="h-9 pl-8 pr-8"
+            className="h-9 pl-8 pr-8 bg-muted/50 focus:bg-background transition-colors"
             value={searchInput}
             onChange={handleSearchInputChange}
             onKeyDown={handleKeyPress}
             disabled={isSearching}
           />
-          <div className="absolute right-2.5 top-2.5 flex items-center gap-1">
+          <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center">
             {searchInput && !isSearching && (
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-6 w-6 rounded-full hover:bg-accent"
+                className="h-6 w-6 rounded-full hover:bg-accent/80 transition-all duration-200 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
                 onClick={clearSearch}
+                aria-label="Clear search"
               >
-                <X className="h-3 w-3" />
+                <X className="h-3 w-3 text-muted-foreground hover:text-foreground transition-colors" />
               </Button>
             )}
             {isSearching && (
@@ -723,7 +724,7 @@ export function EmailList({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
-              className="absolute left-0 right-0 mt-2 bg-background border rounded-lg shadow-lg overflow-hidden"
+              className="absolute left-0 right-0 mt-2 bg-background/95 backdrop-blur-sm border rounded-lg shadow-lg overflow-hidden"
             >
               <div className="p-4">
                 <div className="flex items-center justify-between text-sm text-muted-foreground">
