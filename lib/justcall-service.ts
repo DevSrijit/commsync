@@ -4,45 +4,52 @@ import { db } from "@/lib/db";
 
 /**
  * Creates a properly formatted ISO timestamp from JustCall date and time fields
- * 
+ *
  * @param dateStr The date string from JustCall (sms_user_date or sms_date)
  * @param timeStr The time string from JustCall (sms_user_time or sms_time)
  * @returns An ISO formatted timestamp string
  */
-export function formatJustCallTimestamp(dateStr?: string, timeStr?: string): string {
-  
+export function formatJustCallTimestamp(
+  dateStr?: string,
+  timeStr?: string
+): string {
   if (!dateStr && !timeStr) {
     const fallbackTime = new Date().toISOString();
-    console.log(`No date or time provided, using current time: ${fallbackTime}`);
+    console.log(
+      `No date or time provided, using current time: ${fallbackTime}`
+    );
     return fallbackTime;
   }
-  
+
   try {
     // If we have both date and time, combine them
     if (dateStr && timeStr) {
       // Make sure dateStr is in YYYY-MM-DD format
       let formattedDate = dateStr;
       let formattedTime = timeStr;
-      
+
       // Check if date is in MM/DD/YYYY format and convert to YYYY-MM-DD
-      if (dateStr.includes('/')) {
-        const dateParts = dateStr.split('/');
+      if (dateStr.includes("/")) {
+        const dateParts = dateStr.split("/");
         if (dateParts.length === 3) {
-          formattedDate = `${dateParts[2]}-${dateParts[0].padStart(2, '0')}-${dateParts[1].padStart(2, '0')}`;
+          formattedDate = `${dateParts[2]}-${dateParts[0].padStart(
+            2,
+            "0"
+          )}-${dateParts[1].padStart(2, "0")}`;
         }
       }
-      
+
       // Make sure time is in HH:MM:SS format
-      if (!formattedTime.includes(':')) {
+      if (!formattedTime.includes(":")) {
         // If time isn't in the expected format, try to use it as is
-      } else if (formattedTime.split(':').length === 2) {
+      } else if (formattedTime.split(":").length === 2) {
         // Add seconds if missing
         formattedTime = `${formattedTime}:00`;
       }
-      
+
       // Format: YYYY-MM-DD HH:MM:SS
       const isoTime = `${formattedDate}T${formattedTime}`;
-      
+
       // Validate the timestamp by parsing it
       const date = new Date(isoTime);
       if (!isNaN(date.getTime())) {
@@ -52,14 +59,14 @@ export function formatJustCallTimestamp(dateStr?: string, timeStr?: string): str
         // Continue to fallback methods
       }
     }
-    
+
     // If we only have time string (should include date info anyway)
     if (timeStr) {
       // Check if timeStr is a valid ISO timestamp
-      if (timeStr.includes('T') || timeStr.includes('Z')) {
+      if (timeStr.includes("T") || timeStr.includes("Z")) {
         return timeStr;
       }
-      
+
       // Try to parse it as a regular timestamp
       const date = new Date(timeStr);
       if (!isNaN(date.getTime())) {
@@ -67,7 +74,7 @@ export function formatJustCallTimestamp(dateStr?: string, timeStr?: string): str
         return result;
       }
     }
-    
+
     // If we only have date string
     if (dateStr) {
       const date = new Date(dateStr);
@@ -76,7 +83,7 @@ export function formatJustCallTimestamp(dateStr?: string, timeStr?: string): str
         return result;
       }
     }
-    
+
     // Fallback to current time if parsing fails
     const fallbackTime = new Date().toISOString();
     return fallbackTime;
@@ -145,7 +152,11 @@ export class JustCallService {
     limit = 100,
     lastSmsIdFetched?: string,
     sortDirection: "asc" | "desc" = "desc"
-  ): Promise<{ messages: JustCallMessage[], rateLimited?: boolean, retryAfter?: number }> {
+  ): Promise<{
+    messages: JustCallMessage[];
+    rateLimited?: boolean;
+    retryAfter?: number;
+  }> {
     try {
       // Using the V2 SMS endpoints as per the documentation
       let url = `${this.baseUrl}/texts`;
@@ -153,7 +164,7 @@ export class JustCallService {
 
       // Set pagination parameters
       queryParams.append("per_page", limit.toString());
-      
+
       // The 'sort' parameter should always be 'datetime'
       queryParams.append("sort", "datetime");
 
@@ -178,9 +189,11 @@ export class JustCallService {
       // Use cursor-based pagination with last_sms_id_fetched instead of page number
       if (lastSmsIdFetched) {
         queryParams.append("last_sms_id_fetched", lastSmsIdFetched);
-        console.log(`Using cursor-based pagination with last_sms_id_fetched: ${lastSmsIdFetched}`);
+        console.log(
+          `Using cursor-based pagination with last_sms_id_fetched: ${lastSmsIdFetched}`
+        );
       } else {
-        console.log('Initial fetch (no pagination cursor)');
+        console.log("Initial fetch (no pagination cursor)");
       }
 
       url = `${url}?${queryParams.toString()}`;
@@ -192,20 +205,26 @@ export class JustCallService {
       });
 
       // Check for rate limiting headers
-      const rateLimitRemaining = parseInt(response.headers.get('X-RateLimit-Remaining') || '-1');
-      const rateLimitReset = parseInt(response.headers.get('X-RateLimit-Reset') || '-1');
-      
-      if (rateLimitRemaining === 0 || (response.status === 429)) {
-        console.warn(`⚠️ JustCall API rate limit reached! Reset in ${rateLimitReset} seconds`);
-        
+      const rateLimitRemaining = parseInt(
+        response.headers.get("X-RateLimit-Remaining") || "-1"
+      );
+      const rateLimitReset = parseInt(
+        response.headers.get("X-RateLimit-Reset") || "-1"
+      );
+
+      if (rateLimitRemaining === 0 || response.status === 429) {
+        console.warn(
+          `⚠️ JustCall API rate limit reached! Reset in ${rateLimitReset} seconds`
+        );
+
         // If we got a 429 but no specific rate limit headers, use a default wait time
         const retryAfter = rateLimitReset > 0 ? rateLimitReset : 60; // Default to 60 seconds
-        
+
         // Return an empty result with rate limit info
-        return { 
-          messages: [], 
-          rateLimited: true, 
-          retryAfter 
+        return {
+          messages: [],
+          rateLimited: true,
+          retryAfter,
         };
       }
 
@@ -232,7 +251,7 @@ export class JustCallService {
       }
 
       const data = await response.json();
-      
+
       const messages = data.data || [];
       if (!Array.isArray(messages)) {
         console.error("JustCall API returned unexpected data format:", data);
@@ -242,21 +261,25 @@ export class JustCallService {
       // Log all messages with their timestamps for debugging
       if (messages.length > 0) {
         console.log(`Retrieved ${messages.length} JustCall messages.`);
-        console.log(`First message ID: ${messages[0].id}, Last message ID: ${messages[messages.length-1].id}`);
-        
+        console.log(
+          `First message ID: ${messages[0].id}, Last message ID: ${
+            messages[messages.length - 1].id
+          }`
+        );
+
         // Show the first 3 messages for debugging
         const sampleSize = Math.min(3, messages.length);
         console.log(`Sample of first ${sampleSize} messages:`);
         messages.slice(0, sampleSize).forEach((msg, idx) => {
-          console.log(`Message ${idx+1}:`, {
+          console.log(`Message ${idx + 1}:`, {
             id: msg.id,
             direction: msg.direction,
             contact_number: msg.contact_number,
-            date: msg.sms_user_date || msg.sms_date
+            date: msg.sms_user_date || msg.sms_date,
           });
         });
       } else {
-        console.log('No messages returned from JustCall API');
+        console.log("No messages returned from JustCall API");
       }
 
       // Create a map to group messages by conversation
@@ -331,12 +354,12 @@ export class JustCallService {
           };
         })
         .filter(Boolean); // Remove null messages
-        
+
       // Return rate limit info along with messages
-      return { 
+      return {
         messages: processedMessages,
-        rateLimited: rateLimitRemaining <= 3, // Warning if we're close to limit
-        retryAfter: rateLimitReset > 0 ? rateLimitReset : undefined
+        rateLimited: rateLimitRemaining === 0 || response.status === 429, // Only true when actually rate limited
+        retryAfter: rateLimitReset > 0 ? rateLimitReset : undefined,
       };
     } catch (error) {
       console.error("Failed to fetch JustCall messages:", error);
@@ -358,9 +381,11 @@ export class JustCallService {
 
       // Use provided justcall_number or fall back to the account's phone number
       const phone_number = justcall_number || this.phoneNumber;
-      
+
       if (!phone_number) {
-        throw new Error("JustCall phone number is required for sending messages");
+        throw new Error(
+          "JustCall phone number is required for sending messages"
+        );
       }
 
       const payload: any = {
@@ -372,7 +397,7 @@ export class JustCallService {
       if (media && media.length > 0) {
         payload.media_url = media;
       }
-      
+
       if (restrict_once) {
         payload.restrict_once = restrict_once;
       }

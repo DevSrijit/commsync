@@ -3,9 +3,9 @@ import { ImapAccount } from "@/lib/imap-service";
 import { fetchEmails as fetchGmailEmails } from "@/lib/gmail-api";
 import { useEmailStore } from "@/lib/email-store";
 import { EmailContentLoader } from "@/lib/email-content-loader";
-import { db } from '@/lib/db';
-import { JustCallService } from '@/lib/justcall-service';
-import { TwilioService } from '@/lib/twilio-service';
+import { db } from "@/lib/db";
+import { JustCallService } from "@/lib/justcall-service";
+import { TwilioService } from "@/lib/twilio-service";
 
 export class SyncService {
   private static instance: SyncService;
@@ -42,19 +42,33 @@ export class SyncService {
       if (gmailToken) {
         // Use a try-catch block specifically for Gmail to handle auth errors properly
         try {
-          console.log(`Fetching Gmail emails with page ${page}, pageSize ${pageSize}${query ? `, query: ${query}` : ''}`);
-          const gmailEmails = await fetchGmailEmails(gmailToken, page, pageSize, query);
+          console.log(
+            `Fetching Gmail emails with page ${page}, pageSize ${pageSize}${
+              query ? `, query: ${query}` : ""
+            }`
+          );
+          const gmailEmails = await fetchGmailEmails(
+            gmailToken,
+            page,
+            pageSize,
+            query
+          );
           if (gmailEmails && gmailEmails.length > 0) {
             syncPromises.push(Promise.resolve(gmailEmails));
           } else {
-            console.log("No Gmail emails returned, possibly due to auth issues");
+            console.log(
+              "No Gmail emails returned, possibly due to auth issues"
+            );
           }
         } catch (gmailError: any) {
           console.error("Error fetching Gmail emails:", gmailError);
           // Propagate auth errors to be handled by the caller
-          if (gmailError?.response?.status === 401 || 
-              (gmailError?.error?.code === 401) ||
-              (gmailError?.message && gmailError.message.includes('Invalid Credentials'))) {
+          if (
+            gmailError?.response?.status === 401 ||
+            gmailError?.error?.code === 401 ||
+            (gmailError?.message &&
+              gmailError.message.includes("Invalid Credentials"))
+          ) {
             // Create a structured error with authentication details
             const authError = new Error("Gmail authentication failed");
             authError.name = "AuthenticationError";
@@ -70,7 +84,9 @@ export class SyncService {
       // Add IMAP sync for each account
       for (const account of imapAccounts) {
         try {
-          console.log(`Fetching IMAP emails for account ${account.id} with page ${page}, pageSize ${pageSize}`);
+          console.log(
+            `Fetching IMAP emails for account ${account.id} with page ${page}, pageSize ${pageSize}`
+          );
           const response = await fetch("/api/imap", {
             method: "POST",
             headers: {
@@ -82,28 +98,34 @@ export class SyncService {
               data: {
                 page: page,
                 pageSize: pageSize,
-                fetchAll: false // Don't fetch all, respect the pageSize
+                fetchAll: false, // Don't fetch all, respect the pageSize
               },
             }),
           });
-          
+
           if (response.ok) {
             const data = await response.json();
             if (data.emails && data.emails.length > 0) {
               syncPromises.push(Promise.resolve(data.emails));
             }
           } else {
-            console.error(`Failed to fetch IMAP emails for account ${account.id}:`, await response.text());
+            console.error(
+              `Failed to fetch IMAP emails for account ${account.id}:`,
+              await response.text()
+            );
           }
         } catch (error) {
-          console.error(`Error fetching IMAP emails for account ${account.id}:`, error);
+          console.error(
+            `Error fetching IMAP emails for account ${account.id}:`,
+            error
+          );
         }
       }
 
       // Wait for all syncs to complete (only those that were successful)
       if (syncPromises.length > 0) {
         const results = await Promise.allSettled(syncPromises);
-        
+
         // Combine all successful results
         const allEmails: Email[] = [];
         results.forEach((result) => {
@@ -154,29 +176,33 @@ export class SyncService {
     if (!this.contentLoader) {
       this.contentLoader = new EmailContentLoader();
     }
-    
+
     // Find emails that don't have body content
-    const emailsWithoutContent = emails.filter(email => 
-      !email.body || email.body.trim() === ''
+    const emailsWithoutContent = emails.filter(
+      (email) => !email.body || email.body.trim() === ""
     );
-    
-    console.log(`Loading content for ${emailsWithoutContent.length} emails without content`);
-    
+
+    console.log(
+      `Loading content for ${emailsWithoutContent.length} emails without content`
+    );
+
     // Load content for up to 5 emails at a time to avoid overwhelming the server
     const batchSize = 5;
     for (let i = 0; i < emailsWithoutContent.length; i += batchSize) {
       const batch = emailsWithoutContent.slice(i, i + batchSize);
-      
+
       // Load content for each email in the batch concurrently
       await Promise.allSettled(
-        batch.map(email => this.contentLoader.loadEmailContent(email))
+        batch.map((email) => this.contentLoader.loadEmailContent(email))
       );
     }
   }
 }
 
 // Function to sync IMAP accounts
-export const syncImapAccounts = async (userId?: string): Promise<{ success: number; failed: number; results: any[] }> => {
+export const syncImapAccounts = async (
+  userId?: string
+): Promise<{ success: number; failed: number; results: any[] }> => {
   try {
     // Query for all IMAP accounts for the given user
     const accounts = await db.imapAccount.findMany({
@@ -190,14 +216,19 @@ export const syncImapAccounts = async (userId?: string): Promise<{ success: numb
     return {
       success: accounts.length,
       failed: 0,
-      results: accounts.map(acc => ({ accountId: acc.id, status: 'success' }))
+      results: accounts.map((acc) => ({
+        accountId: acc.id,
+        status: "success",
+      })),
     };
   } catch (error) {
-    console.error('Error in syncImapAccounts:', error);
+    console.error("Error in syncImapAccounts:", error);
     return {
       success: 0,
       failed: 1,
-      results: [{ error: error instanceof Error ? error.message : 'Unknown error' }]
+      results: [
+        { error: error instanceof Error ? error.message : "Unknown error" },
+      ],
     };
   }
 };
@@ -205,83 +236,104 @@ export const syncImapAccounts = async (userId?: string): Promise<{ success: numb
 // Add JustCall sync functionality to the existing sync service
 export const syncJustCallAccounts = async (
   userId?: string,
-  options?: { 
-    phoneNumber?: string; 
+  options?: {
+    phoneNumber?: string;
     accountId?: string;
     pageSize?: number;
     lastSmsIdFetched?: string;
-    sortDirection?: 'asc' | 'desc';
+    sortDirection?: "asc" | "desc";
   }
 ): Promise<{ success: number; failed: number; results: any[] }> => {
   try {
     // Query for all active JustCall accounts, optionally filtered by userId and accountId
-    let query: any = { platform: 'justcall' };
-    
+    let query: any = { platform: "justcall" };
+
     if (userId) {
       query.userId = userId;
     }
-    
+
     if (options?.accountId) {
       query.id = options.accountId;
     }
-    
+
     const accounts = await db.syncAccount.findMany({
       where: query,
     });
 
     console.log(`Syncing ${accounts.length} JustCall accounts`);
-    
+
     const results = await Promise.allSettled(
       accounts.map(async (account) => {
         try {
           const justCallService = new JustCallService(account);
-          
+
           // Get the phone number from either the options or the accountIdentifier field
           const phoneNumber = options?.phoneNumber || account.accountIdentifier;
-          
+
           if (!phoneNumber) {
-            console.warn(`No phone number specified for JustCall account ${account.id}, skipping`);
-            return { accountId: account.id, processed: 0, skipped: 0, error: 'No phone number specified' };
+            console.warn(
+              `No phone number specified for JustCall account ${account.id}, skipping`
+            );
+            return {
+              accountId: account.id,
+              processed: 0,
+              skipped: 0,
+              error: "No phone number specified",
+            };
           }
-          
-          console.log(`Syncing messages for JustCall account ${account.id} with phone number: ${phoneNumber}`);
-          
+
+          console.log(
+            `Syncing messages for JustCall account ${account.id} with phone number: ${phoneNumber}`
+          );
+
           // Use cursor-based pagination with lastSmsIdFetched
           console.log(`JustCall sync for account ${account.id}:`);
           console.log(`- Phone: ${phoneNumber}`);
-          console.log(`- Sort: ${options?.sortDirection || 'desc'}`);
-          console.log(`- Pagination cursor: ${options?.lastSmsIdFetched || 'none'}`);
-          
+          console.log(`- Sort: ${options?.sortDirection || "desc"}`);
+          console.log(
+            `- Pagination cursor: ${options?.lastSmsIdFetched || "none"}`
+          );
+
           // Get messages using the lastSmsIdFetched for pagination instead of date-based filtering
           const result = await justCallService.getMessages(
-            phoneNumber, 
+            phoneNumber,
             undefined, // No date filtering needed
             options?.pageSize || 100,
             options?.lastSmsIdFetched,
-            options?.sortDirection || 'desc'  // Default to desc for newest first
+            options?.sortDirection || "desc" // Default to desc for newest first
           );
-          
+
           // Extract the messages array from the result
           const messages = result.messages;
           const rateLimited = result.rateLimited;
           const retryAfter = result.retryAfter;
-          
+
           // Include rate limit information in the response
           if (rateLimited) {
-            console.warn(`⚠️ JustCall API rate limit warning for account ${account.id}`);
+            console.warn(
+              `⚠️ JustCall API rate limit reached for account ${account.id}`
+            );
             if (retryAfter) {
-              console.warn(`   Recommended to wait ${retryAfter} seconds before next request`);
+              console.warn(
+                `   Recommended to wait ${retryAfter} seconds before next request`
+              );
             }
           }
-          
+
           // Add debug logging to inspect the retrieved messages
           if (messages.length > 0) {
-            console.log(`Retrieved ${messages.length} JustCall messages for account ${account.id}.`);
-            console.log(`Message ID range: ${messages[0].id} - ${messages[messages.length-1].id}`);
-            
+            console.log(
+              `Retrieved ${messages.length} JustCall messages for account ${account.id}.`
+            );
+            console.log(
+              `Message ID range: ${messages[0].id} - ${
+                messages[messages.length - 1].id
+              }`
+            );
+
             // Remember the oldest message ID for returning to the caller
-            const oldestMessageId = messages[messages.length-1].id;
-            
+            const oldestMessageId = messages[messages.length - 1].id;
+
             // Log a sample of messages
             const sampleSize = Math.min(3, messages.length);
             console.log(`Sample of ${sampleSize} messages (showing IDs):`);
@@ -291,28 +343,32 @@ export const syncJustCallAccounts = async (
           } else {
             console.log(`No messages retrieved for account ${account.id}`);
           }
-          
+
           let processedCount = 0;
           let skippedCount = 0;
-          
+
           // Process each message
           for (const message of messages) {
             try {
               // Skip outbound messages as they were likely sent from our system
-              if (!message || message.direction === 'outbound') {
+              if (!message || message.direction === "outbound") {
                 skippedCount++;
                 continue;
               }
-            
+
               await justCallService.processIncomingMessage(message);
               processedCount++;
             } catch (messageError) {
-              console.error(`Error processing message in JustCall account ${account.id}:`, 
-                messageError, 'Message:', JSON.stringify(message));
+              console.error(
+                `Error processing message in JustCall account ${account.id}:`,
+                messageError,
+                "Message:",
+                JSON.stringify(message)
+              );
               skippedCount++;
             }
           }
-          
+
           // Only update last sync time if we're not using pagination for loading more messages
           // This way we don't affect the sync time when just loading more historical messages
           if (!options?.lastSmsIdFetched) {
@@ -322,17 +378,18 @@ export const syncJustCallAccounts = async (
               data: { lastSync: new Date() },
             });
           }
-          
+
           // Return data including the oldest message ID for pagination
-          const oldestMessageId = messages.length > 0 ? messages[messages.length-1].id : null;
-          
-          return { 
-            accountId: account.id, 
-            processed: processedCount, 
-            skipped: skippedCount, 
+          const oldestMessageId =
+            messages.length > 0 ? messages[messages.length - 1].id : null;
+
+          return {
+            accountId: account.id,
+            processed: processedCount,
+            skipped: skippedCount,
             lastMessageId: oldestMessageId, // Return the oldest message ID for pagination
             rateLimited,
-            retryAfter
+            retryAfter,
           };
         } catch (error) {
           console.error(`Error syncing JustCall account ${account.id}:`, error);
@@ -340,91 +397,119 @@ export const syncJustCallAccounts = async (
         }
       })
     );
-    
+
     return {
-      success: results.filter((r: PromiseSettledResult<any>) => r.status === 'fulfilled').length,
-      failed: results.filter((r: PromiseSettledResult<any>) => r.status === 'rejected').length,
-      results
+      success: results.filter(
+        (r: PromiseSettledResult<any>) => r.status === "fulfilled"
+      ).length,
+      failed: results.filter(
+        (r: PromiseSettledResult<any>) => r.status === "rejected"
+      ).length,
+      results,
     };
   } catch (error) {
-    console.error('Error in syncJustCallAccounts:', error);
+    console.error("Error in syncJustCallAccounts:", error);
     throw error;
   }
 };
 
 // Add Twilio sync functionality
-export const syncTwilioAccounts = async (userId?: string): Promise<{ success: number; failed: number; results: any[] }> => {
+export const syncTwilioAccounts = async (
+  userId?: string
+): Promise<{ success: number; failed: number; results: any[] }> => {
   try {
     // Query for all active Twilio accounts, optionally filtered by userId
-    const query = userId 
-      ? { userId, platform: 'twilio' }
-      : { platform: 'twilio' };
-    
+    const query = userId
+      ? { userId, platform: "twilio" }
+      : { platform: "twilio" };
+
     const accounts = await db.syncAccount.findMany({
       where: query,
     });
 
     console.log(`Syncing ${accounts.length} Twilio accounts`);
-    
+
     const results = await Promise.allSettled(
       accounts.map(async (account) => {
         try {
           const twilioService = new TwilioService(account);
-          
+
           // Get messages since last sync
-          console.log(`Fetching Twilio messages for account ${account.id} since ${account.lastSync}`);
+          console.log(
+            `Fetching Twilio messages for account ${account.id} since ${account.lastSync}`
+          );
           const messages = await twilioService.getMessages(account.lastSync);
-          console.log(`Retrieved ${messages.length} Twilio messages for account ${account.id}`);
-          
+          console.log(
+            `Retrieved ${messages.length} Twilio messages for account ${account.id}`
+          );
+
           let processedCount = 0;
           let skippedCount = 0;
-          
+
           // Process each message
           for (const message of messages) {
             try {
               // Skip outbound messages as they were likely sent from our system
-              if (!message || message.direction !== 'inbound') {
-                console.log(`Skipping outbound or null Twilio message: ${message?.sid || 'N/A'}`);
+              if (!message || message.direction !== "inbound") {
+                console.log(
+                  `Skipping outbound or null Twilio message: ${
+                    message?.sid || "N/A"
+                  }`
+                );
                 skippedCount++;
                 continue;
               }
-              
+
               await twilioService.processIncomingMessage(message);
               processedCount++;
             } catch (messageError) {
-              console.error(`Error processing message in Twilio account ${account.id}:`, 
-                messageError, 'Message:', JSON.stringify(message));
+              console.error(
+                `Error processing message in Twilio account ${account.id}:`,
+                messageError,
+                "Message:",
+                JSON.stringify(message)
+              );
               skippedCount++;
             }
           }
-          
+
           // Update last sync time
           await db.syncAccount.update({
             where: { id: account.id },
             data: { lastSync: new Date() },
           });
-          
-          return { accountId: account.id, processed: processedCount, skipped: skippedCount };
+
+          return {
+            accountId: account.id,
+            processed: processedCount,
+            skipped: skippedCount,
+          };
         } catch (error) {
           console.error(`Error syncing Twilio account ${account.id}:`, error);
           throw error;
         }
       })
     );
-    
+
     return {
-      success: results.filter((r: PromiseSettledResult<any>) => r.status === 'fulfilled').length,
-      failed: results.filter((r: PromiseSettledResult<any>) => r.status === 'rejected').length,
-      results
+      success: results.filter(
+        (r: PromiseSettledResult<any>) => r.status === "fulfilled"
+      ).length,
+      failed: results.filter(
+        (r: PromiseSettledResult<any>) => r.status === "rejected"
+      ).length,
+      results,
     };
   } catch (error) {
-    console.error('Error in syncTwilioAccounts:', error);
+    console.error("Error in syncTwilioAccounts:", error);
     throw error;
   }
 };
 
 // Sync all accounts for a user
-export const syncAllAccountsForUser = async (userId: string): Promise<{
+export const syncAllAccountsForUser = async (
+  userId: string
+): Promise<{
   imap: { success: number; failed: number; results: any[] } | null;
   justCall: { success: number; failed: number; results: any[] } | null;
   twilio: { success: number; failed: number; results: any[] } | null;
@@ -436,44 +521,50 @@ export const syncAllAccountsForUser = async (userId: string): Promise<{
   } = {
     imap: null,
     justCall: null,
-    twilio: null
+    twilio: null,
   };
-  
+
   try {
     // Sync IMAP accounts
     results.imap = await syncImapAccounts(userId);
   } catch (error) {
-    console.error('Error syncing IMAP accounts:', error);
-    results.imap = { 
+    console.error("Error syncing IMAP accounts:", error);
+    results.imap = {
       success: 0,
       failed: 1,
-      results: [{ error: error instanceof Error ? error.message : 'Unknown error' }]
+      results: [
+        { error: error instanceof Error ? error.message : "Unknown error" },
+      ],
     };
   }
-  
+
   try {
     // Sync JustCall accounts
     results.justCall = await syncJustCallAccounts(userId);
   } catch (error) {
-    console.error('Error syncing JustCall accounts:', error);
-    results.justCall = { 
+    console.error("Error syncing JustCall accounts:", error);
+    results.justCall = {
       success: 0,
       failed: 1,
-      results: [{ error: error instanceof Error ? error.message : 'Unknown error' }]
+      results: [
+        { error: error instanceof Error ? error.message : "Unknown error" },
+      ],
     };
   }
-  
+
   try {
     // Sync Twilio accounts
     results.twilio = await syncTwilioAccounts(userId);
   } catch (error) {
-    console.error('Error syncing Twilio accounts:', error);
-    results.twilio = { 
+    console.error("Error syncing Twilio accounts:", error);
+    results.twilio = {
       success: 0,
       failed: 1,
-      results: [{ error: error instanceof Error ? error.message : 'Unknown error' }]
+      results: [
+        { error: error instanceof Error ? error.message : "Unknown error" },
+      ],
     };
   }
-  
+
   return results;
 };
