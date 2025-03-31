@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Search, Users, RotateCw, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Users, RotateCw, ChevronLeft, ChevronRight, Command, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useEmailStore } from "@/lib/email-store";
 import { ContactItem } from "@/components/contact-item";
@@ -14,6 +14,7 @@ import { MessageCategory } from "@/components/sidebar";
 import { useToast } from "@/hooks/use-toast";
 import Fuse from 'fuse.js';
 import Highlighter from 'react-highlight-words';
+import { motion, AnimatePresence } from "framer-motion";
 
 // Pagination component with Apple-inspired design
 const Pagination = ({
@@ -123,132 +124,10 @@ export function EmailList({
   const { data: session } = useSession();
   const { toast } = useToast();
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Configure Fuse.js for contact search with optimized settings
-  const fuseOptions = useMemo(() => ({
-    keys: [
-      { name: 'name', weight: 0.5 },
-      { name: 'email', weight: 0.3 },
-      { name: 'lastMessageSubject', weight: 0.2 }
-    ],
-    threshold: 0.4,
-    includeScore: true,
-    minMatchCharLength: 2,
-    useExtendedSearch: true,
-    ignoreLocation: true,
-    shouldSort: true,
-    findAllMatches: false,
-    distance: 100,
-    includeMatches: true
-  }), []);
-
-  // Configure Fuse.js for email content search with optimized settings
-  const emailFuseOptions = useMemo(() => ({
-    keys: [
-      { name: 'subject', weight: 0.4 },
-      { name: 'body', weight: 0.6 }
-    ],
-    threshold: 0.5,
-    includeScore: true,
-    minMatchCharLength: 2,
-    useExtendedSearch: true,
-    ignoreLocation: true,
-    shouldSort: true,
-    findAllMatches: false,
-    distance: 100,
-    includeMatches: true
-  }), []);
-
-  // Create Fuse instances with debounced updates
-  const [fuseInstances, setFuseInstances] = useState({
-    contacts: new Fuse(contacts, fuseOptions),
-    emails: new Fuse(emails, emailFuseOptions)
-  });
-
-  // Update Fuse instances when data changes
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
-      setFuseInstances({
-        contacts: new Fuse(contacts, fuseOptions),
-        emails: new Fuse(emails, emailFuseOptions)
-      });
-    }, 1000);
-
-    return () => clearTimeout(timeoutId);
-  }, [contacts, emails, fuseOptions, emailFuseOptions]);
-
-  // Enhanced search function with debouncing and ranking
-  const performSearch = useCallback((query: string) => {
-    if (!query.trim()) {
-      return {
-        contacts: contacts,
-        emails: emails,
-        matches: new Set<string>(),
-        rankedResults: contacts
-      };
-    }
-
-    // Search contacts and emails
-    const contactResults = fuseInstances.contacts.search(query);
-    const emailResults = fuseInstances.emails.search(query);
-
-    // Create a map to track contact scores
-    const contactScores = new Map<string, number>();
-    const contactMatches = new Map<string, Set<string>>();
-
-    // Process contact results with scoring
-    contactResults.forEach(result => {
-      const contact = result.item;
-      if (contact.email) {
-        const score = 1 - (result.score || 0);
-        contactScores.set(contact.email, score);
-
-        const matches = new Set<string>();
-        result.matches?.forEach(match => {
-          if (match.key) matches.add(match.key);
-        });
-        contactMatches.set(contact.email, matches);
-      }
-    });
-
-    // Process email results to enhance contact scores
-    emailResults.forEach(result => {
-      const email = result.item;
-      const score = 1 - (result.score || 0);
-
-      if (email.from.email) {
-        const currentScore = contactScores.get(email.from.email) || 0;
-        contactScores.set(email.from.email, Math.max(currentScore, score * 0.8));
-      }
-
-      email.to.forEach(to => {
-        if (to.email) {
-          const currentScore = contactScores.get(to.email) || 0;
-          contactScores.set(to.email, Math.max(currentScore, score * 0.8));
-        }
-      });
-    });
-
-    // Create a set of matched contact emails
-    const matchedContactEmails = new Set(contactScores.keys());
-
-    // Get all unique matched contacts with scores
-    const rankedContacts = contacts
-      .filter(contact => matchedContactEmails.has(contact.email))
-      .map(contact => ({
-        ...contact,
-        searchScore: contactScores.get(contact.email) || 0,
-        matchedFields: contactMatches.get(contact.email) || new Set()
-      }))
-      .sort((a, b) => b.searchScore - a.searchScore);
-
-    return {
-      contacts: rankedContacts,
-      emails: emailResults.map(result => result.item),
-      matches: matchedContactEmails,
-      rankedResults: rankedContacts
-    };
-  }, [contacts, emails, fuseInstances]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showSearchPopup, setShowSearchPopup] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Debounced search results
   const [searchResults, setSearchResults] = useState({
@@ -258,21 +137,137 @@ export function EmailList({
     rankedResults: contacts
   });
 
-  // Handle search with debouncing
-  const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const query = e.target.value;
-    setSearchQuery(query);
-    setCurrentPage(1);
-
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
+  // Fallback client-side search function
+  const performClientSearch = useCallback((query: string) => {
+    if (!query.trim()) {
+      return {
+        contacts: contacts,
+        emails: emails,
+        matches: new Set<string>(),
+        rankedResults: contacts
+      };
     }
 
-    searchTimeoutRef.current = setTimeout(() => {
-      const results = performSearch(query);
+    // Simple text-based search as fallback
+    const searchTerms = query.toLowerCase().split(/\s+/);
+
+    const matchedContacts = contacts.filter(contact => {
+      const searchableText = [
+        contact.name,
+        contact.email,
+        contact.lastMessageSubject
+      ].join(' ').toLowerCase();
+
+      return searchTerms.every(term => searchableText.includes(term));
+    });
+
+    return {
+      contacts: matchedContacts,
+      emails: emails.filter(email =>
+        searchTerms.every(term =>
+          email.subject.toLowerCase().includes(term) ||
+          email.body.toLowerCase().includes(term)
+        )
+      ),
+      matches: new Set(matchedContacts.map(c => c.email)),
+      rankedResults: matchedContacts
+    };
+  }, [contacts, emails]);
+
+  // Memoize the search input handler
+  const handleSearchInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setSearchInput(value);
+    if (value.trim()) {
+      setShowSearchPopup(true);
+    } else {
+      setShowSearchPopup(false);
+      setSearchQuery("");
+      setSearchResults({
+        contacts: contacts,
+        emails: emails,
+        matches: new Set<string>(),
+        rankedResults: contacts
+      });
+    }
+  }, []);
+
+  // Add clear search function
+  const clearSearch = useCallback(() => {
+    setSearchInput("");
+    setSearchQuery("");
+    setShowSearchPopup(false);
+    setSearchResults({
+      contacts: contacts,
+      emails: emails,
+      matches: new Set<string>(),
+      rankedResults: contacts
+    });
+  }, [contacts, emails]);
+
+  // Handle search submission
+  const handleSearchSubmit = useCallback(async () => {
+    if (!searchInput.trim()) {
+      setShowSearchPopup(false);
+      return;
+    }
+
+    setSearchQuery(searchInput);
+    setCurrentPage(1);
+    setIsSearching(true);
+    setShowSearchPopup(false);
+
+    try {
+      const response = await fetch('/api/search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: searchInput,
+          contacts,
+          emails
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Search failed');
+      }
+
+      const results = await response.json();
+
+      setSearchResults({
+        ...results,
+        matches: new Set(results.matches),
+        rankedResults: results.rankedResults.map((contact: Contact) => ({
+          ...contact,
+          matchedFields: new Set(contact.matchedFields)
+        }))
+      });
+    } catch (error) {
+      console.error('Search error:', error);
+      toast({
+        title: "Search Error",
+        description: "Failed to perform search. Falling back to client-side search.",
+        variant: "destructive",
+      });
+
+      const results = performClientSearch(searchInput);
       setSearchResults(results);
-    }, 150);
-  }, [performSearch]);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [searchInput, contacts, emails, toast, performClientSearch]);
+
+  // Handle key press
+  const handleKeyPress = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleSearchSubmit();
+    } else if (e.key === 'Escape') {
+      setShowSearchPopup(false);
+      setSearchInput("");
+    }
+  }, [handleSearchSubmit]);
 
   // Enhanced contact filtering with ranking
   const filteredContacts = useMemo(() => {
@@ -662,8 +657,10 @@ export function EmailList({
             <Input
               placeholder="Search conversations..."
               className="h-9 pl-8"
-              value={searchQuery}
-              onChange={handleSearchChange}
+              value={searchInput}
+              onChange={handleSearchInputChange}
+              onKeyDown={handleKeyPress}
+              disabled={isSearching}
             />
           </div>
         </div>
@@ -694,12 +691,78 @@ export function EmailList({
         <div className="relative">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
+            ref={searchInputRef}
             placeholder="Search conversations..."
-            className="h-9 pl-8"
-            value={searchQuery}
-            onChange={handleSearchChange}
+            className="h-9 pl-8 pr-8"
+            value={searchInput}
+            onChange={handleSearchInputChange}
+            onKeyDown={handleKeyPress}
+            disabled={isSearching}
           />
+          <div className="absolute right-2.5 top-2.5 flex items-center gap-1">
+            {searchInput && !isSearching && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 rounded-full hover:bg-accent"
+                onClick={clearSearch}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            )}
+            {isSearching && (
+              <RotateCw className="h-4 w-4 animate-spin text-muted-foreground" />
+            )}
+          </div>
         </div>
+
+        <AnimatePresence>
+          {showSearchPopup && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+              className="absolute left-0 right-0 mt-2 bg-background border rounded-lg shadow-lg overflow-hidden"
+            >
+              <div className="p-4">
+                <div className="flex items-center justify-between text-sm text-muted-foreground">
+                  <div className="flex items-center gap-2">
+                    <Command className="h-4 w-4" />
+                    <span>Press Enter to search</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <kbd className="px-2 py-1 text-xs bg-muted rounded">esc</kbd>
+                    <span>to close</span>
+                  </div>
+                </div>
+                {searchInput.trim() && (
+                  <div className="mt-2 text-sm text-muted-foreground">
+                    <p>Searching across:</p>
+                    <ul className="mt-1 space-y-1">
+                      <li className="flex items-center gap-2">
+                        <div className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+                        <span>Contact names</span>
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                        <span>Email addresses</span>
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <div className="h-1.5 w-1.5 rounded-full bg-purple-500" />
+                        <span>Message subjects</span>
+                      </li>
+                      <li className="flex items-center gap-2">
+                        <div className="h-1.5 w-1.5 rounded-full bg-orange-500" />
+                        <span>Message content</span>
+                      </li>
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       <div className="flex-1 overflow-y-auto">
