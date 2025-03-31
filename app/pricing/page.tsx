@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, Star, Clock } from "lucide-react";
+import { Check, Star, Clock, ChevronDown } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
 import { useSession } from "next-auth/react";
 import { LoadingSpinner } from "@/components/loading-spinner";
+import { OrganizationAccessKey } from "@/components/organization-access-key";
 
 interface PricingPlan {
     name: string;
@@ -54,10 +55,10 @@ function PricingSection({
                         method: "GET",
                         credentials: "include",
                     });
-                    
+
                     if (response.ok) {
                         const data = await response.json();
-                        
+
                         if (data.hasActiveSubscription) {
                             toast({
                                 title: "Active Subscription Found",
@@ -72,7 +73,7 @@ function PricingSection({
                     setIsCheckingSubscription(false);
                 }
             };
-            
+
             checkExistingSubscription();
         }
     }, [session, status, router, toast]);
@@ -104,7 +105,7 @@ function PricingSection({
             setIsLoading(plan);
             const response = await fetch(`/api/checkout/${plan}`, {
                 method: "POST",
-                headers: { 
+                headers: {
                     "Content-Type": "application/json",
                 },
                 credentials: "include", // Include cookies for authentication
@@ -120,7 +121,7 @@ function PricingSection({
                     description: errorMessage,
                     variant: "destructive",
                 });
-                
+
                 // If authentication error, redirect to login but don't throw an error
                 if (response.status === 401) {
                     router.replace("/login");
@@ -128,7 +129,7 @@ function PricingSection({
                 }
                 throw new Error(errorMessage);
             }
-            
+
             // Redirect to Stripe's hosted checkout URL
             if (data.url) {
                 window.location.href = data.url;
@@ -139,7 +140,7 @@ function PricingSection({
                         title: "Subscription Info",
                         description: data.message,
                     });
-                    
+
                     // If already subscribed, redirect to dashboard
                     if (data.message.includes("already have an active subscription")) {
                         router.push("/dashboard");
@@ -171,7 +172,7 @@ function PricingSection({
     }
 
     return (
-        <div className="container max-w-7xl mx-auto py-20">
+        <div className="container max-w-7xl mx-auto py-12">
             <div className="text-center space-y-4 mb-16">
                 <h2 className="text-4xl font-light tracking-tight sm:text-5xl bg-clip-text text-transparent bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 dark:from-white dark:via-gray-300 dark:to-white">
                     {title}
@@ -356,6 +357,23 @@ const pricingPlans = [
 ];
 
 export default function PricingPage() {
+    const [isScrolled, setIsScrolled] = useState(false);
+
+    // Add scroll listener to hide the chevron when user has scrolled down
+    useEffect(() => {
+        const handleScroll = () => {
+            // Check if user has scrolled down enough to see the access key section
+            const scrollPosition = window.scrollY;
+            const windowHeight = window.innerHeight;
+
+            // Hide chevron after scrolling about halfway down the viewport
+            setIsScrolled(scrollPosition > windowHeight * 0.3);
+        };
+
+        window.addEventListener('scroll', handleScroll);
+        return () => window.removeEventListener('scroll', handleScroll);
+    }, []);
+
     return (
         <div className="bg-background/80 text-foreground min-h-screen relative overflow-hidden">
             {/* Gradient orbs for Nothing-inspired design */}
@@ -364,6 +382,23 @@ export default function PricingPage() {
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] bg-primary/2 rounded-full blur-[130px] pointer-events-none" />
 
             <PricingSection plans={pricingPlans} />
+
+            {/* Pulsing chevron indicator to scroll down */}
+            <div className={cn(
+                "relative z-10 left-1/2 transform -translate-x-1/2 flex flex-col items-center transition-opacity duration-500 mb-2",
+                isScrolled ? "opacity-0 pointer-events-none" : "opacity-100"
+            )}>
+                <div className="text-xs text-muted-foreground mb-2">Scroll for more</div>
+                <div className="animate-bounce-slow">
+                    <ChevronDown className="h-6 w-6 text-primary animate-pulse" />
+                </div>
+            </div>
+
+            <div className="container max-w-7xl mx-auto pb-20 pt-4" id="access-key-section">
+                <div className="flex flex-col items-center">
+                    <OrganizationAccessKey />
+                </div>
+            </div>
         </div>
     );
 } 

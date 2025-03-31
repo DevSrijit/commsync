@@ -32,6 +32,7 @@ import {
   Palette,
   Sun,
   Moon,
+  UsersRound,
 } from "lucide-react";
 import { SiTwilio } from "@icons-pack/react-simple-icons";
 import { Button } from "@/components/ui/button";
@@ -91,9 +92,10 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-  TooltipProvider,  
+  TooltipProvider,
 } from "@/components/ui/tooltip";
 import { useTheme } from "next-themes";
+import { OrganizationDialog } from "./organization-dialog";
 
 export type MessageCategory =
   | "inbox"
@@ -123,6 +125,7 @@ export function Sidebar() {
   const [isTwilioDialogOpen, setIsTwilioDialogOpen] = useState(false);
   const [isSyncingSMS, setIsSyncingSMS] = useState(false);
   const [isSyncingEmail, setIsSyncingEmail] = useState(false);
+  const [isOrganizationDialogOpen, setIsOrganizationDialogOpen] = useState(false);
 
   // State for account collapsible sections
   const [isEmailAccountsOpen, setIsEmailAccountsOpen] = useState(true);
@@ -175,7 +178,7 @@ export function Sidebar() {
         if (!subscriptionData) {
           setIsLoadingSubscription(true);
         }
-        
+
         // First try to get from local storage for immediate display
         const storedData = getStoredSubscriptionData();
         if (storedData && !isStoredSubscriptionStale()) {
@@ -183,16 +186,16 @@ export function Sidebar() {
           subscriptionDataRef.current = storedData;
           setIsLoadingSubscription(false);
         }
-        
+
         // Then fetch the latest data from server
         const data = await fetchSubscription();
         if (data) {
           // Only update if something changed
-          if (!subscriptionData || 
-              data.usedStorage !== (subscriptionData?.usedStorage || 0) ||
-              data.usedConnections !== (subscriptionData?.usedConnections || 0) ||
-              data.usedAiCredits !== (subscriptionData?.usedAiCredits || 0) ||
-              data.status !== subscriptionData?.status) {
+          if (!subscriptionData ||
+            data.usedStorage !== (subscriptionData?.usedStorage || 0) ||
+            data.usedConnections !== (subscriptionData?.usedConnections || 0) ||
+            data.usedAiCredits !== (subscriptionData?.usedAiCredits || 0) ||
+            data.status !== subscriptionData?.status) {
             setSubscriptionData(data);
             subscriptionDataRef.current = data;
           }
@@ -383,7 +386,7 @@ export function Sidebar() {
     const newSize = parseInt(event.target.value);
     setLoadPageSize(newSize);
     localStorage.setItem('loadPageSize', newSize.toString());
-    
+
     // Update the store with the new page size
     const store = useEmailStore.getState();
     store.setLoadPageSize(newSize);
@@ -418,7 +421,14 @@ export function Sidebar() {
                     <span>Subscription</span>
                   </a>
                 </DropdownMenuItem>
-                <DropdownMenuItem 
+                <DropdownMenuItem
+                  onClick={() => setIsOrganizationDialogOpen(true)}
+                  className="flex items-center gap-2 cursor-pointer"
+                >
+                  <UsersRound className="mr-2 h-4 w-4" />
+                  <span>Organization</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
                   onClick={() => setSettingsOpen(true)}
                   className="flex items-center gap-2 cursor-pointer"
                 >
@@ -427,21 +437,21 @@ export function Sidebar() {
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuLabel className="font-medium text-xs px-2 pt-2">Theme</DropdownMenuLabel>
-                <DropdownMenuItem 
+                <DropdownMenuItem
                   onClick={() => setTheme("light")}
                   className="flex items-center gap-2 cursor-pointer"
                 >
                   <Sun className="mr-2 h-4 w-4" />
                   <span>Light</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem 
+                <DropdownMenuItem
                   onClick={() => setTheme("dark")}
                   className="flex items-center gap-2 cursor-pointer"
                 >
                   <Moon className="mr-2 h-4 w-4" />
                   <span>Dark</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem 
+                <DropdownMenuItem
                   onClick={() => setTheme("system")}
                   className="flex items-center gap-2 cursor-pointer"
                 >
@@ -449,7 +459,7 @@ export function Sidebar() {
                   <span>System</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem 
+                <DropdownMenuItem
                   onClick={() => signOut()}
                   className="flex items-center gap-2 text-destructive cursor-pointer"
                 >
@@ -1127,7 +1137,7 @@ export function Sidebar() {
                 Configure your messaging experience
               </DialogDescription>
             </DialogHeader>
-            
+
             <div className="grid gap-6 py-4">
               <div className="space-y-2">
                 <Label htmlFor="loadPageSize" className="text-sm font-medium">
@@ -1150,9 +1160,9 @@ export function Sidebar() {
                 </select>
               </div>
             </div>
-            
+
             <DialogFooter className="flex justify-end space-x-2">
-              <Button 
+              <Button
                 onClick={() => setSettingsOpen(false)}
                 className="rounded-lg px-4 py-2 text-sm font-medium"
               >
@@ -1161,6 +1171,12 @@ export function Sidebar() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Organization Dialog */}
+        <OrganizationDialog
+          open={isOrganizationDialogOpen}
+          onOpenChange={setIsOrganizationDialogOpen}
+        />
       </div>
     </TooltipProvider>
   );

@@ -496,22 +496,61 @@ export async function updateSubscriptionUsage(
     if (!subscription) return null;
 
     // Calculate total organization storage by updating this user's portion
-    // This is a simplified approach - in a real system, you'd track per-user usage
+    // We need to calculate actual usage across the org, not just set to maximum
     const memberCount = subscription.organization.members.length;
-    const avgStoragePerUser =
-      subscription.usedStorage / Math.max(memberCount, 1);
-    const newTotalStorage = Math.min(
-      subscription.usedStorage - avgStoragePerUser + userStorageUsed,
+
+    // For simplicity, calculate based on the current user's storage only
+    // This is a temporary fix until we can implement proper org-wide tracking
+    let totalStorageUsed = userStorageUsed;
+
+    // Get all user IDs in this organization
+    const memberIds = subscription.organization.members.map(
+      (member) => member.id
+    );
+
+    // Count actual client cache entries (as a proxy for storage)
+    if (memberIds.length > 0) {
+      // Get the total count and estimate size
+      const cacheEntries = await db.clientCache.findMany({
+        where: {
+          userId: {
+            in: memberIds,
+          },
+        },
+        select: {
+          value: true,
+        },
+      });
+
+      // Sum up total storage from all entries (convert string length to MB)
+      if (cacheEntries.length > 0) {
+        const totalBytes = cacheEntries.reduce((sum, entry) => {
+          return sum + (entry.value ? entry.value.length : 0);
+        }, 0);
+
+        // Convert bytes to MB (approximate)
+        totalStorageUsed = Math.ceil(totalBytes / (1024 * 1024));
+      }
+    }
+
+    // Cap at total allowed storage
+    const newStorageUsed = Math.min(
+      totalStorageUsed,
       subscription.totalStorage
     );
+
+    // Count total connections across organization
+    let totalConnectionsUsed = userConnections;
+
+    // You could implement similar org-wide calculations for connections here
 
     // Update subscription with new usage data
     const updatedSubscription = await db.subscription.update({
       where: { id: subscriptionId },
       data: {
-        usedStorage: Math.round(newTotalStorage),
+        usedStorage: Math.round(newStorageUsed),
         usedConnections: Math.min(
-          userConnections,
+          totalConnectionsUsed,
           subscription.totalConnections
         ),
         usedAiCredits: Math.min(
