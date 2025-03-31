@@ -27,6 +27,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
+import { LoadingSpinner } from "@/components/loading-spinner";
 
 interface OrganizationDialogProps {
     open: boolean;
@@ -362,7 +363,7 @@ export function OrganizationDialog({ open, onOpenChange }: OrganizationDialogPro
 
                 {isLoading && isInitialLoadRef.current ? (
                     <div className="flex justify-center items-center h-64">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                        <LoadingSpinner className="h-10 w-10" />
                     </div>
                 ) : !organization ? (
                     <div className="flex flex-col items-center justify-center h-64">

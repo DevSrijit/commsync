@@ -11,12 +11,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
     runMigrations()
       .catch(error => console.error("Failed to run migrations:", error));
   }, []);*/
-  
+
   return (
     <SessionProvider>
       <ThemeProvider
         attribute="class"
-        defaultTheme="dark"
+        defaultTheme="system"
         enableSystem
         disableTransitionOnChange
       >
