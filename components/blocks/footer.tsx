@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { cn } from "@/lib/utils";
-import { LucideIcon } from "lucide-react";
+import { LucideIcon, Moon, Sun } from "lucide-react";
+import { useTheme } from "next-themes";
 
 interface SocialLink {
   name: string;
@@ -32,19 +33,60 @@ interface FooterProps extends React.HTMLAttributes<HTMLDivElement> {
 
 export const Footer = React.forwardRef<HTMLDivElement, FooterProps>(
   ({ className, brand, socialLinks, columns, copyright, ...props }, ref) => {
+    const { setTheme, theme } = useTheme();
+
     return (
       <div
         ref={ref}
         className={cn("pt-24", className)}
         {...props}
       >
-        <div className=" px-4 lg:px-8">
+        <div className="px-4 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-12">
             <div className="lg:col-span-4">
-              <a href="#" className="text-xl font-semibold">
-                {brand.name}
-              </a>
-              <p className="text-sm text-foreground/60">
+              <div className="flex items-center justify-between lg:justify-start gap-4">
+                <a href="#" className="text-xl font-semibold">
+                  {brand.name}
+                </a>
+                
+                <button
+                  onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                  className={cn(
+                    "relative overflow-hidden rounded-full p-[1px]",
+                    "bg-gradient-to-b from-neutral-200 to-neutral-100 dark:from-neutral-800 dark:to-neutral-900",
+                    "transition-all duration-300",
+                    "hover:from-neutral-300 hover:to-neutral-200 dark:hover:from-neutral-700 dark:hover:to-neutral-800",
+                    "group"
+                  )}
+                >
+                  <div className={cn(
+                    "relative flex h-8 w-14 items-center rounded-full px-1",
+                    "bg-white dark:bg-black",
+                    "transition-colors duration-300"
+                  )}>
+                    <div className={cn(
+                      "absolute h-6 w-6 rounded-full",
+                      "bg-gradient-to-br from-neutral-100 to-neutral-200 dark:from-neutral-800 dark:to-neutral-900",
+                      "shadow-lg backdrop-blur-md",
+                      "transition-all duration-500",
+                      "flex items-center justify-center",
+                      theme === "dark" ? "translate-x-[1.55rem]" : "translate-x-0"
+                    )}>
+                      <Sun className={cn(
+                        "h-3.5 w-3.5 rotate-0 scale-100 transition-all duration-300",
+                        "stroke-neutral-600 dark:stroke-neutral-400",
+                        theme === "dark" ? "rotate-90 scale-0" : "rotate-0 scale-100",
+                      )} />
+                      <Moon className={cn(
+                        "absolute h-3.5 w-3.5 rotate-90 scale-0 transition-all duration-300",
+                        "stroke-neutral-600 dark:stroke-neutral-400",
+                        theme === "dark" ? "rotate-0 scale-100" : "rotate-90 scale-0",
+                      )} />
+                    </div>
+                  </div>
+                </button>
+              </div>
+              <p className="text-sm text-foreground/60 mt-2">
                 {brand.description}
               </p>
 

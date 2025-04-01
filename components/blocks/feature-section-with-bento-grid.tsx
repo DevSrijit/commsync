@@ -6,6 +6,9 @@ import { Meteors } from "../magicui/meteors";
 import { AuroraText } from "../magicui/aurora-text";
 import { Particles } from "../magicui/particles";
 import { EvervaultCard } from "../ui/evervault-card";
+import { ThemeProvider } from "../theme-provider";
+import { useTheme } from "next-themes";
+import { InteractiveGridPattern } from "../magicui/interactive-grid-pattern";
 
 export function FeaturesSectionWithBentoGrid() {
   const features = [
@@ -21,7 +24,9 @@ export function FeaturesSectionWithBentoGrid() {
       title: "Reply & Manage in One Place",
       description:
         "Our composer lets you send messages to your contacts on any platform - WhatsApp, Slack, Instagram, and more - all from a single interface.",
-      skeleton: <div className="relative inset-0 z-10 pt-10"><EvervaultCard text="hover" className="h-full w-full" /></div>,
+      skeleton: (
+        <SkeletonTwo />
+      ),
       className: "col-span-1 md:col-span-2 lg:col-span-2 border-b dark:border-neutral-800 relative",
     },
     {
@@ -109,13 +114,103 @@ const FeatureDescription = ({ children }: { children?: React.ReactNode }) => {
 };
 
 export const SkeletonOne = () => {
+  const { theme } = useTheme();
   return (
     <Particles
       className="absolute inset-0 z-0"
-      quantity={100}
+      quantity={200}
       ease={100}
       refresh
+      color={theme === "dark" ? "#ffffff" : "#000000"}
     />
+  );
+};
+
+export const SkeletonTwo = () => {
+  return (
+    <div className="relative inset-0 z-10 pt-10">
+      <div className="h-full w-full rounded-[24px] overflow-hidden 
+               bg-gradient-to-br from-white/90 to-white/50 
+               dark:from-neutral-900/90 dark:to-neutral-800/50 
+               backdrop-blur-xl p-[1px] shadow-lg
+               transition-colors duration-700">
+        <div className="relative h-full w-full rounded-[22px] 
+                 bg-white/90 dark:bg-black/90 
+                 backdrop-blur-md flex items-center justify-center overflow-hidden group
+                 transition-all duration-700">
+          {/* Abstract Background Shapes */}
+          <div className="absolute inset-0 opacity-30 group-hover:opacity-60 transition-all duration-700">
+            <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] rounded-full 
+                     bg-gradient-to-br from-purple-400/40 to-blue-500/40 dark:from-purple-500/40 dark:to-blue-600/40 
+                     blur-2xl animate-float-slow transition-colors duration-700" />
+            <div className="absolute bottom-[-30%] right-[-20%] w-[80%] h-[80%] rounded-full 
+                     bg-gradient-to-tr from-indigo-400/40 to-pink-500/40 dark:from-indigo-500/40 dark:to-pink-600/40 
+                     blur-2xl animate-float-slow-reverse transition-colors duration-700" />
+            <div className="absolute top-[20%] right-[10%] w-[40%] h-[40%] rounded-full 
+                     bg-gradient-to-bl from-sky-400/40 to-emerald-500/40 dark:from-sky-500/40 dark:to-emerald-600/40 
+                     blur-2xl animate-pulse-slow transition-colors duration-700" />
+          </div>
+
+          {/* Floating Dots */}
+          <div className="absolute inset-0 overflow-hidden">
+            <div className="absolute w-2 h-2 rounded-full 
+                     bg-purple-500/40 dark:bg-purple-400/40 
+                     top-[20%] left-[30%] animate-float-slow transition-colors duration-700" />
+            <div className="absolute w-3 h-3 rounded-full 
+                     bg-blue-500/40 dark:bg-blue-400/40 
+                     bottom-[30%] right-[20%] animate-float-slow-reverse transition-colors duration-700" />
+            <div className="absolute w-2 h-2 rounded-full 
+                     bg-pink-500/40 dark:bg-pink-400/40 
+                     top-[40%] right-[40%] animate-pulse-slow transition-colors duration-700" />
+          </div>
+
+          {/* Content */}
+          <div className="relative z-10 text-center p-6 transform transition-all duration-500 group-hover:scale-105">
+            <div className="flex flex-col items-center space-y-4">
+              {/* Abstract Icon */}
+              <div className="relative w-12 h-12 mb-2">
+                <div className="absolute inset-0 
+                         bg-gradient-to-tr from-purple-500/80 to-blue-500/80 
+                         dark:from-purple-400/80 dark:to-blue-400/80 
+                         rounded-xl rotate-45 transform transition-all duration-500 group-hover:rotate-90" />
+                <div className="absolute inset-2 
+                         bg-white dark:bg-black 
+                         rounded-lg transition-colors duration-700" />
+                <div className="absolute inset-4 
+                         bg-gradient-to-br from-indigo-500/80 to-pink-500/80 
+                         dark:from-indigo-400/80 dark:to-pink-400/80 
+                         rounded-md transform transition-all duration-500 group-hover:-rotate-45" />
+              </div>
+
+              {/* Text Content */}
+              <p className="text-base font-medium 
+                     text-neutral-800 dark:text-neutral-200 
+                     tracking-wide transition-colors duration-700">
+                Unified Messaging
+              </p>
+
+              {/* Platform Pills */}
+              <div className="flex flex-wrap justify-center gap-2">
+                {["Messages", "Email", "Social"].map((platform) => (
+                  <span
+                    key={platform}
+                    className="inline-flex items-center px-3 py-1 text-xs font-medium rounded-full 
+                                 bg-gradient-to-r from-neutral-100/90 to-neutral-50/90 
+                                 dark:from-neutral-800/90 dark:to-neutral-700/90 
+                                 text-neutral-700 dark:text-neutral-200
+                                 backdrop-blur-sm shadow-sm
+                                 transition-all duration-300 hover:scale-105
+                                 border border-neutral-200/50 dark:border-neutral-700/50"
+                  >
+                    {platform}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };
 
