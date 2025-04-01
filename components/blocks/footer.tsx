@@ -33,7 +33,18 @@ interface FooterProps extends React.HTMLAttributes<HTMLDivElement> {
 
 export const Footer = React.forwardRef<HTMLDivElement, FooterProps>(
   ({ className, brand, socialLinks, columns, copyright, ...props }, ref) => {
-    const { setTheme, theme } = useTheme();
+    const { setTheme, theme, systemTheme } = useTheme();
+    const [mounted, setMounted] = React.useState(false);
+
+    React.useEffect(() => {
+      setMounted(true);
+    }, []);
+
+    if (!mounted) {
+      return null;
+    }
+
+    const currentTheme = theme === "system" ? systemTheme : theme;
 
     return (
       <div
@@ -50,7 +61,7 @@ export const Footer = React.forwardRef<HTMLDivElement, FooterProps>(
                 </a>
                 
                 <button
-                  onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                  onClick={() => setTheme(currentTheme === "dark" ? "light" : "dark")}
                   className={cn(
                     "relative overflow-hidden rounded-full p-[1px]",
                     "bg-gradient-to-b from-neutral-200 to-neutral-100 dark:from-neutral-800 dark:to-neutral-900",
@@ -70,17 +81,17 @@ export const Footer = React.forwardRef<HTMLDivElement, FooterProps>(
                       "shadow-lg backdrop-blur-md",
                       "transition-all duration-500",
                       "flex items-center justify-center",
-                      theme === "dark" ? "translate-x-[1.55rem]" : "translate-x-0"
+                      currentTheme === "dark" ? "translate-x-[1.55rem]" : "translate-x-0"
                     )}>
                       <Sun className={cn(
                         "h-3.5 w-3.5 rotate-0 scale-100 transition-all duration-300",
                         "stroke-neutral-600 dark:stroke-neutral-400",
-                        theme === "dark" ? "rotate-90 scale-0" : "rotate-0 scale-100",
+                        currentTheme === "dark" ? "rotate-90 scale-0" : "rotate-0 scale-100",
                       )} />
                       <Moon className={cn(
                         "absolute h-3.5 w-3.5 rotate-90 scale-0 transition-all duration-300",
                         "stroke-neutral-600 dark:stroke-neutral-400",
-                        theme === "dark" ? "rotate-0 scale-100" : "rotate-90 scale-0",
+                        currentTheme === "dark" ? "rotate-0 scale-100" : "rotate-90 scale-0",
                       )} />
                     </div>
                   </div>
