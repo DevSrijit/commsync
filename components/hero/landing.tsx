@@ -9,6 +9,7 @@ import { Pricing } from "@/components/ui/pricing-section-with-comparison"
 import PreFooter from "@/components/hero/pre-footer";
 import FooterSection from "@/components/hero/footer";
 import FeatureSection from "@/components/hero/feature";
+import AiLines from "@/components/hero/ai-lines";
 const Landing = () => {
   return (
     <>
@@ -36,6 +37,9 @@ const Landing = () => {
       </div>
       <FeatureSection />
       <TextReveal>We handle the sync. You handle the rest. Deal?</TextReveal>
+      <div className="mt-0">
+        <AiLines />
+      </div>
       <Testimonials />
       <div className="w-full">
         <Pricing />
