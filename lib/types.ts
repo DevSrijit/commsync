@@ -42,6 +42,17 @@ export interface Email {
     sms_date?: string;
     formatted?: string;
   };
+  // Added to support enhanced email parsing and deduplication
+  metadata?: {
+    isForwarded?: boolean;
+    originalSender?: { name: string; email: string };
+    originalSubject?: string;
+    allRecipients?: Array<{ name: string; email: string }>;
+    hasAttachments?: boolean;
+    messageId?: string;
+    references?: string;
+    inReplyTo?: string;
+  };
 }
 
 // Legacy interface - will be replaced by the new ContactModel

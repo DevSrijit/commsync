@@ -334,14 +334,67 @@ export function ConversationView({
           session?.user?.email &&
           (!email.accountId || email.accountType === "gmail")
         ) {
-          const isGmailConversation =
+          // Enhanced Gmail conversation detection that handles forwarded emails
+          // Check for normal conversation pattern
+          const isDirectConversation =
             (email.from.email === contactEmail &&
               email.to.some((to) => to.email === session.user.email)) ||
             (email.from.email === session.user.email &&
               email.to.some((to) => to.email === contactEmail));
 
-          if (isGmailConversation) {
+          if (isDirectConversation) {
             return true;
+          }
+
+          // Check for forwarded emails using metadata
+          if (email.metadata) {
+            // If this is a forwarded email, check the original sender or recipients
+            if (email.metadata.isForwarded) {
+              // Check if the original sender matches the contact
+              if (email.metadata.originalSender &&
+                email.metadata.originalSender.email === contactEmail) {
+                return true;
+              }
+
+              // Check if the contact is in the all recipients list
+              if (email.metadata.allRecipients &&
+                email.metadata.allRecipients.some(r => r.email === contactEmail)) {
+                return true;
+              }
+            }
+
+            // Check Message-ID, References and In-Reply-To chains
+            const messageRefs = [
+              email.metadata.messageId,
+              email.metadata.references,
+              email.metadata.inReplyTo
+            ].filter(Boolean).join(' ');
+
+            // If any message reference contains the contact email, it's likely part of the conversation
+            if (typeof contactEmail === 'string' && contactEmail.length > 0 && messageRefs.includes(contactEmail)) {
+              return true;
+            }
+          }
+
+          // Check subject threading (look for similar subjects)
+          // Some conversations are threaded by subject pattern
+          if (contact?.lastMessageSubject && email.subject) {
+            const normalizedContactSubject = contact.lastMessageSubject
+              .replace(/^(?:RE|FWD?|AW|WG):\s*/i, '')
+              .trim()
+              .toLowerCase();
+
+            const normalizedEmailSubject = email.subject
+              .replace(/^(?:RE|FWD?|AW|WG):\s*/i, '')
+              .trim()
+              .toLowerCase();
+
+            // If normalized subjects match and it's a conversation with this email
+            if (normalizedContactSubject === normalizedEmailSubject &&
+              (email.from.email === contactEmail ||
+                email.to.some(to => to.email === contactEmail))) {
+              return true;
+            }
           }
         }
 
@@ -386,13 +439,50 @@ export function ConversationView({
         try {
           // For Gmail accounts
           if (!contact.accountId) {
+            // Enhanced Gmail conversation fetching
+            try {
+              // Try to search for the messages by query
+              const response = await fetch("/api/gmail/search", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  query: `from:${contactEmail} OR to:${contactEmail}`,
+                  accessToken: session.user.accessToken
+                }),
+              });
+
+              const data = await response.json();
+
+              if (data.success && data.messages && data.messages.length > 0) {
+                // Add these emails to the store
+                const existingEmails = new Map(emails.map((e) => [e.id, e]));
+                data.messages.forEach((email: Email) =>
+                  existingEmails.set(email.id, email)
+                );
+
+                setEmails(Array.from(existingEmails.values()));
+
+                toast({
+                  title: "Conversation loaded",
+                  description: `Found ${data.messages.length} messages`,
+                });
+                setIsRefetching(false);
+                return;
+              }
+            } catch (searchError) {
+              console.warn("Gmail search failed, falling back to error message:", searchError);
+            }
+
+            // If we get here, we couldn't find the conversation via search
             // Only show the Gmail error toast once per conversation
             if (!shownGmailError) {
               setShownGmailError(true);
               toast({
                 title: "Gmail conversation unavailable",
                 description:
-                  "We cannot display this conversation due to Gmail API limitations.",
+                  "We cannot display this conversation due to Gmail API limitations. Try searching for the contact in your Gmail.",
                 variant: "destructive",
                 duration: 5000,
               });
@@ -917,13 +1007,44 @@ export function ConversationView({
                       Gmail Conversation Unavailable
                     </h3>
                     <p className="text-muted-foreground mb-4">
-                      We cannot display this conversation due to Gmail API
-                      limitations. This may be due to security restrictions or
-                      access permissions.
+                      We cannot display this conversation due to Gmail API limitations. This may be due to search restrictions or authentication constraints.
                     </p>
-                    <p className="text-sm text-muted-foreground">
-                      Try using an IMAP account for full conversation support.
-                    </p>
+                    <div className="mt-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mr-2"
+                        onClick={() => {
+                          // Trigger a manual sync of Gmail emails
+                          if (session?.user?.accessToken) {
+                            toast({
+                              title: "Syncing Gmail",
+                              description: "Attempting to load more recent messages...",
+                            });
+
+                            useEmailStore.getState().syncEmails(session.user.accessToken);
+
+                            // After sync completes, clear the shown error flag to allow retrying
+                            setTimeout(() => {
+                              setShownGmailError(false);
+                            }, 3000);
+                          }
+                        }}
+                      >
+                        Retry Sync
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          // Open Gmail search in new tab
+                          const searchQuery = encodeURIComponent(`from:${contactEmail} OR to:${contactEmail}`);
+                          window.open(`https://mail.google.com/mail/u/0/#search/${searchQuery}`, '_blank');
+                        }}
+                      >
+                        Open in Gmail
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   // Generic empty conversation message for IMAP
