@@ -12,7 +12,7 @@ import FeatureSection from "@/components/hero/feature";
 import AiLines from "@/components/hero/ai-lines";
 const Landing = () => {
   return (
-    <>
+    <div className="bg-white dark:bg-black ">
       <HeroSection
         title="Welcome to CommSync"
         subtitle={{
@@ -23,14 +23,14 @@ const Landing = () => {
         ctaText="Get Started"
         ctaHref="/login"
         bottomImage={{
-          light: "/dashboard.png",
-          dark: "/dashboard.png",
+          light: "/dashboard-light.png",
+          dark: "/dashboard-dark.png",
         }}
       />
       <div className="space-y-8" suppressHydrationWarning={true}>
         <Marquee text="Messages made easier" duration={15} suppressHydrationWarning={true} />
       </div>
-      <div className="min-h-screen w-full">
+      <div className="min-h-screen w-full bg-white dark:bg-black">
         <div className="relative w-full">
           <FeaturesSectionWithBentoGrid />
         </div>
@@ -46,7 +46,7 @@ const Landing = () => {
       </div>
       <PreFooter />
       <FooterSection />
-    </>
+    </div>
   );
 };
 

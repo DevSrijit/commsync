@@ -23,13 +23,13 @@ export const TextReveal: FC<TextRevealProps> = ({ children, className }) => {
   const words = children.split(" ");
 
   return (
-    <><div ref={targetRef} className={cn("relative z-0 h-[200vh]", className)}>
+    <><div ref={targetRef} className={cn("relative z-0 h-[200vh] bg-white dark:bg-black", className)}>
       <div
-        className={"sticky top-0 mx-auto flex h-[50%] max-w-4xl items-center bg-transparent px-[1rem] pt-[5rem] flex-col"}
+        className={"sticky top-0 mx-auto flex h-[50%] max-w-4xl items-center bg-white dark:bg-black px-[1rem] pt-[5rem] flex-col"}
       >
         <span
           ref={targetRef}
-          className={"flex flex-wrap p-5 text-2xl font-bold text-black/20 dark:text-white/20 md:p-8 md:text-3xl lg:p-10 lg:text-4xl xl:text-5xl"}
+          className={"flex flex-wrap p-5 text-4xl tracking-tighter font-geist bg-clip-text text-transparent mx-auto md:text-6xl bg-[linear-gradient(180deg,_#000_0%,_rgba(0,_0,_0,_0.75)_100%)] dark:bg-[linear-gradient(180deg,_#FFF_0%,_rgba(255,_255,_255,_0.00)_202.08%)]"}
         >
           {words.map((word, i) => {
             const start = i / words.length;

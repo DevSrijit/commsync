@@ -1,3 +1,4 @@
+"use client"
 import React from "react";
 import { cn } from "@/lib/utils";
 import createGlobe from "cobe";
@@ -48,7 +49,7 @@ export function FeaturesSectionWithBentoGrid() {
   return (
     <div className="relative z-20 py-10 lg:py-40 max-w-7xl mx-auto">
       <div className="px-8">
-        <h1 className="text-3xl lg:text-5xl lg:leading-tight max-w-5xl mx-auto text-center tracking-tight font-medium">
+        <h1 className="text-4xl tracking-tighter font-geist bg-clip-text text-transparent mx-auto md:text-6xl bg-[linear-gradient(180deg,_#000_0%,_rgba(0,_0,_0,_0.75)_100%)] dark:bg-[linear-gradient(180deg,_#FFF_0%,_rgba(255,_255,_255,_0.00)_202.08%)] text-center p-5">
           CommSync {typeof window !== 'undefined' && !navigator.userAgent.includes('Safari') ? (
             <AuroraText speed={1.5}>offers a lot</AuroraText>
           ) : (

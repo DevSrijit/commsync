@@ -38,14 +38,14 @@ export const Marquee = React.forwardRef<HTMLDivElement, MarqueeProps>(
       <div
         ref={ref}
         className={cn(
-          "relative w-screen overflow-hidden py-16 [--stroke-color:rgb(156,163,175)] dark:[--stroke-color:rgb(64,64,64)]",
+          "relative w-screen overflow-hidden py-16 [--stroke-color:rgb(156,163,175)] dark:[--stroke-color:rgb(64,64,64)] ",
           className
         )}
         {...props}
       >
         <>
-          <div className="absolute left-0 top-0 bottom-0 w-[20%] bg-gradient-to-r from-background to-transparent z-10" />
-          <div className="absolute right-0 top-0 bottom-0 w-[20%] bg-gradient-to-l from-background to-transparent z-10" />
+          <div className="absolute left-0 top-0 bottom-0 w-[20%] bg-gradient-to-r from-background/50 to-[#00000000] z-10" />
+          <div className="absolute right-0 top-0 bottom-0 w-[20%] bg-gradient-to-l from-background/50 to-[#00000000] z-10" />
         </>
         <motion.div
           className="flex whitespace-nowrap"

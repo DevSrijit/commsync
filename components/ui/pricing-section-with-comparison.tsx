@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 
 function Pricing() {
   return (
-    <div className="w-full py-20 lg:py-40">
+    <div className="w-full py-20 lg:py-40 bg-white dark:bg-black">
       <div className="container mx-auto">
         <div className="flex text-center justify-center items-center gap-4 flex-col">
           <Badge>Pricing</Badge>
@@ -109,18 +109,6 @@ function Pricing() {
             <div className="px-3 py-1 md:px-6 md:py-4 flex justify-center">
               <Check className="w-4 h-4 text-primary" />
             </div>
-            {/* <div className="px-3 lg:px-6 col-span-3 lg:col-span-1 py-4">
-              Advanced Analytics
-            </div>
-            <div className="px-3 py-1 md:px-6 md:py-4 flex justify-center">
-              <Minus className="w-4 h-4 text-muted-foreground" />
-            </div>
-            <div className="px-3 py-1 md:px-6 md:py-4 flex justify-center">
-              <Check className="w-4 h-4 text-primary" />
-            </div>
-            <div className="px-3 py-1 md:px-6 md:py-4 flex justify-center">
-              <Check className="w-4 h-4 text-primary" />
-            </div> */}
           </div>
         </div>
       </div>
