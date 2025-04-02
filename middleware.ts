@@ -10,16 +10,20 @@ const SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
 
-  // Skip the middleware checks for API routes and static assets
+  // Skip the middleware checks for API routes, static assets, and auth callback routes
   if (
     path.startsWith("/api/") ||
+    path.startsWith("/auth/") ||
     path.match(/\.(jpg|jpeg|png|gif|svg|css|js)$/)
   ) {
     return NextResponse.next();
   }
 
   // Check authentication status
-  const token = await getToken({ req: request });
+  const token = await getToken({
+    req: request,
+    secret: process.env.NEXTAUTH_SECRET,
+  });
   const isAuthenticated = !!token;
 
   // Define protected routes that require authentication
@@ -28,7 +32,10 @@ export async function middleware(request: NextRequest) {
 
   // Redirect authenticated users away from auth pages
   if (isAuthenticated && (path === "/" || authRoutes.includes(path))) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    const callbackUrl = request.nextUrl.searchParams.get("callbackUrl");
+    return NextResponse.redirect(
+      new URL(callbackUrl || "/dashboard", request.url)
+    );
   }
 
   // Redirect unauthenticated users away from protected routes
@@ -36,7 +43,10 @@ export async function middleware(request: NextRequest) {
     !isAuthenticated &&
     protectedRoutes.some((route) => path.startsWith(route))
   ) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    const callbackUrl = encodeURIComponent(request.url);
+    return NextResponse.redirect(
+      new URL(`/login?callbackUrl=${callbackUrl}`, request.url)
+    );
   }
 
   // Get the internal API key
