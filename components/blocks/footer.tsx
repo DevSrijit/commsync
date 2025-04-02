@@ -59,7 +59,7 @@ export const Footer = React.forwardRef<HTMLDivElement, FooterProps>(
                 <a href="#" className="text-xl font-semibold">
                   {brand.name}
                 </a>
-                
+
                 <button
                   onClick={() => setTheme(currentTheme === "dark" ? "light" : "dark")}
                   className={cn(

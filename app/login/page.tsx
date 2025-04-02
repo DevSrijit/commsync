@@ -1,17 +1,7 @@
-import { redirect } from "next/navigation"
-import { getServerSession } from "next-auth"
-
-import { authOptions } from "@/lib/auth"
 import { LoginForm } from "@/components/login-form"
 import Threads from '@/components/Threads/Threads';
 
-export default async function LoginPage() {
-  const session = await getServerSession(authOptions)
-
-  if (session) {
-    redirect("/")
-  }
-
+export default function LoginPage() {
   return (
     <div>
       <div className="w-full absolute h-full z-0">

@@ -7,11 +7,9 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { EnterpriseDialog } from "@/components/enterprise-dialog";
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/use-toast";
-import { useSession } from "next-auth/react";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { OrganizationAccessKey } from "@/components/organization-access-key";
 
@@ -40,136 +38,36 @@ function PricingSection({
     description = "Scale your communication seamlessly\nPay only for what you need, upgrade or downgrade anytime.",
 }: PricingSectionProps) {
     const [isLoading, setIsLoading] = useState<string | null>(null);
-    const [isCheckingSubscription, setIsCheckingSubscription] = useState(false);
-    const router = useRouter();
     const { toast } = useToast();
-    const { data: session, status } = useSession();
-
-    // Check if user already has an active subscription
-    useEffect(() => {
-        if (status === "authenticated" && session) {
-            const checkExistingSubscription = async () => {
-                setIsCheckingSubscription(true);
-                try {
-                    const response = await fetch("/api/auth/check-subscription", {
-                        method: "GET",
-                        credentials: "include",
-                    });
-
-                    if (response.ok) {
-                        const data = await response.json();
-
-                        if (data.hasActiveSubscription) {
-                            toast({
-                                title: "Active Subscription Found",
-                                description: "Redirecting to your dashboard...",
-                            });
-                            router.replace("/dashboard");
-                        }
-                    }
-                } catch (error) {
-                    console.error("Error checking subscription:", error);
-                } finally {
-                    setIsCheckingSubscription(false);
-                }
-            };
-
-            checkExistingSubscription();
-        }
-    }, [session, status, router, toast]);
 
     const handleCheckout = async (plan: string) => {
         try {
-            // Check if session is loading
-            if (status === "loading") {
-                // Wait for session to load before proceeding
-                toast({
-                    title: "Please wait",
-                    description: "Preparing checkout...",
-                });
-                return;
-            }
-
-            // Only check for unauthenticated state, don't immediately redirect
-            if (status === "unauthenticated") {
-                toast({
-                    title: "Authentication required",
-                    description: "Please sign in to continue with checkout.",
-                    variant: "destructive",
-                });
-                // Use replace instead of push to avoid navigation history issues
-                router.replace("/login");
-                return;
-            }
-
             setIsLoading(plan);
-            const response = await fetch(`/api/checkout/${plan}`, {
+            const response = await fetch("/api/create-checkout-session", {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
                 },
-                credentials: "include", // Include cookies for authentication
+                body: JSON.stringify({ plan }),
             });
 
-            const data = await response.json();
-
             if (!response.ok) {
-                // Handle server errors with detailed messages
-                const errorMessage = data.error || "Failed to process checkout";
-                toast({
-                    title: "Checkout Error",
-                    description: errorMessage,
-                    variant: "destructive",
-                });
-
-                // If authentication error, redirect to login but don't throw an error
-                if (response.status === 401) {
-                    router.replace("/login");
-                    return;
-                }
-                throw new Error(errorMessage);
+                throw new Error("Failed to create checkout session");
             }
 
-            // Redirect to Stripe's hosted checkout URL
-            if (data.url) {
-                window.location.href = data.url;
-            } else {
-                // If there's a message but no URL, show it (e.g., "already subscribed")
-                if (data.message) {
-                    toast({
-                        title: "Subscription Info",
-                        description: data.message,
-                    });
-
-                    // If already subscribed, redirect to dashboard
-                    if (data.message.includes("already have an active subscription")) {
-                        router.push("/dashboard");
-                    }
-                }
-            }
+            const { url } = await response.json();
+            window.location.href = url;
         } catch (error) {
             console.error("Error during checkout:", error);
             toast({
                 title: "Checkout Error",
-                description: "An unexpected error occurred. Please try again.",
+                description: "There was an error processing your request. Please try again.",
                 variant: "destructive",
             });
         } finally {
             setIsLoading(null);
         }
     };
-
-    // Show loading spinner while checking subscription
-    if (isCheckingSubscription) {
-        return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <div className="flex flex-col items-center gap-2">
-                    <LoadingSpinner className="h-8 w-8" />
-                    <p className="text-muted-foreground">Checking subscription status...</p>
-                </div>
-            </div>
-        );
-    }
 
     return (
         <div className="container max-w-7xl mx-auto py-12">
@@ -261,13 +159,9 @@ function PricingSection({
                                             "before:translate-x-[-100%] hover:before:translate-x-[100%] before:transition-transform before:duration-500"
                                         )}
                                         onClick={() => plan.plan && handleCheckout(plan.plan)}
-                                        disabled={isLoading === plan.plan || status === "loading"}
+                                        disabled={isLoading === plan.plan}
                                     >
-                                        {isLoading === plan.plan
-                                            ? "Loading..."
-                                            : status === "loading"
-                                                ? "Please wait..."
-                                                : plan.buttonText}
+                                        {isLoading === plan.plan ? "Loading..." : plan.buttonText}
                                     </Button>
                                 )}
                                 <p className="mt-4 text-xs text-muted-foreground text-center">
@@ -360,7 +254,7 @@ export default function PricingPage() {
     const [isScrolled, setIsScrolled] = useState(false);
 
     // Add scroll listener to hide the chevron when user has scrolled down
-    useEffect(() => {
+    React.useEffect(() => {
         const handleScroll = () => {
             // Check if user has scrolled down enough to see the access key section
             const scrollPosition = window.scrollY;
