@@ -821,6 +821,10 @@ function parseGmailMessage(message: any): Email {
     url?: string;
   }[] = [];
 
+  // Track content parts to deduplicate
+  const processedTextContents = new Set<string>();
+  const processedHtmlContents = new Set<string>();
+
   // Enhanced mime part processing to better handle nested structures
   const processPart = (part: any, depth = 0) => {
     if (!part) return;
@@ -832,16 +836,34 @@ function parseGmailMessage(message: any): Email {
       // Handle text parts
       if (mimeType === "text/plain" && part.body?.data) {
         const decodedText = decodeBase64(part.body.data);
-        body = body ? `${body}\n\n${decodedText}` : decodedText;
+
+        // Only add this content if we haven't seen it before
+        if (!processedTextContents.has(decodedText)) {
+          processedTextContents.add(decodedText);
+          body = body ? `${body}\n\n${decodedText}` : decodedText;
+        }
       } else if (mimeType === "text/html" && part.body?.data) {
         const decodedHtml = decodeBase64(part.body.data);
-        htmlBody = htmlBody ? `${htmlBody}\n\n${decodedHtml}` : decodedHtml;
+
+        // Only add this content if we haven't seen it before
+        if (!processedHtmlContents.has(decodedHtml)) {
+          processedHtmlContents.add(decodedHtml);
+          htmlBody = htmlBody ? `${htmlBody}\n\n${decodedHtml}` : decodedHtml;
+        }
       }
       // Handle multipart containers
       else if (mimeType.startsWith("multipart/")) {
         // For multipart/alternative, we'll collect all parts but prefer HTML in the end
         if (Array.isArray(part.parts)) {
-          part.parts.forEach((subpart: any) => processPart(subpart, depth + 1));
+          // For multipart/alternative, process parts in reverse order to prioritize HTML
+          // (HTML parts usually come after plain text parts)
+          const partsToProcess = [...part.parts];
+          if (mimeType === "multipart/alternative") {
+            partsToProcess.reverse();
+          }
+          partsToProcess.forEach((subpart: any) =>
+            processPart(subpart, depth + 1)
+          );
         }
       }
       // Handle attachments - both inline and regular
