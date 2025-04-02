@@ -51,15 +51,6 @@ export default function Testimonials() {
   // Duplicate reviews for smooth infinite scroll
   const duplicatedReviews = [...reviews, ...reviews];
 
-  const getAvatarUrl = (url: string) => {
-    // Check if it's a Google profile picture
-    if (url.includes('googleusercontent.com')) {
-      // Already processed in the API to be 192px
-      return url;
-    }
-    return url;
-  };
-
   return (
     <section className="py-24 bg-gradient-to-b from-white to-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -96,7 +87,7 @@ export default function Testimonials() {
                     <div className="relative w-12 h-12 rounded-full overflow-hidden bg-gray-100 ring-2 ring-white shadow-sm">
                       {review.user_avatar && !review.user_avatar.includes('default_avatar') ? (
                         <Image
-                          src={getAvatarUrl(review.user_avatar)}
+                          src={review.user_avatar}
                           alt={review.user_name}
                           fill
                           className="object-cover"
