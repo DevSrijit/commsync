@@ -11,11 +11,14 @@ import {
   hasStoredActiveSubscription,
   updateSubscriptionDataInBackground
 } from "@/lib/subscription";
+import { useRouter } from "next/navigation";
 
 export default function DashboardPage() {
   const { toast } = useToast();
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
   const [verificationError, setVerificationError] = useState<string | null>(null);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   // Background subscription check
   const checkSubscriptionInBackground = async () => {
@@ -31,7 +34,7 @@ export default function DashboardPage() {
             description: "Please select a subscription plan to continue.",
             variant: "destructive",
           });
-          window.location.href = "/pricing";
+          router.push("/pricing");
         }
       }
     } catch (error) {
@@ -60,6 +63,12 @@ export default function DashboardPage() {
       });
 
       if (!response.ok) {
+        if (response.status === 401 && isInitialLoad) {
+          // On initial load, if we get a 401, wait a bit and retry once
+          setIsInitialLoad(false);
+          setTimeout(checkSubscription, 1000);
+          return;
+        }
         throw new Error("Failed to verify subscription");
       }
 
@@ -99,12 +108,18 @@ export default function DashboardPage() {
           description: "Please select a subscription plan to continue.",
           variant: "destructive",
         });
-        window.location.href = "/pricing";
+        router.push("/pricing");
       }
 
       setIsLoading(false);
     } catch (error) {
       console.error("Error checking subscription:", error);
+      if (isInitialLoad) {
+        // On initial load, if we get an error, wait a bit and retry once
+        setIsInitialLoad(false);
+        setTimeout(checkSubscription, 1000);
+        return;
+      }
       setVerificationError("Failed to verify subscription status. Please try again later.");
       setIsLoading(false);
     }
