@@ -628,19 +628,6 @@ export function EmailList({
         setNoMoreMessages(false);
       }
 
-      // Recalculate pagination after loading new messages
-      const updatedVisibleContacts = displayedContacts.filter(
-        contact => !deletedContacts.includes(contact.email)
-      );
-      const updatedTotalContactPages = Math.max(1, Math.ceil(updatedVisibleContacts.length / itemsPerPage));
-      const updatedTotalGroupPages = Math.max(1, Math.ceil(groups.length / itemsPerPage));
-      const updatedTotalPages = activeFilter === 'contacts' ? updatedTotalGroupPages : updatedTotalContactPages;
-
-      // Update current page if needed
-      if (currentPage > updatedTotalPages) {
-        setCurrentPage(updatedTotalPages);
-      }
-
       setIsLoadingMore(false);
     } catch (error) {
       console.error("Error loading more messages:", error);
@@ -659,7 +646,7 @@ export function EmailList({
         setNoMoreMessages(false);
       }, 3000);
     }
-  }, [toast, session, currentPage, itemsPerPage, activeFilter, displayedContacts, deletedContacts, groups]);
+  }, [toast, session]);
 
   if (isLoading) {
     return (
