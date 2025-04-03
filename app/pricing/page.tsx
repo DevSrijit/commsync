@@ -43,7 +43,7 @@ function PricingSection({
     const handleCheckout = async (plan: string) => {
         try {
             setIsLoading(plan);
-            const response = await fetch("/api/create-checkout-session", {
+            const response = await fetch("/api/checkout/" + plan, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
