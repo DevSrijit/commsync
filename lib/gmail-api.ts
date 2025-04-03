@@ -181,7 +181,13 @@ export async function fetchEmails(
     // Store the nextPageToken in the database if available
     if (data.nextPageToken) {
       const tokensString = await getCacheValue<string>("gmail_page_tokens");
-      const tokens = tokensString ? JSON.parse(tokensString) : {};
+      // Check if tokensString is already an object before parsing
+      const tokens =
+        typeof tokensString === "object"
+          ? tokensString || {}
+          : tokensString
+          ? JSON.parse(tokensString)
+          : {};
       tokens[`page_${page}`] = data.nextPageToken;
       await setCacheValue("gmail_page_tokens", JSON.stringify(tokens));
     }
