@@ -2,6 +2,9 @@ import { openai } from "@ai-sdk/openai";
 import { streamText } from "ai";
 import { NextResponse } from "next/server";
 
+// Force dynamic behavior for streaming responses
+export const dynamic = "force-dynamic";
+
 // Define the expected request body structure
 interface SummarizeRequestBody {
   conversationText: string;

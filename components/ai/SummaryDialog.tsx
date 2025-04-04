@@ -13,6 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useCompletion } from '@ai-sdk/react';
 import { recordAiCreditUsage, AI_CREDIT_COSTS } from '@/lib/ai-credits';
 import { useToast } from '@/hooks/use-toast';
+import { unstable_noStore as noStore } from 'next/cache';
 
 interface SummaryDialogProps {
     isOpen: boolean;
@@ -29,6 +30,7 @@ export function SummaryDialog({
     subscriptionId,
     userId
 }: SummaryDialogProps) {
+    noStore();
     const { toast } = useToast();
     const [hasRecordedUsage, setHasRecordedUsage] = useState(false);
     const [isCreditRecordingFailed, setIsCreditRecordingFailed] = useState(false);
