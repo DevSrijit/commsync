@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useSession } from "next-auth/react";
 import { useToast } from "@/hooks/use-toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Image, FileText, File, Users, MessageSquare, Mail, Inbox, MailQuestion, Info } from "lucide-react";
+import { Image, FileText, File, Users, MessageSquare, Mail, Inbox, MailQuestion, Info, Sparkles } from "lucide-react";
 import DOMPurify from "isomorphic-dompurify";
 import EncapsulatedEmailContent from "./EncapsulatedEmailContent";
 import {
@@ -23,6 +23,17 @@ import { useSendMessage } from "@/lib/messaging";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { htmlToSmsText } from "@/lib/utils";
+import { SummaryDialog } from "@/components/ai/SummaryDialog";
+import {
+  getUserSubscriptionData,
+  StoredSubscriptionData,
+  hasActiveAccess,
+} from "@/lib/subscription";
+import {
+  hasEnoughCreditsForFeature,
+  AI_CREDIT_COSTS
+} from "@/lib/ai-credits";
+import { htmlToText } from 'html-to-text';
 
 interface WelcomeScreenProps {
   userEmail?: string | null;
@@ -137,6 +148,10 @@ export function ConversationView({
   } = useEmailStore();
   const { toast } = useToast();
   const { sendMessage } = useSendMessage();
+
+  // State for Summary Dialog
+  const [isSummaryDialogOpen, setIsSummaryDialogOpen] = useState(false);
+  const [subscriptionData, setSubscriptionData] = useState<StoredSubscriptionData | null>(null);
 
   // State to track whether we've already shown a Gmail error
   const [shownGmailError, setShownGmailError] = useState(false);
@@ -571,6 +586,62 @@ export function ConversationView({
     shownGmailError,
   ]);
 
+  // Fetch user subscription data on mount or session change via API route
+  useEffect(() => {
+    async function fetchSubscription() {
+      // No need to check session?.user?.id here, API route handles auth
+      try {
+        // Use the main subscription endpoint - it handles fetching without usage update by default
+        const response = await fetch('/api/subscription');
+
+        if (!response.ok) {
+          // Handle non-2xx responses (like 401 Unauthorized, 500 Internal Server Error)
+          const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
+          throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        // Set the subscription data from the API response
+        setSubscriptionData(data.subscription); // The API returns { subscription: ... }
+        console.log("Subscription data fetched via API:", data.subscription);
+
+      } catch (error) {
+        console.error("Failed to fetch subscription data via API:", error);
+        setSubscriptionData(null); // Ensure it's null on error
+        toast({
+          title: "Could not load subscription",
+          description: `AI features might be unavailable. ${error instanceof Error ? error.message : ''}`,
+          variant: "destructive",
+          duration: 5000,
+        });
+      }
+    }
+
+    // Only fetch if we have a session (or attempt, API handles actual auth)
+    if (session) {
+      fetchSubscription();
+    } else {
+      setSubscriptionData(null); // Clear if no session
+    }
+
+  }, [session, toast]); // Depend on the whole session object now
+
+  // Prepare conversation text for summarization
+  const conversationTextForSummary = useMemo(() => {
+    return conversation
+      .map((email) => {
+        const sender = email.from?.name || email.from?.email || 'Unknown Sender';
+        const date = formatDistanceToNow(new Date(email.date || ""), { addSuffix: true });
+        // Clean HTML body for better processing by AI
+        const bodyText = email.body ? htmlToText(email.body, { wordwrap: 130 }) : '(No content)';
+
+        // Simple format, adjust as needed for AI quality
+        return `Sender: ${sender}\nDate: ${date}\n\n${bodyText}\n\n---\n`;
+      })
+      .join(""); // Join messages into a single string
+  }, [conversation]);
+
   // Update loading state to include refetching
   const isLoadingState = isLoading;
 
@@ -659,6 +730,52 @@ export function ConversationView({
     console.log('----------------------');
   }
 
+  // Handler for clicking the Summarize button
+  const handleSummarizeClick = async () => {
+    // 1. Check if subscription data is loaded
+    if (!subscriptionData) {
+      toast({
+        title: "Subscription Not Loaded",
+        description: "Cannot check AI credits. Please wait or refresh.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // 2. Check for active access (covers active plans and trials)
+    // We can use the hasActiveAccess function from subscription utils if needed,
+    // but hasEnoughCreditsForFeature implies active access if total > 0
+    // Let's rely on the credit check for simplicity here.
+
+    // 3. Check for enough credits
+    const hasEnoughCredits = await hasEnoughCreditsForFeature(
+      subscriptionData,
+      'SUMMARIZE_THREAD'
+    );
+
+    if (!hasEnoughCredits) {
+      toast({
+        title: "Insufficient AI Credits",
+        description: `You need ${AI_CREDIT_COSTS.SUMMARIZE_THREAD} credits to summarize. Please upgrade or check your usage.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // 4. Check if there's content to summarize
+    if (!conversationTextForSummary || conversationTextForSummary.trim().length === 0) {
+      toast({
+        title: "Nothing to Summarize",
+        description: "The conversation appears to be empty.",
+      });
+      return;
+    }
+
+    // 5. Open the dialog
+    console.log("Opening summary dialog...");
+    setIsSummaryDialogOpen(true);
+  };
+
   if (!contactEmail) {
     return (
       <WelcomeScreen userEmail={session?.user?.email} />
@@ -672,13 +789,14 @@ export function ConversationView({
     >
       {/* Conversation Header Panel */}
       <ResizablePanel
-        defaultSize={5}
-        minSize={5}
+        defaultSize={8} // Slightly increase size for the button
+        minSize={8}
         maxSize={15}
         className="border-b border-border p-4 flex justify-between items-center bg-card/50 backdrop-blur supports-[backdrop-filter]:bg-background/60"
       >
-        <div className="flex items-center">
+        <div className="flex items-center gap-3"> {/* Container for Left side */}
           {isContactGroup && selectedGroup ? (
+            // Group Display
             <div className="flex items-center gap-2">
               <div className="flex items-center justify-center h-9 w-9 rounded-full bg-primary/10">
                 <Users className="h-5 w-5 text-primary" />
@@ -691,6 +809,7 @@ export function ConversationView({
               </div>
             </div>
           ) : (
+            // Single Contact Display
             <div className="flex items-center gap-2">
               <Avatar className="h-9 w-9">
                 <AvatarImage
@@ -705,6 +824,20 @@ export function ConversationView({
               </div>
             </div>
           )}
+        </div>
+        {/* Action Buttons on the Right */}
+        <div className="flex items-center gap-2">
+          {/* Add Summarize button here */}
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={handleSummarizeClick}
+            disabled={isLoadingState || isRefetching || conversation.length === 0 || !subscriptionData} // Disable if loading, no messages, or no sub data
+            title="Summarize Conversation (AI)"
+          >
+            <Sparkles className="h-4 w-4" />
+          </Button>
+          {/* Other action buttons could go here */}
         </div>
       </ResizablePanel>
 
@@ -1253,6 +1386,18 @@ export function ConversationView({
           }}
         />
       </ResizablePanel>
+
+      {/* Render the Summary Dialog */}
+      {isSummaryDialogOpen && (
+        <SummaryDialog
+          isOpen={isSummaryDialogOpen}
+          onOpenChange={setIsSummaryDialogOpen}
+          conversationText={conversationTextForSummary}
+          subscriptionId={subscriptionData?.id || null} // Pass subscription ID
+          userId={session?.user?.id || null} // Pass user ID
+        />
+      )}
+
     </ResizablePanelGroup>
   );
 }

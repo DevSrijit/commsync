@@ -1,0 +1,77 @@
+import { openai } from "@ai-sdk/openai";
+import { streamText } from "ai";
+import { NextResponse } from "next/server";
+
+// IMPORTANT: Set the runtime to edge for best performance
+export const runtime = "edge";
+// Allow up to 5 minutes for the summary generation
+export const maxDuration = 300;
+
+// Define the expected request body structure
+interface SummarizeRequestBody {
+  conversationText: string;
+}
+
+export async function POST(req: Request) {
+  try {
+    // Ensure the request method is POST
+    if (req.method !== "POST") {
+      return new NextResponse("Method Not Allowed", { status: 405 });
+    }
+
+    // Validate and parse the request body
+    const body: SummarizeRequestBody = await req.json();
+    const { conversationText } = body;
+
+    if (
+      !conversationText ||
+      typeof conversationText !== "string" ||
+      conversationText.trim().length === 0
+    ) {
+      return new NextResponse(
+        JSON.stringify({ error: "Missing or invalid conversationText" }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
+    // Use the Vercel AI SDK streamText function
+    const result = await streamText({
+      // Using a cost-effective and fast model suitable for summarization
+      // You might switch to 'gpt-4o' or others based on desired quality/cost
+      model: openai("gpt-4o-mini"),
+      // Provide a system prompt to guide the AI
+      system: `You are an expert summarization assistant. 
+               Analyze the following conversation and provide a concise summary (2-3 sentences maximum) 
+               highlighting the key topics, decisions, or outcomes. 
+               Focus on clarity and brevity. Respond only with the summary text.`,
+      // The main content for the AI to process
+      prompt: conversationText,
+      maxTokens: 200,
+    });
+
+    // Stream the result back to the client
+    return result.toDataStreamResponse();
+  } catch (error: unknown) {
+    console.error("Error in /api/ai/summarize:", error);
+
+    // Handle potential JSON parsing errors
+    if (error instanceof SyntaxError) {
+      return new NextResponse(JSON.stringify({ error: "Invalid JSON body" }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Generic internal server error for other cases
+    return new NextResponse(
+      JSON.stringify({ error: "Internal Server Error" }),
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  }
+}
