@@ -10,6 +10,7 @@ interface GenerateMessageRequestBody {
   conversationContext: string;
   contactName: string;
   platform: string;
+  customInstructions?: string;
 }
 
 export async function POST(req: Request) {
@@ -37,7 +38,8 @@ export async function POST(req: Request) {
 
     // Validate and parse the request body
     const body: GenerateMessageRequestBody = await req.json();
-    const { conversationContext, contactName, platform } = body;
+    const { conversationContext, contactName, platform, customInstructions } =
+      body;
 
     // Check for valid context
     if (!conversationContext || typeof conversationContext !== "string") {
@@ -82,6 +84,12 @@ export async function POST(req: Request) {
                   isSms
                     ? "Generate a brief SMS response appropriate for the conversation. Keep it concise and SMS-friendly."
                     : "Generate an email response appropriate for the conversation. Keep it professional but friendly."
+                }
+                
+                ${
+                  customInstructions
+                    ? `Additional instructions: ${customInstructions}`
+                    : ""
                 }`,
         maxTokens: isSms ? 100 : 500,
       });

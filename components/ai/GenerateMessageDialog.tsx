@@ -11,9 +11,11 @@ import { Button } from '@/components/ui/button';
 import { Loader2, CheckCircle, XCircle, CreditCard, AlertTriangle, Copy } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useCompletion } from '@ai-sdk/react';
-import { recordAiCreditUsage, AI_CREDIT_COSTS } from '@/lib/ai-credits';
+import { recordAiCreditUsage, AI_CREDIT_COSTS, hasEnoughCreditsForFeature } from '@/lib/ai-credits';
 import { useToast } from '@/hooks/use-toast';
 import { unstable_noStore as noStore } from 'next/cache';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 
 interface GenerateMessageDialogProps {
     isOpen: boolean;
@@ -32,8 +34,8 @@ export function GenerateMessageDialog({
     conversationContext,
     contactName,
     platform,
-    subscriptionId,
-    userId,
+    subscriptionId: initialSubscriptionId,
+    userId: initialUserId,
     onMessageGenerated
 }: GenerateMessageDialogProps) {
     noStore();
@@ -41,6 +43,16 @@ export function GenerateMessageDialog({
     const [hasRecordedUsage, setHasRecordedUsage] = useState(false);
     const [isCreditRecordingFailed, setIsCreditRecordingFailed] = useState(false);
     const [copied, setCopied] = useState(false);
+    const [customInstructions, setCustomInstructions] = useState('');
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [isCheckingSubscription, setIsCheckingSubscription] = useState(false);
+    const [subscriptionId, setSubscriptionId] = useState<string | null>(initialSubscriptionId);
+    const [userId, setUserId] = useState<string | null>(initialUserId);
+    const [canGenerate, setCanGenerate] = useState(true);
+
+    // Determine if we're generating for SMS or email
+    const isSms = platform === 'twilio' || platform === 'justcall';
+    const platformLabel = isSms ? 'SMS' : 'Email';
 
     const {
         completion,
@@ -54,6 +66,7 @@ export function GenerateMessageDialog({
             conversationContext,
             contactName,
             platform, // Pass the platform to optimize for SMS or email
+            customInstructions, // Pass custom instructions to the API
         },
         onFinish: async () => {
             // Record credit usage after the message is successfully generated
@@ -94,6 +107,8 @@ export function GenerateMessageDialog({
                 console.warn('Message generated but no subscription ID or user ID provided for credit recording');
                 setIsCreditRecordingFailed(true);
             }
+            
+            setIsGenerating(false);
         },
         onError: (err) => {
             console.error('Message generation error:', err);
@@ -119,23 +134,85 @@ export function GenerateMessageDialog({
                 description: errorMessage,
                 variant: 'destructive'
             });
+            
+            setIsGenerating(false);
         }
     });
 
-    // Effect to trigger the completion when the dialog opens
+    // Check subscription in the background once the dialog is open
     useEffect(() => {
-        if (isOpen && !completion && !isLoading && !error) {
-            console.log("Triggering message generation...");
-            complete();
-        }
-
-        // Cleanup on unmount - stop any active generations
-        return () => {
-            if (isLoading) {
-                stop();
+        const checkSubscription = async () => {
+            if (!subscriptionId || !userId) {
+                setIsCheckingSubscription(true);
+                try {
+                    // Quick attempt to get subscription data
+                    const response = await fetch('/api/subscription');
+                    if (!response.ok) throw new Error("Subscription check failed");
+                    
+                    const data = await response.json();
+                    if (data.subscription) {
+                        setSubscriptionId(data.subscription.id);
+                        setUserId(data.subscription.userId || initialUserId);
+                        
+                        // Check if we have enough credits
+                        const hasCredits = await hasEnoughCreditsForFeature(
+                            data.subscription,
+                            'GENERATE_RESPONSE'
+                        );
+                        
+                        if (!hasCredits) {
+                            setCanGenerate(false);
+                            toast({
+                                title: "Insufficient AI Credits",
+                                description: `You need ${AI_CREDIT_COSTS.GENERATE_RESPONSE} credits to generate a message. Please upgrade or check your usage.`,
+                                variant: "destructive",
+                            });
+                        } else {
+                            setCanGenerate(true);
+                        }
+                    } else {
+                        // No subscription found
+                        setCanGenerate(false);
+                        toast({
+                            title: "Subscription Required",
+                            description: "You need an active subscription to use AI features.",
+                            variant: "destructive",
+                        });
+                    }
+                } catch (error) {
+                    console.warn("Subscription check failed:", error);
+                    // Let the user try anyway
+                    setCanGenerate(true);
+                } finally {
+                    setIsCheckingSubscription(false);
+                }
             }
         };
-    }, [isOpen, completion, isLoading, error, complete, stop]);
+        
+        if (isOpen) {
+            checkSubscription();
+        }
+    }, [isOpen, initialSubscriptionId, initialUserId, toast]);
+
+    // Handler for generating the message with custom instructions
+    const handleGenerate = () => {
+        if (!canGenerate) {
+            toast({
+                title: "Cannot Generate Message",
+                description: "You don't have enough AI credits for this operation.",
+                variant: "destructive",
+            });
+            return;
+        }
+        
+        setIsGenerating(true);
+        complete({
+            conversationContext,
+            contactName,
+            platform,
+            customInstructions
+        });
+    };
 
     // Reset state when dialog closes
     useEffect(() => {
@@ -143,6 +220,8 @@ export function GenerateMessageDialog({
             setHasRecordedUsage(false);
             setIsCreditRecordingFailed(false);
             setCopied(false);
+            setCustomInstructions('');
+            setIsGenerating(false);
         }
     }, [isOpen]);
 
@@ -165,7 +244,7 @@ export function GenerateMessageDialog({
                         description: "Message copied to clipboard successfully",
                         duration: 2000,
                     });
-
+                    
                     // Reset copied state after 2 seconds
                     setTimeout(() => setCopied(false), 2000);
                 })
@@ -196,10 +275,6 @@ export function GenerateMessageDialog({
         onOpenChange(open);
     };
 
-    // Determine if we're generating for SMS or email
-    const isSms = platform === 'twilio' || platform === 'justcall';
-    const platformLabel = isSms ? 'SMS' : 'Email';
-
     return (
         <Dialog open={isOpen} onOpenChange={handleOpenChange}>
             <DialogContent className="sm:max-w-[525px]">
@@ -221,9 +296,42 @@ export function GenerateMessageDialog({
                         AI-generated message for {contactName || 'this conversation'}.
                     </DialogDescription>
                 </DialogHeader>
-                <div className="py-4">
+                
+                {/* Custom Instructions Input */}
+                <div className="py-2">
+                    <Label htmlFor="custom-instructions">Custom Instructions (Optional)</Label>
+                    <Textarea 
+                        id="custom-instructions"
+                        placeholder={`Add specific instructions for your ${platformLabel} message...`}
+                        value={customInstructions}
+                        onChange={(e) => setCustomInstructions(e.target.value)}
+                        className="mt-1.5 max-h-24"
+                        disabled={isLoading || isGenerating}
+                    />
+                </div>
+                
+                {!completion && !isLoading && !isGenerating && (
+                    <div className="flex justify-end py-2">
+                        <Button 
+                            onClick={handleGenerate}
+                            disabled={isCheckingSubscription || !canGenerate}
+                            className="gap-2"
+                        >
+                            {isCheckingSubscription ? (
+                                <>
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                    Checking...
+                                </>
+                            ) : (
+                                'Generate Message'
+                            )}
+                        </Button>
+                    </div>
+                )}
+                
+                <div className="py-2">
                     <ScrollArea className="h-[200px] w-full rounded-md border p-4 bg-muted/30">
-                        {isLoading && (
+                        {(isLoading || isGenerating) && (
                             <div className="flex items-center justify-center h-full">
                                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
                                 <span className="ml-2 text-muted-foreground">
@@ -239,7 +347,7 @@ export function GenerateMessageDialog({
                                 <p className="text-sm text-center px-4">{error.message || 'An unexpected error occurred.'}</p>
                             </div>
                         )}
-                        {!isLoading && !error && completion && (
+                        {!isLoading && !isGenerating && !error && completion && (
                             <div className="whitespace-pre-wrap text-sm">
                                 {completion}
 
@@ -256,7 +364,7 @@ export function GenerateMessageDialog({
                                 )}
                             </div>
                         )}
-                        {!isLoading && !error && !completion && (
+                        {!isLoading && !isGenerating && !error && !completion && (
                             <div className="flex items-center justify-center h-full text-muted-foreground">
                                 Generated message will appear here.
                             </div>
@@ -276,14 +384,14 @@ export function GenerateMessageDialog({
                             variant="outline"
                             onClick={() => onOpenChange(false)}
                             // If still loading, show a different label to indicate forced close
-                            className={isLoading ? "bg-red-50 hover:bg-red-100 border-red-200 dark:bg-red-900/20 dark:hover:bg-red-900/30 dark:border-red-800" : ""}
+                            className={isLoading || isGenerating ? "bg-red-50 hover:bg-red-100 border-red-200 dark:bg-red-900/20 dark:hover:bg-red-900/30 dark:border-red-800" : ""}
                         >
-                            {isLoading ? "Force Close" : "Close"}
+                            {isLoading || isGenerating ? "Force Close" : "Close"}
                         </Button>
-                        {!isLoading && !error && completion && (
+                        {!isLoading && !isGenerating && !error && completion && (
                             <>
-                                <Button
-                                    variant="outline"
+                                <Button 
+                                    variant="outline" 
                                     onClick={handleCopy}
                                     className="gap-1"
                                 >

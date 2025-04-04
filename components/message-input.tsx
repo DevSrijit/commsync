@@ -312,61 +312,7 @@ export function MessageInput({
 
   // Handler for AI message generation button
   const handleGenerateMessage = async () => {
-    // Check subscription data
-    if (!subscriptionData) {
-      try {
-        // Quick attempt to get subscription data
-        const response = await fetch('/api/subscription');
-        if (!response.ok) throw new Error("Subscription check failed");
-
-        const data = await response.json();
-        if (data.subscription) {
-          setSubscriptionData(data.subscription);
-
-          // Continue with credit check
-          const hasCredits = await hasEnoughCreditsForFeature(
-            data.subscription,
-            'GENERATE_RESPONSE'
-          );
-
-          if (!hasCredits) {
-            toast({
-              title: "Insufficient AI Credits",
-              description: `You need ${AI_CREDIT_COSTS.GENERATE_RESPONSE} credits to generate a message. Please upgrade or check your usage.`,
-              variant: "destructive",
-            });
-            return;
-          }
-
-          // If we have credits, open dialog
-          setIsGenerateDialogOpen(true);
-          return;
-        }
-      } catch (error) {
-        console.warn("Subscription check failed:", error);
-      }
-
-      // Even if subscription check fails, still allow dialog
-      setIsGenerateDialogOpen(true);
-      return;
-    }
-
-    // Check for credits if we already have subscription data
-    const hasEnoughCredits = await hasEnoughCreditsForFeature(
-      subscriptionData,
-      'GENERATE_RESPONSE'
-    );
-
-    if (!hasEnoughCredits) {
-      toast({
-        title: "Insufficient AI Credits",
-        description: `You need ${AI_CREDIT_COSTS.GENERATE_RESPONSE} credits to generate a message. Please upgrade or check your usage.`,
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // Open the dialog
+    // Open dialog immediately without waiting for subscription checks
     setIsGenerateDialogOpen(true);
   };
 
