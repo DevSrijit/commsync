@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useEditor, EditorContent, BubbleMenu } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import {
@@ -20,6 +20,7 @@ import {
   Phone,
   MessageSquare,
   ChevronDown,
+  Sparkles,
 } from "lucide-react";
 import Placeholder from "@tiptap/extension-placeholder";
 import Link from "@tiptap/extension-link";
@@ -45,6 +46,13 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { htmlToSmsText } from "@/lib/utils";
+import { GenerateMessageDialog } from "@/components/ai/GenerateMessageDialog";
+import { useSession } from "next-auth/react";
+import { useToast } from "@/hooks/use-toast";
+import {
+  hasEnoughCreditsForFeature,
+  AI_CREDIT_COSTS
+} from "@/lib/ai-credits";
 
 // Add MessagePlatform type
 export type MessagePlatform = "gmail" | "imap" | "twilio" | "justcall";
@@ -62,6 +70,9 @@ interface MessageInputProps {
   groupId?: string | null;
   platformOptions?: string[];
   onPlatformChange?: (platform: string, accountId?: string) => void;
+  // Add conversation context for AI generation
+  conversationContext?: string;
+  contactName?: string;
 }
 
 export function MessageInput({
@@ -76,11 +87,19 @@ export function MessageInput({
   groupId = null,
   platformOptions = [],
   onPlatformChange,
+  conversationContext = "",
+  contactName = "",
 }: MessageInputProps) {
   const [attachments, setAttachments] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isLinkDialogOpen, setIsLinkDialogOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState("");
+  const { data: session } = useSession();
+  const { toast } = useToast();
+
+  // State for AI message generation
+  const [isGenerateDialogOpen, setIsGenerateDialogOpen] = useState(false);
+  const [subscriptionData, setSubscriptionData] = useState<any>(null);
 
   // Get accounts for platform selection
   const { imapAccounts, twilioAccounts, justcallAccounts } = useEmailStore();
@@ -264,6 +283,91 @@ export function MessageInput({
     }
 
     onPlatformChange(newPlatform, newAccountId);
+  };
+
+  // Fetch user subscription data on mount or session change
+  useEffect(() => {
+    async function fetchSubscription() {
+      try {
+        const response = await fetch('/api/subscription');
+        if (!response.ok) throw new Error("Subscription check failed");
+
+        const data = await response.json();
+        if (data.subscription) {
+          setSubscriptionData(data.subscription);
+          console.log("Subscription data fetched for AI generation:", data.subscription);
+        }
+      } catch (error) {
+        console.error("Failed to fetch subscription data:", error);
+        setSubscriptionData(null);
+      }
+    }
+
+    if (session) {
+      fetchSubscription();
+    } else {
+      setSubscriptionData(null);
+    }
+  }, [session]);
+
+  // Handler for AI message generation button
+  const handleGenerateMessage = async () => {
+    // Check subscription data
+    if (!subscriptionData) {
+      try {
+        // Quick attempt to get subscription data
+        const response = await fetch('/api/subscription');
+        if (!response.ok) throw new Error("Subscription check failed");
+
+        const data = await response.json();
+        if (data.subscription) {
+          setSubscriptionData(data.subscription);
+
+          // Continue with credit check
+          const hasCredits = await hasEnoughCreditsForFeature(
+            data.subscription,
+            'GENERATE_RESPONSE'
+          );
+
+          if (!hasCredits) {
+            toast({
+              title: "Insufficient AI Credits",
+              description: `You need ${AI_CREDIT_COSTS.GENERATE_RESPONSE} credits to generate a message. Please upgrade or check your usage.`,
+              variant: "destructive",
+            });
+            return;
+          }
+
+          // If we have credits, open dialog
+          setIsGenerateDialogOpen(true);
+          return;
+        }
+      } catch (error) {
+        console.warn("Subscription check failed:", error);
+      }
+
+      // Even if subscription check fails, still allow dialog
+      setIsGenerateDialogOpen(true);
+      return;
+    }
+
+    // Check for credits if we already have subscription data
+    const hasEnoughCredits = await hasEnoughCreditsForFeature(
+      subscriptionData,
+      'GENERATE_RESPONSE'
+    );
+
+    if (!hasEnoughCredits) {
+      toast({
+        title: "Insufficient AI Credits",
+        description: `You need ${AI_CREDIT_COSTS.GENERATE_RESPONSE} credits to generate a message. Please upgrade or check your usage.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Open the dialog
+    setIsGenerateDialogOpen(true);
   };
 
   return (
@@ -458,6 +562,17 @@ export function MessageInput({
             >
               <ListOrdered className="h-4 w-4" />
             </Button>
+
+            {/* Add AI generation button */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleGenerateMessage}
+              className="flex-shrink-0 ml-1"
+              title="Generate AI message"
+            >
+              <Sparkles className="h-4 w-4" />
+            </Button>
           </div>
 
           {/* Platform indicator/selector if options are available */}
@@ -551,6 +666,16 @@ export function MessageInput({
             >
               <Paperclip className="h-4 w-4" />
             </Button>
+
+            {/* Add AI generation button here too for easy access */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleGenerateMessage}
+              title="Generate AI message"
+            >
+              <Sparkles className="h-4 w-4" />
+            </Button>
           </div>
 
           {showSend && (
@@ -624,6 +749,34 @@ export function MessageInput({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* AI Message Generation Dialog */}
+      {isGenerateDialogOpen && (
+        <GenerateMessageDialog
+          isOpen={isGenerateDialogOpen}
+          onOpenChange={setIsGenerateDialogOpen}
+          conversationContext={conversationContext}
+          contactName={contactName}
+          platform={platform}
+          subscriptionId={subscriptionData?.id || null}
+          userId={session?.user?.id || null}
+          onMessageGenerated={(generatedMessage) => {
+            // Insert the generated message into the editor
+            if (editor && generatedMessage) {
+              // For SMS platforms, convert to plain text
+              const formattedMessage = (platform === "twilio" || platform === "justcall")
+                ? htmlToSmsText(generatedMessage)
+                : generatedMessage;
+
+              editor.commands.setContent(formattedMessage);
+              toast({
+                title: "Message inserted",
+                description: "AI-generated message has been added to the editor",
+              });
+            }
+          }}
+        />
+      )}
     </>
   );
 }

@@ -1420,6 +1420,10 @@ export function ConversationView({
               setSelectedAccountId(accountId);
             }
           }}
+          conversationContext={conversationTextForSummary}
+          contactName={isContactGroup && selectedGroup
+            ? selectedGroup.name
+            : contact?.name || contactEmail?.split('@')[0] || ''}
         />
       </ResizablePanel>
 
