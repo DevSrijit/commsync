@@ -709,12 +709,25 @@ export function MessageInput({
           onMessageGenerated={(generatedMessage) => {
             // Insert the generated message into the editor
             if (editor && generatedMessage) {
-              // For SMS platforms, convert to plain text
-              const formattedMessage = (platform === "twilio" || platform === "justcall")
-                ? htmlToSmsText(generatedMessage)
-                : generatedMessage;
-
-              editor.commands.setContent(formattedMessage);
+              // For SMS platforms, convert to plain text but preserve line breaks
+              if (platform === "twilio" || platform === "justcall") {
+                const formattedMessage = htmlToSmsText(generatedMessage);
+                editor.commands.setContent(formattedMessage);
+              } else {
+                // For email, preserve the HTML formatting by converting new lines to proper HTML
+                // Convert plain newlines to <p> tags to ensure proper paragraph formatting
+                const paragraphs = generatedMessage.split(/\n\s*\n/);
+                const formattedHtml = paragraphs.map(para => {
+                  // Skip empty paragraphs
+                  if (!para.trim()) return '';
+                  // Handle line breaks within paragraphs
+                  const withLineBreaks = para.replace(/\n/g, '<br>');
+                  return `<p>${withLineBreaks}</p>`;
+                }).join('');
+                
+                editor.commands.setContent(formattedHtml);
+              }
+              
               toast({
                 title: "Message inserted",
                 description: "AI-generated message has been added to the editor",

@@ -206,13 +206,26 @@ export function GenerateMessageDialog({
         }
         
         setIsGenerating(true);
-        complete({
-            conversationContext,
-            contactName,
-            platform,
-            customInstructions
+        
+        // Call complete with proper parameters
+        complete(conversationContext, {
+            body: {
+                conversationContext,
+                contactName,
+                platform,
+                customInstructions
+            }
         });
     };
+
+    // Effect to trigger the completion when the dialog opens
+    useEffect(() => {
+        return () => {
+            if (isLoading) {
+                stop();
+            }
+        };
+    }, [isLoading, stop]);
 
     // Reset state when dialog closes
     useEffect(() => {
@@ -228,6 +241,7 @@ export function GenerateMessageDialog({
     // Handler for applying the generated message
     const handleApplyMessage = () => {
         if (completion && onMessageGenerated) {
+            // Pass the completion text directly to preserve all formatting
             onMessageGenerated(completion);
             onOpenChange(false);
         }
