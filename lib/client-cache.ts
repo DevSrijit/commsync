@@ -1,6 +1,6 @@
-import { db } from "./db";
-import { getServerSession } from "next-auth";
-import { authOptions } from "./auth-options";
+import { db } from './db';
+import { getServerSession } from 'next-auth';
+import { authOptions } from './auth-options';
 
 /**
  * Utility functions for storing and retrieving client-side cache data in the database
@@ -10,22 +10,16 @@ import { authOptions } from "./auth-options";
 /**
  * Set a cache value in the database
  */
-export async function setCacheValue(
-  key: string,
-  value: any,
-  userId?: string
-): Promise<void> {
+export async function setCacheValue(key: string, value: any, userId?: string): Promise<void> {
   const session = userId ? null : await getServerSession(authOptions);
   const userIdToUse = userId || session?.user?.id;
-
+  
   if (!userIdToUse) {
-    console.error(
-      "Cannot set cache value: No user ID provided or found in session"
-    );
+    console.error('Cannot set cache value: No user ID provided or found in session');
     return;
   }
 
-  const stringValue = typeof value === "string" ? value : JSON.stringify(value);
+  const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
 
   await db.clientCache.upsert({
     where: {
@@ -43,26 +37,18 @@ export async function setCacheValue(
       key,
       value: stringValue,
     },
-    cacheStrategy: {
-      ttl: 0, // Invalidate cache immediately
-    },
   });
 }
 
 /**
  * Get a cache value from the database
  */
-export async function getCacheValue<T = any>(
-  key: string,
-  userId?: string
-): Promise<T | null> {
+export async function getCacheValue<T = any>(key: string, userId?: string): Promise<T | null> {
   const session = userId ? null : await getServerSession(authOptions);
   const userIdToUse = userId || session?.user?.id;
-
+  
   if (!userIdToUse) {
-    console.error(
-      "Cannot get cache value: No user ID provided or found in session"
-    );
+    console.error('Cannot get cache value: No user ID provided or found in session');
     return null;
   }
 
@@ -72,10 +58,6 @@ export async function getCacheValue<T = any>(
         userId: userIdToUse,
         key,
       },
-    },
-    cacheStrategy: {
-      ttl: 31536000, // 1 year in seconds
-      swr: 86400, // 1 day in seconds
     },
   });
 
@@ -94,17 +76,12 @@ export async function getCacheValue<T = any>(
 /**
  * Remove a cache value from the database
  */
-export async function removeCacheValue(
-  key: string,
-  userId?: string
-): Promise<void> {
+export async function removeCacheValue(key: string, userId?: string): Promise<void> {
   const session = userId ? null : await getServerSession(authOptions);
   const userIdToUse = userId || session?.user?.id;
-
+  
   if (!userIdToUse) {
-    console.error(
-      "Cannot remove cache value: No user ID provided or found in session"
-    );
+    console.error('Cannot remove cache value: No user ID provided or found in session');
     return;
   }
 
@@ -119,17 +96,12 @@ export async function removeCacheValue(
 /**
  * Get multiple cache values at once
  */
-export async function getMultipleCacheValues(
-  keys: string[],
-  userId?: string
-): Promise<Record<string, any>> {
+export async function getMultipleCacheValues(keys: string[], userId?: string): Promise<Record<string, any>> {
   const session = userId ? null : await getServerSession(authOptions);
   const userIdToUse = userId || session?.user?.id;
-
+  
   if (!userIdToUse) {
-    console.error(
-      "Cannot get multiple cache values: No user ID provided or found in session"
-    );
+    console.error('Cannot get multiple cache values: No user ID provided or found in session');
     return {};
   }
 
@@ -140,14 +112,10 @@ export async function getMultipleCacheValues(
         in: keys,
       },
     },
-    cacheStrategy: {
-      ttl: 31536000, // 1 year in seconds
-      swr: 86400, // 1 day in seconds
-    },
   });
 
   const result: Record<string, any> = {};
-
+  
   for (const entry of cacheEntries) {
     try {
       result[entry.key] = JSON.parse(entry.value);
@@ -157,4 +125,4 @@ export async function getMultipleCacheValues(
   }
 
   return result;
-}
+} 
