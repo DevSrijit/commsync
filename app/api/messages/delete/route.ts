@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { updateSubscriptionUsage, calculateUserCacheSize, countUserConnections } from "@/lib/subscription";
-
+import { Message, ClientCache, Organization, Subscription } from "@prisma/client";
 export async function POST(request: NextRequest) {
   try {
     // Check authentication
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
     const deleteMessagesPromise = db.message.deleteMany({
       where: {
         id: {
-          in: messages.map(message => message.id)
+          in: messages.map((message: Message) => message.id)
         }
       }
     });
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
     const deleteCachePromise = db.clientCache.deleteMany({
       where: {
         id: {
-          in: cacheEntries.map(entry => entry.id)
+          in: cacheEntries.map((entry: ClientCache) => entry.id)
         }
       }
     });
@@ -122,8 +122,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Find an organization this user belongs to that has a subscription
-    const userOrg = user.organizations.find(org => org.subscription) || 
-                 user.ownedOrganizations.find(org => org.subscription);
+    const userOrg = user.organizations.find((org: Organization & { subscription: Subscription | null }) => org.subscription) || 
+                 user.ownedOrganizations.find((org: Organization & { subscription: Subscription | null }) => org.subscription);
 
     if (userOrg?.subscription) {
       // Calculate the updated usage

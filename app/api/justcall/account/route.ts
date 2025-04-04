@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import { db } from '@/lib/db';
-
+import { Message } from '@prisma/client';
 // Get all JustCall accounts for the current user
 export async function GET(req: NextRequest) {
   try {
@@ -78,7 +78,7 @@ export async function DELETE(req: NextRequest) {
     });
     
     // Get list of affected conversation IDs
-    const conversationIds = [...new Set(messages.map(m => m.conversationId))];
+    const conversationIds = [...new Set(messages.map((m: Message) => m.conversationId))];
     
     // Delete messages
     await db.message.deleteMany({

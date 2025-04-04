@@ -435,8 +435,14 @@ export async function getUserSubscriptionData(
 
     // Find an organization this user belongs to that has a subscription
     const userOrg =
-      user.organizations.find((org) => org.subscription) ||
-      user.ownedOrganizations.find((org) => org.subscription);
+      user.organizations.find(
+        (org: Organization & { subscription: Subscription | null }) =>
+          org.subscription
+      ) ||
+      user.ownedOrganizations.find(
+        (org: Organization & { subscription: Subscription | null }) =>
+          org.subscription
+      );
 
     if (!userOrg || !userOrg.subscription) return null;
 
@@ -526,7 +532,7 @@ export async function updateSubscriptionUsage(
 
     // Get all user IDs in this organization
     const memberIds = subscription.organization.members.map(
-      (member) => member.id
+      (member: User) => member.id
     );
 
     // Initialize with the user's storage

@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
 import { hasActiveAccess } from '@/lib/subscription';
-
+import { Organization, Subscription } from '@prisma/client';
 // Structured logger for consistent logging
 const logger = {
   info: (message: string, data?: any) => {
@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
     for (const org of user.organizations) {
       if (org.subscription?.stripeSubscriptionId) {
         try {
-          const stripeSubscription = await stripe.subscriptions.retrieve(
+          const stripeSubscription = await stripe!.subscriptions.retrieve(
             org.subscription.stripeSubscriptionId
           );
           
@@ -117,8 +117,8 @@ export async function GET(req: NextRequest) {
     
     // Check all subscriptions after refresh
     const subscriptionDetails = user.organizations
-      .filter(org => org.subscription)
-      .map(org => {
+      .filter((org: Organization & { subscription: Subscription | null }) => org.subscription)
+      .map((org: Organization & { subscription: Subscription | null }) => {
         const active = org.subscription ? hasActiveAccess(org.subscription) : false;
         
         return {
@@ -135,14 +135,15 @@ export async function GET(req: NextRequest) {
     
     // Check if any organization has an active subscription
     const hasActiveSubscription = user.organizations.some(
-      org => org.subscription && hasActiveAccess(org.subscription)
+      (org: Organization & { subscription: Subscription | null }) =>
+        org.subscription && hasActiveAccess(org.subscription)
     );
-    
+
     logger.info(`Active subscription check result: ${hasActiveSubscription}`);
     
     return NextResponse.json({
       hasActiveSubscription,
-      organizations: user.organizations.map(org => ({
+      organizations: user.organizations.map((org: Organization & { subscription: Subscription | null }) => ({
         id: org.id,
         name: org.name,
         subscription: org.subscription 

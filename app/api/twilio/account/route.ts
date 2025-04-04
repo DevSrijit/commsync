@@ -3,7 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import { db } from '@/lib/db';
 import { z } from 'zod';
-
+import { Conversation } from '@prisma/client';
 // Get all Twilio accounts for the current user
 export async function GET(req: NextRequest) {
   try {
@@ -90,7 +90,7 @@ export async function DELETE(req: NextRequest) {
       await db.conversation.deleteMany({
         where: {
           id: {
-            in: emptyConversations.map(conv => conv.id),
+            in: emptyConversations.map((conv: Conversation) => conv.id),
           },
         },
       });

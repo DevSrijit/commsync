@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { Organization, Subscription, User } from "@prisma/client";
 
 /**
  * GET /api/organization
@@ -64,8 +65,8 @@ export async function GET(request: NextRequest) {
 
     // Find organization with subscription
     const organization =
-      user.organizations.find((org) => org.subscription) ||
-      user.ownedOrganizations.find((org) => org.subscription);
+      user.organizations.find((org: Organization & { subscription: Subscription | null }) => org.subscription) ||
+      user.ownedOrganizations.find((org: Organization & { subscription: Subscription | null }) => org.subscription);
 
     if (!organization) {
       return NextResponse.json(
@@ -82,7 +83,7 @@ export async function GET(request: NextRequest) {
         id: organization.id,
         name: organization.name,
         accessKey: organization.id, // Use org ID as access key
-        members: organization.members.map((member) => ({
+        members: organization.members.map((member: User) => ({
           id: member.id,
           name: member.name,
           email: member.email,
@@ -154,7 +155,7 @@ export async function POST(request: NextRequest) {
 
     // Check if the user is already a member
     const isMember = organization.members.some(
-      (member) => member.id === userId
+      (member: User) => member.id === userId
     );
     if (isMember) {
       return NextResponse.json({

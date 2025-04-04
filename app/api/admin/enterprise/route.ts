@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { stripe } from '@/lib/stripe';
 import { db } from '@/lib/db';
+import { Subscription } from '@prisma/client';
+import { Organization } from '@prisma/client';
 
 const API_KEY = process.env.ADMIN_API_KEY;
 
@@ -40,7 +42,8 @@ export async function POST(req: NextRequest) {
 
     // Find existing enterprise organization or create new one
     let organization = user.organizations.find(
-      org => org.subscription?.planType === 'enterprise'
+      (org: Organization & { subscription: Subscription | null }) =>
+        org.subscription?.planType === "enterprise"
     );
 
     if (!organization) {
@@ -65,7 +68,7 @@ export async function POST(req: NextRequest) {
     // Create or update Stripe customer
     let customerId = user.stripeCustomerId;
     if (!customerId) {
-      const customer = await stripe.customers.create({
+      const customer = await stripe!.customers.create({
         email: user.email!,
         metadata: {
           userId: user.id,
@@ -80,7 +83,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Create Stripe subscription
-    const subscription = await stripe.subscriptions.create({
+    const subscription = await stripe!.subscriptions.create({
       customer: customerId,
       items: [{ price: priceId }],
       metadata: {

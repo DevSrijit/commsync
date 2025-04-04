@@ -39,7 +39,7 @@ async function handleSubscriptionCreated(subscription: any) {
       });
       
       // Try to get the subscription directly from Stripe to ensure metadata is up-to-date
-      const refreshedSubscription = await stripe.subscriptions.retrieve(subscription.id);
+      const refreshedSubscription = await stripe!.subscriptions.retrieve(subscription.id);
       
       // Check if metadata is now available in the refreshed subscription
       if (refreshedSubscription.metadata?.organizationId && refreshedSubscription.metadata?.planType) {
@@ -286,7 +286,7 @@ export async function POST(req: Request) {
 
     let event;
     try {
-      event = stripe.webhooks.constructEvent(
+      event = stripe!.webhooks.constructEvent(
         body,
         signature,
         webhookSecret
@@ -331,7 +331,7 @@ export async function POST(req: Request) {
               const metadata = session.metadata || {};
               
               // Get subscription from Stripe
-              const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+              const subscription = await stripe!.subscriptions.retrieve(subscriptionId);
               
               // If metadata is missing in the subscription but present in the session,
               // update the subscription with session metadata
@@ -345,7 +345,7 @@ export async function POST(req: Request) {
                 });
                 
                 // Update the subscription with metadata
-                await stripe.subscriptions.update(subscriptionId, {
+                await stripe!.subscriptions.update(subscriptionId, {
                   metadata: {
                     ...subscription.metadata,
                     organizationId: metadata.organizationId,
@@ -355,7 +355,7 @@ export async function POST(req: Request) {
                 });
                 
                 // Retrieve updated subscription
-                const updatedSubscription = await stripe.subscriptions.retrieve(subscriptionId);
+                const updatedSubscription = await stripe!.subscriptions.retrieve(subscriptionId);
                 await handleSubscriptionCreated(updatedSubscription);
               } else {
                 // Create or update subscription with existing metadata
@@ -373,7 +373,7 @@ export async function POST(req: Request) {
           if (invoice.subscription) {
             try {
               const subscriptionId = invoice.subscription as string;
-              const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+              const subscription = await stripe!.subscriptions.retrieve(subscriptionId);
               await handleSubscriptionCreated(subscription);
             } catch (error) {
               logger.error("Error processing invoice event", error);

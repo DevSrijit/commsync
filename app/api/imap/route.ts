@@ -462,9 +462,9 @@ export async function GET(req: NextRequest) {
       });
 
       // Decrypt credentials for each account
-      const decryptedAccounts = accounts.map((account) => {
+      const decryptedAccounts = accounts.map((account: ImapAccount) => {
         try {
-          const decrypted = decryptData(account.credentials);
+          const decrypted = decryptData(account.credentials || "");
           const credentials = JSON.parse(decrypted);
 
           return {
