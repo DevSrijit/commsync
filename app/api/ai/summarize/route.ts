@@ -2,8 +2,6 @@ import { openai } from "@ai-sdk/openai";
 import { streamText } from "ai";
 import { NextResponse } from "next/server";
 
-// IMPORTANT: Set the runtime to edge for best performance
-export const runtime = "edge";
 // Allow up to 5 minutes for the summary generation
 export const maxDuration = 300;
 
@@ -17,14 +15,11 @@ export async function POST(req: Request) {
     // Check for OpenAI API key
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      console.error(
-        "Missing OpenAI API key"
-      );
+      console.error("Missing OpenAI API key");
       return new NextResponse(
         JSON.stringify({
           error: "API configuration error",
-          message:
-            "The OpenAI API key is not configured.",
+          message: "The OpenAI API key is not configured.",
         }),
         {
           status: 500,

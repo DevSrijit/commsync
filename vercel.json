@@ -1,0 +1,11 @@
+{
+    "headers": [
+      {
+        "source": "/api/(.*)",
+        "headers": [
+          { "key": "X-Vercel-Cache", "value": "no-store" }
+        ]
+      }
+    ]
+  }
+  
