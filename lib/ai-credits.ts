@@ -1,5 +1,8 @@
 import { updateSubscriptionUsage } from "@/lib/subscription";
 
+// Check if the environment is browser
+const isBrowser = typeof window !== "undefined";
+
 /**
  * Constants for AI feature credit costs
  */
@@ -25,19 +28,44 @@ export async function recordAiCreditUsage(
 ): Promise<boolean> {
   try {
     const creditCost = AI_CREDIT_COSTS[feature];
-    
-    // Update subscription with the AI credit usage
-    const updatedSubscription = await updateSubscriptionUsage(
-      subscriptionId,
-      userStorageUsed,
-      userConnections,
-      creditCost
-    );
-    
-    // Return true if the update was successful
-    return !!updatedSubscription;
+
+    // If in browser environment, use the API endpoint instead of direct database access
+    if (isBrowser) {
+      // Use the API endpoint to update subscription usage
+      const response = await fetch("/api/subscription", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          aiCreditsUsed: creditCost,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to record AI credit usage");
+      }
+
+      const data = await response.json();
+      return data.success;
+    } else {
+      // Server-side: directly update subscription usage
+      const updatedSubscription = await updateSubscriptionUsage(
+        subscriptionId,
+        userStorageUsed,
+        userConnections,
+        creditCost
+      );
+
+      // Return true if the update was successful
+      return !!updatedSubscription;
+    }
   } catch (error) {
-    console.error(`Error recording AI credit usage for feature ${feature}:`, error);
+    console.error(
+      `Error recording AI credit usage for feature ${feature}:`,
+      error
+    );
     return false;
   }
 }
@@ -50,12 +78,12 @@ export async function hasEnoughCreditsForFeature(
   feature: keyof typeof AI_CREDIT_COSTS
 ): Promise<boolean> {
   if (!subscriptionData) return false;
-  
+
   const creditCost = AI_CREDIT_COSTS[feature];
   const { usedAiCredits, totalAiCredits } = subscriptionData;
-  
+
   // Check if there are enough credits remaining
-  return (usedAiCredits + creditCost) <= totalAiCredits;
+  return usedAiCredits + creditCost <= totalAiCredits;
 }
 
 /**
@@ -65,30 +93,32 @@ export function useAiCredits() {
   /**
    * Record usage of an AI feature and update in the database
    */
-  async function useFeature(feature: keyof typeof AI_CREDIT_COSTS): Promise<boolean> {
+  async function useFeature(
+    feature: keyof typeof AI_CREDIT_COSTS
+  ): Promise<boolean> {
     try {
-      const response = await fetch('/api/subscription', {
-        method: 'POST',
+      const response = await fetch("/api/subscription", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
-        body: JSON.stringify({ 
-          aiCreditsUsed: AI_CREDIT_COSTS[feature]
+        body: JSON.stringify({
+          aiCreditsUsed: AI_CREDIT_COSTS[feature],
         }),
       });
-      
+
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.message || 'Failed to record AI credit usage');
+        throw new Error(error.message || "Failed to record AI credit usage");
       }
-      
+
       const data = await response.json();
       return data.success;
     } catch (error) {
-      console.error('Error recording AI credit usage:', error);
+      console.error("Error recording AI credit usage:", error);
       return false;
     }
   }
-  
+
   return { useFeature };
-} 
+}

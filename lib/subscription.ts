@@ -516,24 +516,55 @@ export async function updateSubscriptionUsage(
   aiCreditsUsed: number
 ): Promise<Subscription | null> {
   try {
-    // Get current subscription data
-    const subscription = await db.subscription.findUnique({
-      where: { id: subscriptionId },
-      include: {
-        organization: {
-          include: {
-            members: true,
+    // Safety check: Ensure db is initialized
+    if (!db) {
+      console.error("Database connection not initialized.");
+      return null;
+    }
+
+    // Safety check: Validate inputs
+    if (!subscriptionId) {
+      console.error(
+        "updateSubscriptionUsage called with invalid subscriptionId:",
+        subscriptionId
+      );
+      return null;
+    }
+
+    // Get current subscription data with safe error handling
+    let subscription;
+    try {
+      subscription = await db.subscription.findUnique({
+        where: { id: subscriptionId },
+        include: {
+          organization: {
+            include: {
+              members: true,
+            },
           },
         },
-      },
-    });
+      });
+    } catch (dbError) {
+      console.error("Error accessing subscription in database:", dbError);
+      return null;
+    }
 
-    if (!subscription) return null;
+    if (!subscription) {
+      console.error(`Subscription with ID ${subscriptionId} not found.`);
+      return null;
+    }
 
-    // Get all user IDs in this organization
-    const memberIds = subscription.organization.members.map(
-      (member: User) => member.id
-    );
+    // Safety check: Ensure organization exists
+    if (!subscription.organization) {
+      console.error(
+        `Subscription ${subscriptionId} has no linked organization.`
+      );
+      return null;
+    }
+
+    // Get all user IDs in this organization (safely)
+    const memberIds =
+      subscription.organization.members?.map((member: User) => member.id) || [];
 
     // Initialize with the user's storage
     let totalStorageUsed = userStorageUsed;
@@ -567,25 +598,30 @@ export async function updateSubscriptionUsage(
 
     // You could implement similar org-wide calculations for connections here
 
-    // Update subscription with new usage data
-    const updatedSubscription = await db.subscription.update({
-      where: { id: subscriptionId },
-      data: {
-        usedStorage: Math.round(newStorageUsed),
-        usedConnections: Math.min(
-          totalConnectionsUsed,
-          subscription.totalConnections
-        ),
-        usedAiCredits: Math.min(
-          subscription.usedAiCredits + aiCreditsUsed,
-          subscription.totalAiCredits
-        ),
-      },
-    });
+    // Update subscription with new usage data - with safe error handling
+    try {
+      const updatedSubscription = await db.subscription.update({
+        where: { id: subscriptionId },
+        data: {
+          usedStorage: Math.round(newStorageUsed),
+          usedConnections: Math.min(
+            totalConnectionsUsed,
+            subscription.totalConnections
+          ),
+          usedAiCredits: Math.min(
+            subscription.usedAiCredits + aiCreditsUsed,
+            subscription.totalAiCredits
+          ),
+        },
+      });
 
-    return updatedSubscription;
+      return updatedSubscription;
+    } catch (updateError) {
+      console.error("Error updating subscription:", updateError);
+      return null;
+    }
   } catch (error) {
-    console.error("Error updating subscription usage:", error);
+    console.error("Error in updateSubscriptionUsage:", error);
     return null;
   }
 }

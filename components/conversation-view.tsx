@@ -730,24 +730,67 @@ export function ConversationView({
     console.log('----------------------');
   }
 
-  // Handler for clicking the Summarize button
+  // Handler for clicking the Summarize button - enhanced with subscription check
   const handleSummarizeClick = async () => {
-    // 1. Check if subscription data is loaded
-    if (!subscriptionData) {
+    // 1. Check if there's content to summarize (fast check first)
+    if (!conversationTextForSummary || conversationTextForSummary.trim().length === 0) {
       toast({
-        title: "Subscription Not Loaded",
-        description: "Cannot check AI credits. Please wait or refresh.",
-        variant: "destructive",
+        title: "Nothing to Summarize",
+        description: "The conversation appears to be empty.",
       });
       return;
     }
 
-    // 2. Check for active access (covers active plans and trials)
-    // We can use the hasActiveAccess function from subscription utils if needed,
-    // but hasEnoughCreditsForFeature implies active access if total > 0
-    // Let's rely on the credit check for simplicity here.
+    // 2. If subscription data isn't loaded yet, try to fetch it once more
+    if (!subscriptionData) {
+      toast({
+        title: "Checking subscription...",
+        description: "Please wait while we verify your access to AI features.",
+      });
 
-    // 3. Check for enough credits
+      try {
+        // Quick attempt to get subscription data
+        const response = await fetch('/api/subscription');
+        if (!response.ok) throw new Error("Subscription check failed");
+
+        const data = await response.json();
+        if (data.subscription) {
+          setSubscriptionData(data.subscription);
+
+          // Continue with credit check once we have the data
+          const hasCredits = await hasEnoughCreditsForFeature(
+            data.subscription,
+            'SUMMARIZE_THREAD'
+          );
+
+          if (!hasCredits) {
+            toast({
+              title: "Insufficient AI Credits",
+              description: `You need ${AI_CREDIT_COSTS.SUMMARIZE_THREAD} credits to summarize. Please upgrade or check your usage.`,
+              variant: "destructive",
+            });
+            return;
+          }
+
+          // If we got here, we have credits, proceed to open dialog
+          setIsSummaryDialogOpen(true);
+          return;
+        } else {
+          throw new Error("No subscription data returned");
+        }
+      } catch (error) {
+        // If the retry fails, let the user proceed anyway
+        console.warn("Subscription check failed on click:", error);
+        // We'll still open the dialog and let the API handle errors
+      }
+
+      // Even if subscription check fails, still allow opening the dialog
+      // The recording of credits will be attempted in SummaryDialog
+      setIsSummaryDialogOpen(true);
+      return;
+    }
+
+    // 3. Check for enough credits if we already have subscription data
     const hasEnoughCredits = await hasEnoughCreditsForFeature(
       subscriptionData,
       'SUMMARIZE_THREAD'
@@ -762,16 +805,7 @@ export function ConversationView({
       return;
     }
 
-    // 4. Check if there's content to summarize
-    if (!conversationTextForSummary || conversationTextForSummary.trim().length === 0) {
-      toast({
-        title: "Nothing to Summarize",
-        description: "The conversation appears to be empty.",
-      });
-      return;
-    }
-
-    // 5. Open the dialog
+    // 4. Open the dialog
     console.log("Opening summary dialog...");
     setIsSummaryDialogOpen(true);
   };
@@ -827,13 +861,15 @@ export function ConversationView({
         </div>
         {/* Action Buttons on the Right */}
         <div className="flex items-center gap-2">
-          {/* Add Summarize button here */}
+          {/* Summarize button with improved enabling logic */}
           <Button
             variant="outline"
             size="icon"
             onClick={handleSummarizeClick}
-            disabled={isLoadingState || isRefetching || conversation.length === 0 || !subscriptionData} // Disable if loading, no messages, or no sub data
-            title="Summarize Conversation (AI)"
+            disabled={isLoadingState || isRefetching || conversation.length === 0} // Remove !subscriptionData condition
+            title={conversation.length === 0
+              ? "No conversation to summarize"
+              : "Summarize Conversation (AI)"}
           >
             <Sparkles className="h-4 w-4" />
           </Button>
