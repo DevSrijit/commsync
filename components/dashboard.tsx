@@ -42,13 +42,17 @@ export function EmailDashboard() {
     // Try to load cached emails first for immediate display
     const loadCachedEmails = async () => {
       const cachedEmails = await getCacheValue<Email[]>("emails");
-      if (cachedEmails) {
+      if (cachedEmails && cachedEmails.length > 0) {
+        console.log("Loaded", cachedEmails.length, "emails from cache");
         setEmails(cachedEmails);
+        // Only set loading to false if we have actual data
         setIsLoading(false);
         initialLoadComplete.current = true;
+      } else {
+        console.log("No cached emails found or empty cache");
       }
     };
-    
+
     loadCachedEmails();
 
     // Only clear cache if explicitly logged out
@@ -66,13 +70,13 @@ export function EmailDashboard() {
       } else {
         setIsBackgroundSync(true);
       }
-      
+
       try {
         // Get current emails from store to merge with new ones
         const currentEmails = useEmailStore.getState().emails;
         const { imapAccounts } = useEmailStore.getState();
         const syncPromises: Promise<Email[]>[] = [];
-        
+
         // Gmail sync if token is available
         if (session?.user?.accessToken) {
           try {
@@ -82,7 +86,7 @@ export function EmailDashboard() {
             console.error("Failed to fetch Gmail emails:", error);
           }
         }
-        
+
         // IMAP sync for each account
         for (const account of imapAccounts) {
           try {
@@ -95,13 +99,13 @@ export function EmailDashboard() {
                 data: { page: 1, pageSize: 100 },
               }),
             });
-            
+
             if (!response.ok) {
               throw new Error(`Failed to sync IMAP account ${account.label}`);
             }
-            
+
             const data = await response.json();
-            
+
             // Format emails to ensure they have required properties
             const formattedEmails = data.emails.map((email: any) => ({
               ...email,
@@ -113,9 +117,9 @@ export function EmailDashboard() {
               accountType: 'imap',
               accountId: account.id,
             }));
-            
+
             syncPromises.push(Promise.resolve(formattedEmails));
-            
+
             // Update last sync time
             if (account.id) {
               await fetch("/api/imap", {
@@ -131,24 +135,24 @@ export function EmailDashboard() {
             console.error(`Failed to sync IMAP account:`, error);
           }
         }
-        
+
         // Sync Twilio accounts
         try {
           await syncTwilioAccounts();
         } catch (error) {
           console.error("Failed to sync Twilio accounts:", error);
         }
-        
+
         // Sync JustCall accounts
         try {
           await syncJustcallAccounts();
         } catch (error) {
           console.error("Failed to sync JustCall accounts:", error);
         }
-        
+
         // Wait for all syncs to complete
         const results = await Promise.allSettled(syncPromises);
-        
+
         // Combine all successful results
         const allNewEmails: Email[] = [];
         results.forEach((result) => {
@@ -156,24 +160,24 @@ export function EmailDashboard() {
             allNewEmails.push(...result.value);
           }
         });
-        
+
         // Merge with existing emails using Map to avoid duplicates
         const emailMap = new Map<string, Email>();
         [...currentEmails, ...allNewEmails].forEach(email => {
           emailMap.set(email.id, email);
         });
-        
+
         const mergedEmails = Array.from(emailMap.values());
         setEmails(mergedEmails);
-        
+
         // Cache the emails in the database
         await setCacheValue("emails", mergedEmails);
         await setCacheValue("emailsTimestamp", Date.now().toString());
-        
+
         // Load content for emails that don't have it
         const contentLoader = EmailContentLoader.getInstance();
         const emailsWithoutContent = allNewEmails.filter((email: Email) => !email.body || email.body.length === 0);
-        
+
         // Only load content for a batch of emails to avoid overwhelming the system
         const batchSize = 5;
         for (let i = 0; i < emailsWithoutContent.length; i += batchSize) {
@@ -199,7 +203,7 @@ export function EmailDashboard() {
       setIsBackgroundSync(true);
       loadEmails();
     }, 5 * 60 * 1000);
-    
+
     return () => clearInterval(intervalId);
   }, [session, setEmails, syncTwilioAccounts, syncJustcallAccounts]);
 
@@ -208,7 +212,7 @@ export function EmailDashboard() {
     // Don't auto-select first contact on initial load
     // Only select if user explicitly requests via UI
     // This allows the welcome screen to show on first load
-    
+
     // We've removed the auto-selection behavior:
     // if (contacts.length > 0 && !selectedContact) {
     //   setSelectedContact(contacts[0].email);

@@ -112,6 +112,16 @@ export function EmailList({
   className,
 }: EmailListProps) {
   const { contacts, emails, activeFilter, groups, setEmails } = useEmailStore();
+
+  // Debug log to trace the issue
+  useEffect(() => {
+    console.log(`EmailList re-render:
+    - activeFilter: ${activeFilter}
+    - contacts: ${contacts.length}
+    - emails: ${emails.length}
+    - isLoading: ${isLoading}`);
+  }, [activeFilter, contacts.length, emails.length, isLoading]);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [smsCount, setSmsCount] = useState<number>(0);
@@ -136,6 +146,18 @@ export function EmailList({
     matches: new Set<string>(),
     rankedResults: contacts
   });
+
+  // Update searchResults when contacts or emails change
+  useEffect(() => {
+    if (contacts.length > 0 || emails.length > 0) {
+      setSearchResults({
+        contacts: contacts,
+        emails: emails,
+        matches: new Set<string>(),
+        rankedResults: contacts
+      });
+    }
+  }, [contacts, emails]);
 
   // Fallback client-side search function
   const performClientSearch = useCallback((query: string) => {
@@ -190,7 +212,7 @@ export function EmailList({
         rankedResults: contacts
       });
     }
-  }, []);
+  }, [contacts, emails]);
 
   // Add clear search function
   const clearSearch = useCallback(() => {
@@ -271,7 +293,10 @@ export function EmailList({
 
   // Enhanced contact filtering with ranking
   const filteredContacts = useMemo(() => {
-    return searchResults.rankedResults.filter((contact) => {
+    // Ensure we have valid ranked results, fall back to contacts if not
+    const rankedResults = searchResults.rankedResults?.length ? searchResults.rankedResults : contacts;
+
+    const filteredResults = rankedResults.filter((contact) => {
       // Skip contacts that are the user's own Gmail address and likely error placeholders
       if (session?.user?.email && contact.email === session.user.email &&
         contact.accountType !== 'imap' && !contact.accountId) {
@@ -311,12 +336,30 @@ export function EmailList({
           return true;
       }
     });
-  }, [searchResults.rankedResults, session?.user?.email, emails, activeFilter]);
+
+    // If we're in inbox mode and no contacts match the criteria but we have emails,
+    // show all contacts instead of an empty list (fallback for first load)
+    if (activeFilter === 'inbox' && rankedResults.length > 0 && emails.length > 0 && filteredResults.length === 0) {
+      console.log("No contacts match inbox filter criteria - showing all contacts as fallback");
+      return rankedResults;
+    }
+
+    return filteredResults;
+  }, [searchResults.rankedResults, session?.user?.email, emails, activeFilter, contacts]);
 
   // Reset to page 1 when activeFilter changes
   useEffect(() => {
     setCurrentPage(1);
   }, [activeFilter]);
+
+  // Add loading state check for when contacts and emails are initially empty but loading
+  useEffect(() => {
+    // If we have contacts or emails but we're still marked as loading, complete loading
+    if ((contacts.length > 0 || emails.length > 0) && isLoading) {
+      // We can't directly modify isLoading since it's a prop, but we can log to help debug
+      console.log("Data loaded: contacts:", contacts.length, "emails:", emails.length);
+    }
+  }, [contacts, emails, isLoading]);
 
   // Improved SMS contact detection
   const isSMSMessage = (email: Email) =>
@@ -416,6 +459,18 @@ export function EmailList({
     : activeFilter === 'contacts'
       ? [] // Show no regular contacts when on contacts filter
       : filteredContacts;
+
+  // Debug log when we have contacts but no displayed contacts
+  useEffect(() => {
+    if (contacts.length > 0 &&
+      activeFilter !== 'sms' &&
+      activeFilter !== 'contacts' &&
+      filteredContacts.length === 0) {
+      console.warn(`Potential issue: We have ${contacts.length} contacts, but filteredContacts is empty. 
+      Active filter: ${activeFilter}. 
+      SearchResults has ${searchResults.rankedResults?.length || 0} ranked results.`);
+    }
+  }, [contacts.length, filteredContacts.length, activeFilter, searchResults.rankedResults?.length]);
 
   const handleGroupSelect = (group: Group) => {
     setSelectedGroupId(group.id);
