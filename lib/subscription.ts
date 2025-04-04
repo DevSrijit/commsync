@@ -1,6 +1,7 @@
 import { Subscription, Organization, User } from "@prisma/client";
 import { db } from "@/lib/db";
 import { PlanType, STRIPE_PLANS } from "@/lib/stripe";
+import { Prisma } from "@prisma/client";
 
 // Structured logger for consistent format
 const logger = {
@@ -36,6 +37,10 @@ export interface StoredSubscriptionData {
   totalAiCredits: number;
   maxUsers: number;
 }
+
+// Cache for storage sizes to avoid recalculating too frequently
+const userStorageCache: Record<string, { size: number; timestamp: number }> =
+  {};
 
 /**
  * Store subscription details in local storage
@@ -325,26 +330,45 @@ export function hasActiveAccess(subscription: Subscription): boolean {
 
 /**
  * Calculate client cache size for a user - using PostgreSQL's calculation capabilities
+ * Uses caching to avoid frequent recalculations
  */
 export async function calculateUserCacheSize(userId: string): Promise<number> {
-  if (typeof window === "undefined") {
-    try {
-      // Use raw PostgreSQL query to calculate total size directly in the database
-      // This avoids loading all records into memory
-      const result = await db.$queryRaw<[{ total_size_mb: number }]>`
+  if (typeof window !== "undefined") return 0;
+
+  try {
+    // Check if we have a recent cached value (within last 5 minutes)
+    const cachedData = userStorageCache[userId];
+    const now = Date.now();
+    const cacheExpiry = 5 * 60 * 1000; // 5 minutes
+
+    if (cachedData && now - cachedData.timestamp < cacheExpiry) {
+      return cachedData.size;
+    }
+
+    // Use raw PostgreSQL query to calculate total size directly in the database
+    // This avoids loading all records into memory
+    const result = await db.$queryRaw<[{ total_size_mb: number }]>`
       SELECT 
         CEIL(SUM(LENGTH("value")::decimal) / (1024 * 1024)) as total_size_mb
       FROM "ClientCache"
       WHERE "userId" = ${userId}
     `;
 
-      // Return the calculated size or 0 if no results
-      return result[0]?.total_size_mb || 0;
-    } catch (error) {
-      console.error("Error calculating user cache size:", error);
-      return 0;
+    // Get the calculated size or default to 0
+    const size = result[0]?.total_size_mb || 0;
+
+    // Store in cache
+    userStorageCache[userId] = { size, timestamp: now };
+
+    return size;
+  } catch (error) {
+    console.error("Error calculating user cache size:", error);
+
+    // If we have a cached value, return it even if expired
+    if (userStorageCache[userId]) {
+      return userStorageCache[userId].size;
     }
-  } else {
+
     return 0;
   }
 }
@@ -382,9 +406,12 @@ export async function countUserConnections(userId: string): Promise<number> {
 
 /**
  * Get subscription data for a user from the database
+ * @param {string} userId - The user ID
+ * @param {boolean} updateUsage - Whether to update usage data (defaults to false)
  */
 export async function getUserSubscriptionData(
-  userId: string
+  userId: string,
+  updateUsage = false
 ): Promise<StoredSubscriptionData | null> {
   try {
     // Find the user and their organization
@@ -416,24 +443,26 @@ export async function getUserSubscriptionData(
     // Get the subscription
     const subscription = userOrg.subscription;
 
-    // Calculate current usage for this user
-    const userStorageUsed = await calculateUserCacheSize(userId);
-    const userConnections = await countUserConnections(userId);
+    let updatedSubscription = subscription;
 
-    // Update the database with the latest usage
-    await updateSubscriptionUsage(
-      subscription.id,
-      userStorageUsed,
-      userConnections,
-      0 // No AI credits update
-    );
+    // Only calculate and update usage if explicitly requested
+    if (updateUsage) {
+      // Calculate current usage for this user
+      const userStorageUsed = await calculateUserCacheSize(userId);
+      const userConnections = await countUserConnections(userId);
 
-    // Get updated subscription data
-    const updatedSubscription = await db.subscription.findUnique({
-      where: { id: subscription.id },
-    });
+      // Update the database with the latest usage
+      const updated = await updateSubscriptionUsage(
+        subscription.id,
+        userStorageUsed,
+        userConnections,
+        0 // No AI credits update
+      );
 
-    if (!updatedSubscription) return null;
+      if (updated) {
+        updatedSubscription = updated;
+      }
+    }
 
     // Create subscription data object
     const subscriptionData: StoredSubscriptionData = {
@@ -495,41 +524,29 @@ export async function updateSubscriptionUsage(
 
     if (!subscription) return null;
 
-    // Calculate total organization storage by updating this user's portion
-    // We need to calculate actual usage across the org, not just set to maximum
-    const memberCount = subscription.organization.members.length;
-
-    // For simplicity, calculate based on the current user's storage only
-    // This is a temporary fix until we can implement proper org-wide tracking
-    let totalStorageUsed = userStorageUsed;
-
     // Get all user IDs in this organization
     const memberIds = subscription.organization.members.map(
       (member) => member.id
     );
 
-    // Count actual client cache entries (as a proxy for storage)
+    // Initialize with the user's storage
+    let totalStorageUsed = userStorageUsed;
+
+    // Use a direct SQL query to efficiently calculate total storage
     if (memberIds.length > 0) {
-      // Get the total count and estimate size
-      const cacheEntries = await db.clientCache.findMany({
-        where: {
-          userId: {
-            in: memberIds,
-          },
-        },
-        select: {
-          value: true,
-        },
-      });
+      try {
+        // Calculate total size directly in the database with a single query
+        const result = await db.$queryRaw<[{ total_size_mb: number }]>`
+          SELECT 
+            CEIL(SUM(LENGTH("value")::decimal) / (1024 * 1024)) as total_size_mb
+          FROM "ClientCache"
+          WHERE "userId" IN (${Prisma.join(memberIds)})
+        `;
 
-      // Sum up total storage from all entries (convert string length to MB)
-      if (cacheEntries.length > 0) {
-        const totalBytes = cacheEntries.reduce((sum, entry) => {
-          return sum + (entry.value ? entry.value.length : 0);
-        }, 0);
-
-        // Convert bytes to MB (approximate)
-        totalStorageUsed = Math.ceil(totalBytes / (1024 * 1024));
+        totalStorageUsed = result[0]?.total_size_mb || totalStorageUsed;
+      } catch (error) {
+        console.error("Error calculating organization total storage:", error);
+        // Fall back to the individual user's storage if there's an error
       }
     }
 

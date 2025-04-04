@@ -1,11 +1,30 @@
 import { PrismaClient } from "@prisma/client";
 import { withAccelerate } from "@prisma/extension-accelerate";
+
 declare global {
   var prisma: PrismaClient | undefined;
 }
 
 // Check if the environment is browser
 const isBrowser = typeof window !== "undefined";
+
+// Timing middleware for query performance monitoring
+const timingMiddleware = {
+  name: "timing",
+  async middleware(params: any, next: any) {
+    const start = Date.now();
+    const result = await next(params);
+    const end = Date.now();
+    const time = end - start;
+
+    // Only log slow queries (>100ms) in non-production environments
+    if (process.env.NODE_ENV !== "production" && time > 100) {
+      console.log(`[PRISMA] (${time}ms) ${params.model}.${params.action}`);
+    }
+
+    return result;
+  },
+};
 
 // Only instantiate PrismaClient if we're not in a browser
 export const db = isBrowser
@@ -17,7 +36,15 @@ export const db = isBrowser
           url: process.env.DATABASE_URL,
         },
       },
-    }).$extends(withAccelerate());
+      // Set log levels for development environment
+      log:
+        process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
+    })
+      .$extends(withAccelerate())
+      .$extends({
+        // Add query timing metrics
+        query: timingMiddleware,
+      });
 
 if (process.env.NODE_ENV !== "production" && !isBrowser) globalThis.prisma = db;
 
