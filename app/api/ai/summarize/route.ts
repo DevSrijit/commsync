@@ -2,9 +2,6 @@ import { openai } from "@ai-sdk/openai";
 import { streamText } from "ai";
 import { NextResponse } from "next/server";
 
-// Allow up to 5 minutes for the summary generation
-export const maxDuration = 300;
-
 // Define the expected request body structure
 interface SummarizeRequestBody {
   conversationText: string;
