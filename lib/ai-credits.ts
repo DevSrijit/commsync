@@ -8,7 +8,7 @@ const isBrowser = typeof window !== "undefined";
  */
 export const AI_CREDIT_COSTS = {
   GENERATE_RESPONSE: 1,
-  SUMMARIZE_THREAD: 2,
+  SUMMARIZE_THREAD: 1,
   ANALYZE_SENTIMENT: 1,
   TRANSLATE_MESSAGE: 1,
   SCHEDULE_SUGGESTION: 1,
