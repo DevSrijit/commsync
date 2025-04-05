@@ -98,7 +98,7 @@ export default function WaitlistDialog({ children }: { children: React.ReactNode
                             </div>
                             <h3 className="text-xl font-medium">Thanks for joining!</h3>
                             <p className="text-gray-600">
-                                We've added you to our waitlist. We'll notify you as soon as CommSync is ready.
+                                We&apos;ve added you to our waitlist. We&apos;ll notify you as soon as CommSync is ready.
                             </p>
                             <Button
                                 variant="outline"

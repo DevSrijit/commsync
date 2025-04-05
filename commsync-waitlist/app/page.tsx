@@ -43,7 +43,7 @@ export default function Home() {
           {/* Text content centered */}
           <div className="text-center mx-auto max-w-3xl mb-16">
             <div className="inline-flex items-center h-6 rounded-full bg-gray-100 px-3 mb-8">
-              <span className="text-xs font-medium text-gray-700">Limited Beta Access</span>
+              <span className="text-xs font-medium text-gray-700">Public Beta Access</span>
             </div>
             <h1 className="text-5xl md:text-6xl font-medium tracking-tight leading-[1.1] mb-6">
               All your messages.<br />
@@ -226,7 +226,7 @@ export default function Home() {
                   <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
                   <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
                 </svg>
-                <span>We'll notify you when it's ready</span>
+                <span>We&apos;ll notify you when it&apos;s ready</span>
               </p>
             </div>
           </div>
