@@ -2,25 +2,8 @@
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import WaitlistDialog from '@/components/waitlist-dialog'
-import axios from 'axios'
-import { useState, useEffect } from 'react'
 
 export default function Home() {
-  const [waitlistCount, setWaitlistCount] = useState(0)
-
-  useEffect(() => {
-    async function fetchWaitlistCount() {
-      try {
-        const res = await axios.get("/api/waitlist-count")
-        setWaitlistCount(res.data.count)
-      } catch (error) {
-        console.error("Failed to fetch waitlist count:", error)
-      }
-    }
-
-    fetchWaitlistCount()
-  }, [])
-
   return (
     <main className="min-h-screen text-[#111] bg-white font-sans antialiased selection:bg-gray-100 selection:text-black">
       {/* Header */}
@@ -77,7 +60,6 @@ export default function Home() {
             <div className="absolute -inset-0.5 rounded-lg bg-gradient-to-r from-yellow-600 to-pink-600 opacity-20 blur-2xl"></div>
             <div className="absolute -inset-1 rounded-lg bg-gradient-to-r from-blue-600 to-purple-600 opacity-20 blur-3xl"></div>
             <div className="relative w-full overflow-hidden border border-[#eaeaea] shadow-[0_8px_30px_rgb(0,0,0,0.06)] rounded-lg">
-              <div className="absolute top-0 inset-x-0 h-2 bg-gradient-to-r from-gray-700 to-black"></div>
               <div className="w-full">
                 <Image
                   src="/dashboard-light.png"
