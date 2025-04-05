@@ -34,6 +34,8 @@ import {
   AI_CREDIT_COSTS
 } from "@/lib/ai-credits";
 import { htmlToText } from 'html-to-text';
+import { refreshSession } from "@/lib/gmail-api";
+import { MessageData } from "@/lib/messaging";
 
 interface WelcomeScreenProps {
   userEmail?: string | null;
@@ -810,6 +812,100 @@ export function ConversationView({
     setIsSummaryDialogOpen(true);
   };
 
+  const sendMessageWithRetry = async (
+    messageConfig: MessageData,
+    sessionToken: string
+  ) => {
+    try {
+      await sendMessage(messageConfig, {
+        accessToken: sessionToken,
+        onSuccess: (newMessage) => {
+          if (newMessage) {
+            addEmail(newMessage);
+            toast({
+              title: "Message sent",
+              description: "Your reply has been sent successfully",
+            });
+
+            // Trigger sync after message is sent
+            setTimeout(() => {
+              useEmailStore.getState().syncAllPlatforms(sessionToken);
+            }, 1000); // Small delay to ensure message is processed
+          }
+        }
+      });
+    } catch (error: unknown) {
+      // Check if it's an authorization error
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'message' in error &&
+        typeof error.message === 'string' &&
+        (
+          error.message.includes('401') ||
+          error.message.includes('token') ||
+          error.message.includes('unauthorized') ||
+          error.message.toLowerCase().includes('auth')
+        )
+      ) {
+        // Show toast about token refresh
+        toast({
+          title: "Session expired",
+          description: "Refreshing your session and retrying...",
+          duration: 5000,
+        });
+
+        // Try to refresh the token
+        const newToken = await refreshSession();
+
+        if (newToken) {
+          toast({
+            title: "Session refreshed",
+            description: "Retrying message send...",
+            duration: 3000,
+          });
+
+          // Retry with the new token
+          return sendMessage(messageConfig, {
+            accessToken: newToken,
+            onSuccess: (newMessage) => {
+              if (newMessage) {
+                addEmail(newMessage);
+                toast({
+                  title: "Message sent",
+                  description: "Your reply has been sent successfully after refreshing your session",
+                });
+
+                // Trigger sync after message is sent
+                setTimeout(() => {
+                  useEmailStore.getState().syncAllPlatforms(newToken);
+                }, 1000);
+              }
+            }
+          });
+        } else {
+          // If refresh fails, throw appropriate error
+          toast({
+            title: "Authentication failed",
+            description: "Please sign in again to continue",
+            variant: "destructive",
+            duration: 5000,
+          });
+
+          // Optional: Redirect to login
+          setTimeout(() => {
+            window.location.href = '/login?error=token_expired';
+          }, 2000);
+
+          throw new Error("Session refresh failed. Please sign in again.");
+        }
+      } else {
+        // For non-auth errors, rethrow
+        throw error;
+      }
+    }
+  };
+
   if (!contactEmail) {
     return (
       <WelcomeScreen userEmail={session?.user?.email} />
@@ -1256,30 +1352,14 @@ export function ConversationView({
                   if (selectedPlatform === "gmail" || selectedPlatform === "imap") {
                     // For email platforms with group
                     const recipients = group.addresses.join(",");
-                    await sendMessage({
+                    await sendMessageWithRetry({
                       platform: selectedPlatform,
                       recipients,
                       subject: `Re: Group: ${group.name}`,
                       content,
                       attachments: uploadedAttachments,
                       accountId: selectedAccountId || undefined
-                    }, {
-                      accessToken: session.user.accessToken,
-                      onSuccess: (newMessage) => {
-                        if (newMessage) {
-                          addEmail(newMessage);
-                          toast({
-                            title: "Message sent",
-                            description: `Your message has been sent to ${group.addresses.length} recipients`,
-                          });
-
-                          // Trigger sync after message is sent
-                          setTimeout(() => {
-                            useEmailStore.getState().syncAllPlatforms(session.user.accessToken);
-                          }, 1000); // Small delay to ensure message is processed
-                        }
-                      }
-                    });
+                    }, session.user.accessToken);
                   } else if (selectedPlatform === "twilio" || selectedPlatform === "justcall") {
                     // For SMS platforms with group, send individual messages
                     const phoneNumbers = group.phoneNumbers.length > 0
@@ -1287,31 +1367,19 @@ export function ConversationView({
                       : group.addresses; // Fallback to addresses if no phone numbers
 
                     for (const phoneNumber of phoneNumbers) {
-                      await sendMessage({
+                      await sendMessageWithRetry({
                         platform: selectedPlatform,
                         recipients: phoneNumber,
                         content,
                         attachments: uploadedAttachments,
                         accountId: selectedAccountId || undefined
-                      }, {
-                        accessToken: session.user.accessToken,
-                        onSuccess: (newMessage) => {
-                          if (newMessage) {
-                            addEmail(newMessage);
-                          }
-                        }
-                      });
+                      }, session.user.accessToken);
                     }
 
                     toast({
                       title: "Messages sent",
                       description: `Your message has been sent to ${phoneNumbers.length} recipients`,
                     });
-
-                    // Trigger sync after all messages are sent
-                    setTimeout(() => {
-                      useEmailStore.getState().syncAllPlatforms(session.user.accessToken);
-                    }, 1000); // Small delay to ensure messages are processed
                   }
                 }
               } else {
@@ -1324,7 +1392,7 @@ export function ConversationView({
                     : null;
                   const threadId = latestEmailInConversation?.threadId || null;
 
-                  await sendMessage({
+                  await sendMessageWithRetry({
                     platform: selectedPlatform,
                     recipients: contactEmail,
                     subject: `Re: ${latestEmailInConversation?.subject || contact?.lastMessageSubject || "No subject"}`,
@@ -1332,23 +1400,7 @@ export function ConversationView({
                     attachments: uploadedAttachments,
                     accountId: selectedAccountId || undefined,
                     threadId
-                  }, {
-                    accessToken: session.user.accessToken,
-                    onSuccess: (newMessage) => {
-                      if (newMessage) {
-                        addEmail(newMessage);
-                        toast({
-                          title: "Message sent",
-                          description: "Your reply has been sent successfully",
-                        });
-
-                        // Trigger sync after message is sent
-                        setTimeout(() => {
-                          useEmailStore.getState().syncAllPlatforms(session.user.accessToken);
-                        }, 1000); // Small delay to ensure message is processed
-                      }
-                    }
-                  });
+                  }, session.user.accessToken);
                 } else if (selectedPlatform === "twilio" || selectedPlatform === "justcall") {
                   // For SMS platforms
                   let justcallNumber = undefined;
@@ -1359,39 +1411,98 @@ export function ConversationView({
                     justcallNumber = account?.accountIdentifier || undefined;
                   }
 
-                  await sendMessage({
+                  await sendMessageWithRetry({
                     platform: selectedPlatform,
                     recipients: contactEmail,
                     content,
                     attachments: uploadedAttachments,
                     accountId: selectedAccountId || undefined,
                     justcallNumber
-                  }, {
-                    accessToken: session.user.accessToken,
-                    onSuccess: (newMessage) => {
-                      if (newMessage) {
-                        addEmail(newMessage);
-                        toast({
-                          title: "Message sent",
-                          description: "Your message has been sent successfully",
-                        });
-
-                        // Trigger sync after message is sent
-                        setTimeout(() => {
-                          useEmailStore.getState().syncAllPlatforms(session.user.accessToken);
-                        }, 1000); // Small delay to ensure message is processed
-                      }
-                    }
-                  });
+                  }, session.user.accessToken);
                 }
               }
-            } catch (error) {
+            } catch (error: unknown) {
               console.error("Failed to send message:", error);
-              toast({
-                title: "Failed to send message",
-                description: "Please try again later",
-                variant: "destructive",
-              });
+
+              // Check if it might be an authentication error
+              const errorMessage = error instanceof Error ? error.message : String(error);
+              const isAuthError =
+                errorMessage.includes('401') ||
+                errorMessage.includes('token') ||
+                errorMessage.toLowerCase().includes('unauthorized') ||
+                errorMessage.toLowerCase().includes('auth');
+
+              if (isAuthError && session?.user) {
+                // Show token refresh toast
+                toast({
+                  title: "Session expired",
+                  description: "Refreshing your session and retrying...",
+                  duration: 5000,
+                });
+
+                try {
+                  // Try to refresh the token
+                  const newToken = await refreshSession();
+
+                  if (newToken) {
+                    toast({
+                      title: "Session refreshed",
+                      description: "Retrying your message...",
+                      duration: 3000,
+                    });
+
+                    // Retry with the new token - simplified retry logic
+                    if (selectedPlatform === "gmail" || selectedPlatform === "imap") {
+                      const threadId = conversation.length > 0
+                        ? conversation[0].threadId
+                        : null;
+
+                      await sendMessage({
+                        platform: selectedPlatform,
+                        recipients: contactEmail as string,
+                        subject: `Re: ${conversation[0]?.subject || "No subject"}`,
+                        content,
+                        attachments: uploadedAttachments,
+                        accountId: selectedAccountId || undefined,
+                        threadId
+                      }, {
+                        accessToken: newToken,
+                        onSuccess: (newMessage) => {
+                          if (newMessage) {
+                            addEmail(newMessage);
+                            toast({
+                              title: "Message sent",
+                              description: "Your message was sent successfully after refreshing your session",
+                            });
+                          }
+                        }
+                      });
+                    }
+                  } else {
+                    // If refresh fails
+                    toast({
+                      title: "Authentication failed",
+                      description: "Please sign in again to continue",
+                      variant: "destructive",
+                      duration: 5000,
+                    });
+                  }
+                } catch (refreshError) {
+                  console.error("Error during token refresh:", refreshError);
+                  toast({
+                    title: "Failed to refresh session",
+                    description: "Please try again or sign in again",
+                    variant: "destructive",
+                  });
+                }
+              } else {
+                // Standard error toast for non-auth errors
+                toast({
+                  title: "Failed to send message",
+                  description: errorMessage || "Please try again later",
+                  variant: "destructive",
+                });
+              }
             } finally {
               setIsSending(false);
             }

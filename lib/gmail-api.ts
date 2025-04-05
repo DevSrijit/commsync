@@ -4,7 +4,8 @@ import type { Email } from "@/lib/types";
 import { getCacheValue, setCacheValue } from "./client-cache-browser";
 
 // Helper function to refresh session
-async function refreshSession() {
+// Export the function so it can be used outside this module
+export async function refreshSession() {
   try {
     console.log("Starting token refresh sequence...");
 
