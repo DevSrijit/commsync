@@ -146,8 +146,10 @@ export function MessageInput({
     editorProps: {
       attributes: {
         class:
-          "prose prose-sm dark:prose-invert w-full focus:outline-none min-h-0 flex-grow overflow-y-auto [&_ul]:list-disc [&_ol]:list-decimal [&_ul,&_ol]:ml-4 [&_ul>li]:pl-0 [&_ol>li]:pl-0 [&_ul>li]:relative [&_ol>li]:relative [&_ul>li]:marker:absolute [&_ol>li]:marker:left-0 [&_ol>li]:marker:left-0",
+          "prose prose-sm dark:prose-invert w-full focus:outline-none min-h-0 flex-grow overflow-y-auto overflow-x-hidden [&_ul]:list-disc [&_ol]:list-decimal [&_ul,&_ol]:ml-4 [&_ul>li]:pl-0 [&_ol>li]:pl-0 [&_ul>li]:relative [&_ol>li]:relative [&_ul>li]:marker:absolute [&_ol>li]:marker:left-0 [&_ol>li]:marker:left-0",
       },
+      scrollThreshold: 100,
+      scrollMargin: 100,
     },
     content: "",
   });
@@ -319,7 +321,7 @@ export function MessageInput({
   return (
     <>
       <div
-        className="border rounded-lg bg-background flex flex-col w-full h-full"
+        className="border rounded-lg bg-background flex flex-col w-full h-full max-h-full overflow-hidden"
         onDrop={handleDrop}
         onDragOver={handleDragOver}
       >
@@ -572,8 +574,8 @@ export function MessageInput({
           )}
         </div>
 
-        <div className="flex-1 min-h-0 p-2 overflow-y-auto">
-          <EditorContent editor={editor} className="h-full" />
+        <div className="flex-1 min-h-0 max-h-[calc(50vh-6rem)] md:max-h-[30vh] p-2 overflow-y-auto">
+          <EditorContent editor={editor} className="h-full overflow-auto" />
         </div>
 
         {attachments.length > 0 && (
@@ -724,10 +726,10 @@ export function MessageInput({
                   const withLineBreaks = para.replace(/\n/g, '<br>');
                   return `<p>${withLineBreaks}</p>`;
                 }).join('');
-                
+
                 editor.commands.setContent(formattedHtml);
               }
-              
+
               toast({
                 title: "Message inserted",
                 description: "AI-generated message has been added to the editor",

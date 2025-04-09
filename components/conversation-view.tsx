@@ -1347,9 +1347,9 @@ export function ConversationView({
         defaultSize={30}
         minSize={20}
         maxSize={60}
-        className="border-t border-border bg-card/50 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+        className="border-t border-border bg-card/50 backdrop-blur supports-[backdrop-filter]:bg-background/60 flex flex-col overflow-hidden"
       >
-        <div className="p-2 md:p-4">
+        <div className="p-2 md:p-4 flex-1 overflow-hidden flex flex-col">
           <MessageInput
             onSend={async (content, uploadedAttachments) => {
               if (!contactEmail || !session?.user?.accessToken) return;
