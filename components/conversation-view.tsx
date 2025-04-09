@@ -917,71 +917,72 @@ export function ConversationView({
       direction="vertical"
       className="flex-1 h-full overflow-hidden"
     >
-      {/* Conversation Header Panel */}
+      {/* Conversation Header Panel - Enhanced for mobile */}
       <ResizablePanel
-        defaultSize={8} // Slightly increase size for the button
+        defaultSize={8}
         minSize={8}
         maxSize={15}
-        className="border-b border-border p-4 flex justify-between items-center bg-card/50 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+        className="border-b border-border bg-card/50 backdrop-blur supports-[backdrop-filter]:bg-background/60"
       >
-        <div className="flex items-center gap-3"> {/* Container for Left side */}
-          {isContactGroup && selectedGroup ? (
-            // Group Display
-            <div className="flex items-center gap-2">
-              <div className="flex items-center justify-center h-9 w-9 rounded-full bg-primary/10">
-                <Users className="h-5 w-5 text-primary" />
+        <div className="flex justify-between items-center p-3 md:p-4">
+          <div className="flex items-center gap-3 min-w-0"> {/* Added min-w-0 for text truncation */}
+            {isContactGroup && selectedGroup ? (
+              // Group Display - Enhanced for mobile
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="flex items-center justify-center h-8 w-8 md:h-9 md:w-9 rounded-full bg-primary/10 flex-shrink-0">
+                  <Users className="h-4 w-4 md:h-5 md:w-5 text-primary" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="font-medium text-sm md:text-base truncate">{conversationName}</h2>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {contactCount?.total} contacts ({contactCount?.emails} emails, {contactCount?.phones} phone numbers)
+                  </p>
+                </div>
               </div>
-              <div>
-                <h2 className="font-medium">{conversationName}</h2>
-                <p className="text-xs text-muted-foreground">
-                  {contactCount?.total} contacts ({contactCount?.emails} emails, {contactCount?.phones} phone numbers)
-                </p>
+            ) : (
+              // Single Contact Display - Enhanced for mobile
+              <div className="flex items-center gap-2 min-w-0">
+                <Avatar className="h-8 w-8 md:h-9 md:w-9 flex-shrink-0">
+                  <AvatarImage
+                    src={getGravatarUrl(contactEmail || "")}
+                    alt={conversationName}
+                  />
+                  <AvatarFallback>{conversationName[0]}</AvatarFallback>
+                </Avatar>
+                <div className="min-w-0">
+                  <h2 className="font-medium text-sm md:text-base truncate">{conversationName}</h2>
+                  <p className="text-xs text-muted-foreground truncate">{contactEmail}</p>
+                </div>
               </div>
-            </div>
-          ) : (
-            // Single Contact Display
-            <div className="flex items-center gap-2">
-              <Avatar className="h-9 w-9">
-                <AvatarImage
-                  src={getGravatarUrl(contactEmail || "")}
-                  alt={conversationName}
-                />
-                <AvatarFallback>{conversationName[0]}</AvatarFallback>
-              </Avatar>
-              <div>
-                <h2 className="font-medium">{conversationName}</h2>
-                <p className="text-xs text-muted-foreground">{contactEmail}</p>
-              </div>
-            </div>
-          )}
-        </div>
-        {/* Action Buttons on the Right */}
-        <div className="flex items-center gap-2">
-          {/* Summarize button with improved enabling logic */}
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={handleSummarizeClick}
-            disabled={isLoadingState || isRefetching || conversation.length === 0} // Remove !subscriptionData condition
-            title={conversation.length === 0
-              ? "No conversation to summarize"
-              : "Summarize Conversation (AI)"}
-          >
-            <Sparkles className="h-4 w-4" />
-          </Button>
-          {/* Other action buttons could go here */}
+            )}
+          </div>
+          {/* Action Buttons - Enhanced for mobile */}
+          <div className="flex items-center gap-1 md:gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handleSummarizeClick}
+              disabled={isLoadingState || isRefetching || conversation.length === 0}
+              className="h-8 w-8 md:h-9 md:w-9"
+              title={conversation.length === 0
+                ? "No conversation to summarize"
+                : "Summarize Conversation (AI)"}
+            >
+              <Sparkles className="h-3.5 w-3.5 md:h-4 md:w-4" />
+            </Button>
+          </div>
         </div>
       </ResizablePanel>
 
       <ResizableHandle />
 
-      {/* Messages List Panel (scrollable) */}
+      {/* Messages List Panel - Enhanced for mobile */}
       <ResizablePanel
         defaultSize={70}
         className="flex flex-col overflow-hidden"
       >
         <ScrollArea className="flex-1">
-          <div className="space-y-4 max-w-5xl mx-auto p-4">
+          <div className="space-y-3 md:space-y-4 max-w-3xl md:max-w-5xl mx-auto p-3 md:p-4">
             {isLoadingState ? (
               // Show skeleton placeholders while loading or refetching
               <div className="space-y-4">
@@ -1331,211 +1332,213 @@ export function ConversationView({
 
       <ResizableHandle />
 
-      {/* Message Input Panel */}
+      {/* Message Input Panel - Enhanced for mobile */}
       <ResizablePanel
         defaultSize={30}
         minSize={20}
         maxSize={60}
-        className="border-t border-border p-4 bg-card/50 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+        className="border-t border-border bg-card/50 backdrop-blur supports-[backdrop-filter]:bg-background/60"
       >
-        <MessageInput
-          onSend={async (content, uploadedAttachments) => {
-            if (!contactEmail || !session?.user?.accessToken) return;
+        <div className="p-2 md:p-4">
+          <MessageInput
+            onSend={async (content, uploadedAttachments) => {
+              if (!contactEmail || !session?.user?.accessToken) return;
 
-            setIsSending(true);
-            try {
-              // Handle group emails
-              if (isGroup && groupId) {
-                const group = groups.find((g) => g.id === groupId);
+              setIsSending(true);
+              try {
+                // Handle group emails
+                if (isGroup && groupId) {
+                  const group = groups.find((g) => g.id === groupId);
 
-                if (group) {
-                  if (selectedPlatform === "gmail" || selectedPlatform === "imap") {
-                    // For email platforms with group
-                    const recipients = group.addresses.join(",");
-                    await sendMessageWithRetry({
-                      platform: selectedPlatform,
-                      recipients,
-                      subject: `Re: Group: ${group.name}`,
-                      content,
-                      attachments: uploadedAttachments,
-                      accountId: selectedAccountId || undefined
-                    }, session.user.accessToken);
-                  } else if (selectedPlatform === "twilio" || selectedPlatform === "justcall") {
-                    // For SMS platforms with group, send individual messages
-                    const phoneNumbers = group.phoneNumbers.length > 0
-                      ? group.phoneNumbers
-                      : group.addresses; // Fallback to addresses if no phone numbers
-
-                    for (const phoneNumber of phoneNumbers) {
+                  if (group) {
+                    if (selectedPlatform === "gmail" || selectedPlatform === "imap") {
+                      // For email platforms with group
+                      const recipients = group.addresses.join(",");
                       await sendMessageWithRetry({
                         platform: selectedPlatform,
-                        recipients: phoneNumber,
+                        recipients,
+                        subject: `Re: Group: ${group.name}`,
                         content,
                         attachments: uploadedAttachments,
                         accountId: selectedAccountId || undefined
                       }, session.user.accessToken);
-                    }
+                    } else if (selectedPlatform === "twilio" || selectedPlatform === "justcall") {
+                      // For SMS platforms with group, send individual messages
+                      const phoneNumbers = group.phoneNumbers.length > 0
+                        ? group.phoneNumbers
+                        : group.addresses; // Fallback to addresses if no phone numbers
 
-                    toast({
-                      title: "Messages sent",
-                      description: `Your message has been sent to ${phoneNumbers.length} recipients`,
-                    });
-                  }
-                }
-              } else {
-                // Regular single-recipient message
-                if (selectedPlatform === "gmail" || selectedPlatform === "imap") {
-                  // For email platforms
-                  // Get threadId for proper threading if available
-                  const latestEmailInConversation = conversation.length > 0
-                    ? conversation.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
-                    : null;
-                  const threadId = latestEmailInConversation?.threadId || null;
+                      for (const phoneNumber of phoneNumbers) {
+                        await sendMessageWithRetry({
+                          platform: selectedPlatform,
+                          recipients: phoneNumber,
+                          content,
+                          attachments: uploadedAttachments,
+                          accountId: selectedAccountId || undefined
+                        }, session.user.accessToken);
+                      }
 
-                  await sendMessageWithRetry({
-                    platform: selectedPlatform,
-                    recipients: contactEmail,
-                    subject: `Re: ${latestEmailInConversation?.subject || contact?.lastMessageSubject || "No subject"}`,
-                    content,
-                    attachments: uploadedAttachments,
-                    accountId: selectedAccountId || undefined,
-                    threadId
-                  }, session.user.accessToken);
-                } else if (selectedPlatform === "twilio" || selectedPlatform === "justcall") {
-                  // For SMS platforms
-                  let justcallNumber = undefined;
-
-                  // Get JustCall phone number if needed
-                  if (selectedPlatform === "justcall" && selectedAccountId) {
-                    const account = justcallAccounts.find(a => a.id === selectedAccountId);
-                    justcallNumber = account?.accountIdentifier || undefined;
-                  }
-
-                  await sendMessageWithRetry({
-                    platform: selectedPlatform,
-                    recipients: contactEmail,
-                    content,
-                    attachments: uploadedAttachments,
-                    accountId: selectedAccountId || undefined,
-                    justcallNumber
-                  }, session.user.accessToken);
-                }
-              }
-            } catch (error: unknown) {
-              console.error("Failed to send message:", error);
-
-              // Check if it might be an authentication error
-              const errorMessage = error instanceof Error ? error.message : String(error);
-              const isAuthError =
-                errorMessage.includes('401') ||
-                errorMessage.includes('token') ||
-                errorMessage.toLowerCase().includes('unauthorized') ||
-                errorMessage.toLowerCase().includes('auth');
-
-              if (isAuthError && session?.user) {
-                // Show token refresh toast
-                toast({
-                  title: "Session expired",
-                  description: "Refreshing your session and retrying...",
-                  duration: 5000,
-                });
-
-                try {
-                  // Try to refresh the token
-                  const newToken = await refreshSession();
-
-                  if (newToken) {
-                    toast({
-                      title: "Session refreshed",
-                      description: "Retrying your message...",
-                      duration: 3000,
-                    });
-
-                    // Retry with the new token - simplified retry logic
-                    if (selectedPlatform === "gmail" || selectedPlatform === "imap") {
-                      const threadId = conversation.length > 0
-                        ? conversation[0].threadId
-                        : null;
-
-                      await sendMessage({
-                        platform: selectedPlatform,
-                        recipients: contactEmail as string,
-                        subject: `Re: ${conversation[0]?.subject || "No subject"}`,
-                        content,
-                        attachments: uploadedAttachments,
-                        accountId: selectedAccountId || undefined,
-                        threadId
-                      }, {
-                        accessToken: newToken,
-                        onSuccess: (newMessage) => {
-                          if (newMessage) {
-                            addEmail(newMessage);
-                            toast({
-                              title: "Message sent",
-                              description: "Your message was sent successfully after refreshing your session",
-                            });
-                          }
-                        }
+                      toast({
+                        title: "Messages sent",
+                        description: `Your message has been sent to ${phoneNumbers.length} recipients`,
                       });
                     }
-                  } else {
-                    // If refresh fails
+                  }
+                } else {
+                  // Regular single-recipient message
+                  if (selectedPlatform === "gmail" || selectedPlatform === "imap") {
+                    // For email platforms
+                    // Get threadId for proper threading if available
+                    const latestEmailInConversation = conversation.length > 0
+                      ? conversation.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
+                      : null;
+                    const threadId = latestEmailInConversation?.threadId || null;
+
+                    await sendMessageWithRetry({
+                      platform: selectedPlatform,
+                      recipients: contactEmail,
+                      subject: `Re: ${latestEmailInConversation?.subject || contact?.lastMessageSubject || "No subject"}`,
+                      content,
+                      attachments: uploadedAttachments,
+                      accountId: selectedAccountId || undefined,
+                      threadId
+                    }, session.user.accessToken);
+                  } else if (selectedPlatform === "twilio" || selectedPlatform === "justcall") {
+                    // For SMS platforms
+                    let justcallNumber = undefined;
+
+                    // Get JustCall phone number if needed
+                    if (selectedPlatform === "justcall" && selectedAccountId) {
+                      const account = justcallAccounts.find(a => a.id === selectedAccountId);
+                      justcallNumber = account?.accountIdentifier || undefined;
+                    }
+
+                    await sendMessageWithRetry({
+                      platform: selectedPlatform,
+                      recipients: contactEmail,
+                      content,
+                      attachments: uploadedAttachments,
+                      accountId: selectedAccountId || undefined,
+                      justcallNumber
+                    }, session.user.accessToken);
+                  }
+                }
+              } catch (error: unknown) {
+                console.error("Failed to send message:", error);
+
+                // Check if it might be an authentication error
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                const isAuthError =
+                  errorMessage.includes('401') ||
+                  errorMessage.includes('token') ||
+                  errorMessage.toLowerCase().includes('unauthorized') ||
+                  errorMessage.toLowerCase().includes('auth');
+
+                if (isAuthError && session?.user) {
+                  // Show token refresh toast
+                  toast({
+                    title: "Session expired",
+                    description: "Refreshing your session and retrying...",
+                    duration: 5000,
+                  });
+
+                  try {
+                    // Try to refresh the token
+                    const newToken = await refreshSession();
+
+                    if (newToken) {
+                      toast({
+                        title: "Session refreshed",
+                        description: "Retrying your message...",
+                        duration: 3000,
+                      });
+
+                      // Retry with the new token - simplified retry logic
+                      if (selectedPlatform === "gmail" || selectedPlatform === "imap") {
+                        const threadId = conversation.length > 0
+                          ? conversation[0].threadId
+                          : null;
+
+                        await sendMessage({
+                          platform: selectedPlatform,
+                          recipients: contactEmail as string,
+                          subject: `Re: ${conversation[0]?.subject || "No subject"}`,
+                          content,
+                          attachments: uploadedAttachments,
+                          accountId: selectedAccountId || undefined,
+                          threadId
+                        }, {
+                          accessToken: newToken,
+                          onSuccess: (newMessage) => {
+                            if (newMessage) {
+                              addEmail(newMessage);
+                              toast({
+                                title: "Message sent",
+                                description: "Your message was sent successfully after refreshing your session",
+                              });
+                            }
+                          }
+                        });
+                      }
+                    } else {
+                      // If refresh fails
+                      toast({
+                        title: "Authentication failed",
+                        description: "Please sign in again to continue",
+                        variant: "destructive",
+                        duration: 5000,
+                      });
+                    }
+                  } catch (refreshError) {
+                    console.error("Error during token refresh:", refreshError);
                     toast({
-                      title: "Authentication failed",
-                      description: "Please sign in again to continue",
+                      title: "Failed to refresh session",
+                      description: "Please try again or sign in again",
                       variant: "destructive",
-                      duration: 5000,
                     });
                   }
-                } catch (refreshError) {
-                  console.error("Error during token refresh:", refreshError);
+                } else {
+                  // Standard error toast for non-auth errors
                   toast({
-                    title: "Failed to refresh session",
-                    description: "Please try again or sign in again",
+                    title: "Failed to send message",
+                    description: errorMessage || "Please try again later",
                     variant: "destructive",
                   });
                 }
-              } else {
-                // Standard error toast for non-auth errors
-                toast({
-                  title: "Failed to send message",
-                  description: errorMessage || "Please try again later",
-                  variant: "destructive",
-                });
+              } finally {
+                setIsSending(false);
               }
-            } finally {
-              setIsSending(false);
+            }}
+            isLoading={isSending}
+            placeholder={
+              isGroup && groupId
+                ? `Reply to group...`
+                : `Reply to ${contact?.name || contactEmail}...`
             }
-          }}
-          isLoading={isSending}
-          placeholder={
-            isGroup && groupId
-              ? `Reply to group...`
-              : `Reply to ${contact?.name || contactEmail}...`
-          }
-          platform={selectedPlatform || "gmail"}
-          accountId={selectedAccountId || undefined}
-          isGroup={isGroup}
-          groupId={groupId}
-          platformOptions={conversation.reduce((options, email) => {
-            if (email.accountType && !options.includes(email.accountType)) {
-              options.push(email.accountType);
-            }
-            return options;
-          }, [] as string[])}
-          onPlatformChange={(platform: string, accountId?: string) => {
-            setSelectedPlatform(platform);
-            if (accountId === undefined) {
-              setSelectedAccountId(null);
-            } else {
-              setSelectedAccountId(accountId);
-            }
-          }}
-          conversationContext={conversationTextForSummary}
-          contactName={isContactGroup && selectedGroup
-            ? selectedGroup.name
-            : contact?.name || contactEmail?.split('@')[0] || ''}
-        />
+            platform={selectedPlatform || "gmail"}
+            accountId={selectedAccountId || undefined}
+            isGroup={isGroup}
+            groupId={groupId}
+            platformOptions={conversation.reduce((options, email) => {
+              if (email.accountType && !options.includes(email.accountType)) {
+                options.push(email.accountType);
+              }
+              return options;
+            }, [] as string[])}
+            onPlatformChange={(platform: string, accountId?: string) => {
+              setSelectedPlatform(platform);
+              if (accountId === undefined) {
+                setSelectedAccountId(null);
+              } else {
+                setSelectedAccountId(accountId);
+              }
+            }}
+            conversationContext={conversationTextForSummary}
+            contactName={isContactGroup && selectedGroup
+              ? selectedGroup.name
+              : contact?.name || contactEmail?.split('@')[0] || ''}
+          />
+        </div>
       </ResizablePanel>
 
       {/* Render the Summary Dialog */}
@@ -1544,8 +1547,8 @@ export function ConversationView({
           isOpen={isSummaryDialogOpen}
           onOpenChange={setIsSummaryDialogOpen}
           conversationText={conversationTextForSummary}
-          subscriptionId={subscriptionData?.id || null} // Pass subscription ID
-          userId={session?.user?.id || null} // Pass user ID
+          subscriptionId={subscriptionData?.id || null}
+          userId={session?.user?.id || null}
         />
       )}
 

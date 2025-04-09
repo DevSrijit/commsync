@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useSession } from "next-auth/react";
-
+import { Menu, ArrowLeft } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Sidebar } from "@/components/sidebar";
 import { EmailList } from "@/components/channel-list";
 import { ConversationView } from "@/components/conversation-view";
@@ -16,6 +17,7 @@ import {
   ResizablePanelGroup,
 } from "./ui/resizable";
 import { getCacheValue, setCacheValue, removeCacheValue } from "@/lib/client-cache-browser";
+import { cn } from "@/lib/utils";
 
 export function EmailDashboard() {
   const { data: session } = useSession();
@@ -27,7 +29,23 @@ export function EmailDashboard() {
   const [isBackgroundSync, setIsBackgroundSync] = useState(false);
   const initialLoadComplete = useRef(false);
 
-  // Enhanced contact selection handler
+  // Mobile responsive states
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isMobileView, setIsMobileView] = useState(false);
+  const [showConversation, setShowConversation] = useState(false);
+
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobileView(window.innerWidth < 768);
+    };
+
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Enhanced contact selection handler for mobile
   const handleContactSelect = (
     email: string,
     isGroup: boolean = false,
@@ -36,6 +54,17 @@ export function EmailDashboard() {
     setSelectedContact(email);
     setIsGroupSelected(isGroup);
     setSelectedGroupId(groupId || null);
+    if (isMobileView) {
+      setShowConversation(true);
+    }
+  };
+
+  // Handle back navigation on mobile
+  const handleBackToList = () => {
+    if (isMobileView) {
+      setShowConversation(false);
+      setSelectedContact(null);
+    }
   };
 
   useEffect(() => {
@@ -222,69 +251,134 @@ export function EmailDashboard() {
   }, [contacts, selectedContact]);
 
   return (
-    /**
-     * Full-screen container with overflow hidden so only the panels themselves scroll.
-     */
     <div className="flex h-screen w-screen overflow-hidden bg-background">
-      <ResizablePanelGroup
-        direction="horizontal"
-        className="flex-1 h-full overflow-hidden"
-      >
-        {/* Sidebar Panel */}
-        <ResizablePanel
-          defaultSize={15}
-          minSize={15}
-          maxSize={20}
-          className="h-full overflow-hidden"
+      {/* Mobile Menu Button */}
+      <div className={cn(
+        "fixed top-0 left-0 z-50 p-2 md:hidden",
+        showConversation && "hidden"
+      )}>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setIsSidebarOpen(true)}
+          className="h-10 w-10"
         >
-          <Sidebar />
-        </ResizablePanel>
+          <Menu className="h-5 w-5" />
+        </Button>
+      </div>
 
-        <ResizableHandle />
+      {/* Mobile Sidebar Overlay */}
+      {isMobileView && isSidebarOpen && (
+        <div
+          className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
 
-        {/* Main Area Panel */}
-        <ResizablePanel
-          className="flex flex-col h-full overflow-hidden"
-          defaultSize={85}
-        >
+      {/* Sidebar */}
+      <div className={cn(
+        "fixed inset-y-0 left-0 z-50 w-72 bg-background border-r transform transition-transform duration-200 ease-in-out md:relative md:translate-x-0",
+        isSidebarOpen ? "translate-x-0" : "-translate-x-full",
+        isMobileView ? "md:hidden" : "hidden md:block"
+      )}>
+        <Sidebar />
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col h-full overflow-hidden">
+        {/* Desktop Layout */}
+        <div className="hidden md:flex md:flex-1 md:h-full">
           <ResizablePanelGroup
             direction="horizontal"
             className="flex-1 h-full overflow-hidden"
-          >
-            {/* Contact List Panel */}
-            <ResizablePanel
-              defaultSize={30}
-              minSize={25}
-              maxSize={40}
-              className="h-full"
-            >
-              <div className="w-full h-full z-0">
-                <EmailList
-                  isLoading={isLoading}
-                  selectedContact={selectedContact}
-                  onSelectContact={handleContactSelect}
-                  className="w-full"
-                />
-              </div>
-            </ResizablePanel>
+          > 
 
             <ResizableHandle />
 
-            {/* Conversation View Panel */}
+            {/* Main Area Panel */}
             <ResizablePanel
+              defaultSize={85}
               className="flex flex-col h-full overflow-hidden"
-              defaultSize={70}
             >
-              <ConversationView
-                contactEmail={selectedContact}
-                isLoading={isLoading}
-                isGroup={isGroupSelected}
-                groupId={selectedGroupId}
-              />
+              <ResizablePanelGroup
+                direction="horizontal"
+                className="flex-1 h-full overflow-hidden"
+              >
+                {/* Channel List Panel */}
+                <ResizablePanel
+                  defaultSize={30}
+                  minSize={25}
+                  maxSize={40}
+                  className="h-full"
+                >
+                  <div className="w-full h-full z-0">
+                    <EmailList
+                      isLoading={isLoading}
+                      selectedContact={selectedContact}
+                      onSelectContact={handleContactSelect}
+                      className="w-full"
+                    />
+                  </div>
+                </ResizablePanel>
+
+                <ResizableHandle />
+
+                {/* Conversation View Panel */}
+                <ResizablePanel
+                  defaultSize={70}
+                  className="flex flex-col h-full overflow-hidden"
+                >
+                  <ConversationView
+                    contactEmail={selectedContact}
+                    isLoading={isLoading}
+                    isGroup={isGroupSelected}
+                    groupId={selectedGroupId}
+                  />
+                </ResizablePanel>
+              </ResizablePanelGroup>
             </ResizablePanel>
           </ResizablePanelGroup>
-        </ResizablePanel>
-      </ResizablePanelGroup>
+        </div>
+
+        {/* Mobile Layout */}
+        <div className="flex flex-col h-full md:hidden">
+          <div className={cn(
+            "h-full w-full",
+            isMobileView && showConversation ? "hidden" : "block"
+          )}>
+            <EmailList
+              isLoading={isLoading}
+              selectedContact={selectedContact}
+              onSelectContact={handleContactSelect}
+              className="w-full"
+            />
+          </div>
+
+          <div className={cn(
+            "h-full w-full",
+            isMobileView && !showConversation ? "hidden" : "block"
+          )}>
+            {isMobileView && showConversation && (
+              <div className="flex items-center gap-2 p-2 border-b">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleBackToList}
+                  className="h-10 w-10"
+                >
+                  <ArrowLeft className="h-5 w-5" />
+                </Button>
+              </div>
+            )}
+            <ConversationView
+              contactEmail={selectedContact}
+              isLoading={isLoading}
+              isGroup={isGroupSelected}
+              groupId={selectedGroupId}
+            />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
