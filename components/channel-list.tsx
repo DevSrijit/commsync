@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Search, Users, RotateCw, ChevronLeft, ChevronRight, Command, X } from "lucide-react";
+import { Search, Users, RotateCw, ChevronLeft, ChevronRight, Command, X, PanelLeft } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useEmailStore } from "@/lib/email-store";
 import { ContactItem } from "@/components/contact-item";
@@ -743,33 +743,50 @@ export function EmailList({
       ref={containerRef}
     >
       {/* Search Header - Made sticky and mobile friendly */}
-      <div className="sticky top-0 z-10 px-2 py-3 bg-background/95 backdrop-blur-sm border-b">
-        <div className="relative group">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground transition-colors group-focus-within:text-primary" />
-          <Input
-            ref={searchInputRef}
-            placeholder="Search conversations..."
-            className="h-10 pl-9 pr-9 bg-muted/50 focus:bg-background transition-colors"
-            value={searchInput}
-            onChange={handleSearchInputChange}
-            onKeyDown={handleKeyPress}
-            disabled={isSearching}
-          />
-          <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center">
-            {searchInput && !isSearching && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 rounded-full hover:bg-accent/80 transition-all duration-200"
-                onClick={clearSearch}
-                aria-label="Clear search"
-              >
-                <X className="h-3 w-3 text-muted-foreground hover:text-foreground transition-colors" />
-              </Button>
-            )}
-            {isSearching && (
-              <RotateCw className="h-4 w-4 animate-spin text-muted-foreground" />
-            )}
+      <div className="sticky top-0 z-10 px-4 py-3 bg-background/95 backdrop-blur-sm border-b">
+        <div className="flex items-center gap-2">
+          {/* Sidebar Trigger Button - Apple Style */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-10 w-10 md:hidden rounded-full flex items-center justify-center"
+            onClick={() => {
+              // Dispatch a custom event to toggle the sidebar
+              const event = new CustomEvent('toggle-sidebar', { bubbles: true });
+              document.dispatchEvent(event);
+            }}
+            aria-label="Menu"
+          >
+            <PanelLeft className="h-4 w-4" />
+          </Button>
+
+          <div className="relative group flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground transition-colors group-focus-within:text-primary" />
+            <Input
+              ref={searchInputRef}
+              placeholder="Search conversations..."
+              className="h-10 pl-9 pr-9 bg-muted/50 focus:bg-background transition-colors"
+              value={searchInput}
+              onChange={handleSearchInputChange}
+              onKeyDown={handleKeyPress}
+              disabled={isSearching}
+            />
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+              {searchInput && !isSearching && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 rounded-full hover:bg-accent/80 transition-all duration-200"
+                  onClick={clearSearch}
+                  aria-label="Clear search"
+                >
+                  <X className="h-3 w-3 text-muted-foreground hover:text-foreground transition-colors" />
+                </Button>
+              )}
+              {isSearching && (
+                <RotateCw className="h-4 w-4 animate-spin text-muted-foreground" />
+              )}
+            </div>
           </div>
         </div>
 
@@ -780,7 +797,7 @@ export function EmailList({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
-              className="absolute left-0 right-0 mt-2 mx-2 bg-background/95 backdrop-blur-sm border rounded-lg shadow-lg overflow-hidden"
+              className="absolute left-0 right-0 mt-2 mx-2 bg-background/95 backdrop-blur-sm border rounded-lg shadow-lg overflow-hidden z-20"
             >
               <div className="p-4">
                 <div className="flex items-center justify-between text-sm text-muted-foreground">

@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useSession } from "next-auth/react";
 import { useToast } from "@/hooks/use-toast";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Image, FileText, File, Users, MessageSquare, Mail, Inbox, MailQuestion, Info, Sparkles } from "lucide-react";
+import { Image, FileText, File, Users, MessageSquare, Mail, Inbox, MailQuestion, Info, Sparkles, ChevronLeft } from "lucide-react";
 import DOMPurify from "isomorphic-dompurify";
 import EncapsulatedEmailContent from "./EncapsulatedEmailContent";
 import {
@@ -100,11 +100,12 @@ function WelcomeScreen({ userEmail }: WelcomeScreenProps) {
   );
 }
 
-interface ConversationViewProps {
+export interface ConversationViewProps {
   contactEmail: string | null;
   isLoading: boolean;
   isGroup?: boolean;
   groupId?: string | null;
+  onBack?: () => void;
 }
 
 const getAttachmentIcon = (mimeType: string | undefined) => {
@@ -134,6 +135,7 @@ export function ConversationView({
   isLoading,
   isGroup = false,
   groupId = null,
+  onBack,
 }: ConversationViewProps) {
   const { data: session } = useSession();
   const {
@@ -924,8 +926,19 @@ export function ConversationView({
         maxSize={15}
         className="border-b border-border bg-card/50 backdrop-blur supports-[backdrop-filter]:bg-background/60"
       >
-        <div className="flex justify-between items-center p-3 md:p-4">
-          <div className="flex items-center gap-3 min-w-0"> {/* Added min-w-0 for text truncation */}
+        <div className="flex justify-between items-center p-2 md:p-4">
+          <div className="flex items-center gap-2 md:gap-3 min-w-0"> {/* Reduced gap for mobile */}
+            {/* Back Button - Apple style */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 w-8 md:h-9 rounded-full flex items-center justify-center p-0 mr-0.5 text-primary hover:bg-primary/10 md:hidden"
+              onClick={onBack || (() => window.history.back())}
+              aria-label="Go back"
+            >
+              <ChevronLeft className="h-4 w-4 md:h-5 md:w-5" />
+            </Button>
+
             {isContactGroup && selectedGroup ? (
               // Group Display - Enhanced for mobile
               <div className="flex items-center gap-2 min-w-0">
@@ -1105,12 +1118,11 @@ export function ConversationView({
                 return (
                   <div
                     key={email.id}
-                    className={`flex ${isFromMe ? "justify-end" : "justify-start"
-                      } gap-3 items-end`}
+                    className={`flex ${isFromMe ? "justify-end" : "justify-start"} gap-2 md:gap-3 items-end`}
                   >
                     {/* Avatar on the left if it's from the contact */}
                     {!isFromMe && (
-                      <Avatar className="h-8 w-8">
+                      <Avatar className="h-7 w-7 md:h-8 md:w-8 flex-shrink-0">
                         <AvatarImage src={getGravatarUrl(email.from.email)} />
                         <AvatarFallback>
                           {contact?.name?.charAt(0) || "?"}
@@ -1119,36 +1131,34 @@ export function ConversationView({
                     )}
                     {/* Message bubble */}
                     <div
-                      className={`max-w-[85%] rounded-2xl p-4 ${isFromMe
-                        ? "bg-primary text-primary-foreground rounded-br-sm"
-                        : "bg-muted rounded-bl-sm"
-                        }`}
+                      className={cn(
+                        "min-w-0 max-w-[85vw] sm:max-w-[75%] md:max-w-[85%] rounded-2xl p-3 md:p-4",
+                        isFromMe
+                          ? "bg-primary text-primary-foreground rounded-br-sm"
+                          : "bg-muted rounded-bl-sm"
+                      )}
                     >
-                      <div className="flex flex-col gap-1">
-                        <div className="flex justify-between items-baseline gap-4">
-                          <span className="font-medium text-sm">
+                      <div className="flex flex-col gap-1 break-words">
+                        <div className="flex justify-between items-baseline gap-2 md:gap-4 flex-wrap">
+                          <span className="font-medium text-xs md:text-sm line-clamp-1">
                             {email.subject}
                           </span>
-                          <span className="text-xs opacity-70">
+                          <span className="text-[10px] md:text-xs opacity-70 flex-shrink-0">
                             {formatDistanceToNow(new Date(email.date || ""), {
                               addSuffix: true,
                               includeSeconds: true,
                             })}
-                            {email.accountType === "justcall" && (
-                              <span className="ml-1">
-                                [Debug:{" "}
-                                {new Date(email.date || "").toISOString()}]
-                              </span>
-                            )}
                           </span>
                         </div>
                         {/* Handle SMS message display */}
                         {(email.accountType === "twilio" || email.accountType === "justcall") ? (
-                          <div className="whitespace-pre-wrap font-mono text-sm">
+                          <div className="whitespace-pre-wrap font-mono text-xs md:text-sm break-words">
                             {email.body}
                           </div>
                         ) : (
-                          <EncapsulatedEmailContent html={DOMPurify.sanitize(email.body)} />
+                          <div className="max-w-full overflow-hidden">
+                            <EncapsulatedEmailContent html={DOMPurify.sanitize(email.body)} />
+                          </div>
                         )}
                         {/* Attachments */}
                         {email.attachments && email.attachments.length > 0 && (
@@ -1252,7 +1262,7 @@ export function ConversationView({
                     </div>
                     {/* Avatar on the right if it's from me */}
                     {isFromMe && (
-                      <Avatar className="h-8 w-8">
+                      <Avatar className="h-7 w-7 md:h-8 md:w-8 flex-shrink-0">
                         <AvatarImage src={session?.user?.image || `https://api.dicebear.com/9.x/glass/svg?radius=50&seed=${session?.user?.email}&randomizeIds=true`} />
                         <AvatarFallback>
                           {session?.user?.name?.charAt(0) || "U"}

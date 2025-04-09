@@ -45,6 +45,20 @@ export function EmailDashboard() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // Handle custom toggle-sidebar event from channel list
+  useEffect(() => {
+    const handleToggleSidebar = () => {
+      setIsSidebarOpen(prev => !prev);
+    };
+
+    // Listen for custom event
+    document.addEventListener('toggle-sidebar', handleToggleSidebar);
+
+    return () => {
+      document.removeEventListener('toggle-sidebar', handleToggleSidebar);
+    };
+  }, []);
+
   // Enhanced contact selection handler for mobile
   const handleContactSelect = (
     email: string,
@@ -252,21 +266,6 @@ export function EmailDashboard() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background">
-      {/* Mobile Menu Button */}
-      <div className={cn(
-        "fixed top-0 left-0 z-50 p-2 md:hidden",
-        showConversation && "hidden"
-      )}>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setIsSidebarOpen(true)}
-          className="h-10 w-10"
-        >
-          <Menu className="h-5 w-5" />
-        </Button>
-      </div>
-
       {/* Mobile Sidebar Overlay */}
       {isMobileView && isSidebarOpen && (
         <div
@@ -291,7 +290,7 @@ export function EmailDashboard() {
           <ResizablePanelGroup
             direction="horizontal"
             className="flex-1 h-full overflow-hidden"
-          > 
+          >
 
             <ResizableHandle />
 
@@ -333,6 +332,7 @@ export function EmailDashboard() {
                     isLoading={isLoading}
                     isGroup={isGroupSelected}
                     groupId={selectedGroupId}
+                    onBack={handleBackToList}
                   />
                 </ResizablePanel>
               </ResizablePanelGroup>
@@ -358,23 +358,12 @@ export function EmailDashboard() {
             "h-full w-full",
             isMobileView && !showConversation ? "hidden" : "block"
           )}>
-            {isMobileView && showConversation && (
-              <div className="flex items-center gap-2 p-2 border-b">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleBackToList}
-                  className="h-10 w-10"
-                >
-                  <ArrowLeft className="h-5 w-5" />
-                </Button>
-              </div>
-            )}
             <ConversationView
               contactEmail={selectedContact}
               isLoading={isLoading}
               isGroup={isGroupSelected}
               groupId={selectedGroupId}
+              onBack={handleBackToList}
             />
           </div>
         </div>
