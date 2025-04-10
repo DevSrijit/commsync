@@ -40,18 +40,21 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 Create the following products and prices in your Stripe dashboard:
 
 **Lite Plan:**
+
 ```bash
 stripe products create --name "Lite"
 stripe prices create --product=prod_... --unit-amount=600 --currency=usd --recurring[interval]=month
 ```
 
 **Standard Plan:**
+
 ```bash
 stripe products create --name "Standard"
 stripe prices create --product=prod_... --unit-amount=1500 --currency=usd --recurring[interval]=month
 ```
 
 **Business Plan:**
+
 ```bash
 stripe products create --name "Business"
 stripe prices create --product=prod_... --unit-amount=2500 --currency=usd --recurring[interval]=month
@@ -70,6 +73,7 @@ Set up a webhook in your Stripe dashboard to receive events:
    - `customer.subscription.deleted`
 
 For local development, use the Stripe CLI:
+
 ```bash
 stripe listen --forward-to localhost:3000/api/webhooks/stripe
 ```
@@ -94,7 +98,7 @@ stripe listen --forward-to localhost:3000/api/webhooks/stripe
 
 ### Creating Enterprise Subscriptions
 
-Use the admin API endpoint to create enterprise subscriptions:
+Use the admin API endpoint to create a checkout link for enterprise customers:
 
 ```bash
 curl -X POST https://your-domain.com/api/admin/enterprise \
@@ -102,7 +106,8 @@ curl -X POST https://your-domain.com/api/admin/enterprise \
   -H "Content-Type: application/json" \
   -d '{
     "email": "customer@example.com",
-    "priceId": "price_...",
+    "pricePerMonth": 499, # Price in dollars (499 = $499.00 per month)
+    "currency": "usd",
     "maxUsers": 50,
     "maxStorage": 5000,
     "maxConnections": 100, 
@@ -112,6 +117,64 @@ curl -X POST https://your-domain.com/api/admin/enterprise \
     }
   }'
 ```
+
+The API will:
+
+1. Create a custom price in Stripe with the specified amount
+2. Generate a checkout link for the customer
+3. Send an email to the customer with the checkout link
+4. Send a notification to the admin team
+5. Return the checkout URL in the response:
+
+```json
+{
+  "message": "Enterprise checkout link created successfully",
+  "checkoutUrl": "https://checkout.stripe.com/...",
+  "checkoutSessionId": "cs_test_...",
+  "organizationId": "org_..."
+}
+```
+
+### Enterprise Checkout Flow
+
+1. Customer receives email with checkout link
+2. Customer completes payment through Stripe checkout
+3. Stripe webhook notifies the application of successful payment
+4. System updates subscription status to active
+5. Confirmation emails are sent to both customer and admin team
+6. Customer can now access their enterprise features
+
+This workflow allows for a seamless self-service experience while maintaining control over enterprise pricing and limits.
+
+### Required Parameters
+
+- **email**: Customer's email address (must exist in the system)
+- **pricePerMonth**: Monthly price in whole currency units (e.g., 499 for $499.00)
+- **currency**: Currency code (default: "usd")
+- **maxUsers**: Maximum number of users allowed
+- **maxStorage**: Maximum storage in MB
+- **maxConnections**: Maximum number of connected accounts
+- **aiCredits**: Monthly AI credits allocation
+- **customLimits**: Optional JSON object for additional custom settings
+
+### Authentication
+
+The Admin API requires the `ADMIN_API_KEY` for authentication, which should be set in your environment variables.
+
+## Billing Process
+
+1. **Initial Setup**:
+   - Admin creates a checkout link via the API
+   - Customer receives email with checkout link
+   - Customer completes payment through Stripe checkout
+
+2. **Recurring Billing**:
+   - Stripe automatically bills the customer according to the subscription terms
+   - No additional manual steps required for recurring billing
+
+3. **Subscription Updates**:
+   - To change pricing or limits, use the admin API again to create a new checkout link
+   - Customer will need to complete the new checkout process
 
 ## Testing
 
@@ -123,6 +186,7 @@ curl -X POST https://your-domain.com/api/admin/enterprise \
    - `4000 0002 4000 0000` - Requires authentication
 
 2. Test webhook events using the Stripe CLI:
+
    ```bash
    stripe trigger customer.subscription.created
    stripe trigger customer.subscription.updated
@@ -172,4 +236,4 @@ The subscription system uses the following database models:
 2. Implement rate limiting for the enterprise inquiry form
 3. Use proper authentication for the admin API
 4. Validate all inputs on both client and server
-5. Store subscription data securely in your database 
+5. Store subscription data securely in your database

@@ -2,32 +2,41 @@ import { headers } from "next/headers";
 import { NextResponse } from "next/server";
 import { stripe, STRIPE_PLANS } from "@/lib/stripe";
 import { db } from "@/lib/db";
+import sgMail from "@sendgrid/mail";
+
+// Initialize SendGrid
+if (!process.env.SENDGRID_API_KEY) {
+  throw new Error("SENDGRID_API_KEY is not set");
+}
+
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 // Fallback to environment variable if needed
-const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || 'whsec_baA0PbKmcjQccNGchBQGL6JNIgQ8JJWh';
+const webhookSecret =
+  process.env.STRIPE_WEBHOOK_SECRET || "whsec_baA0PbKmcjQccNGchBQGL6JNIgQ8JJWh";
 
 // Structured logger to prevent excessive console output
 const logger = {
   info: (message: string, data?: any) => {
-    console.log(`[INFO] ${message}`, data ? data : '');
+    console.log(`[INFO] ${message}`, data ? data : "");
   },
   error: (message: string, error?: any) => {
-    console.error(`[ERROR] ${message}`, error ? error : '');
+    console.error(`[ERROR] ${message}`, error ? error : "");
   },
   debug: (message: string, data?: any) => {
-    if (process.env.DEBUG === 'true') {
-      console.log(`[DEBUG] ${message}`, data ? data : '');
+    if (process.env.DEBUG === "true") {
+      console.log(`[DEBUG] ${message}`, data ? data : "");
     }
-  }
+  },
 };
 
 async function handleSubscriptionCreated(subscription: any) {
   try {
     logger.info("Processing subscription creation", {
       id: subscription.id,
-      status: subscription.status
+      status: subscription.status,
     });
-    
+
     const organizationId = subscription.metadata?.organizationId;
     const planType = subscription.metadata?.planType;
     const userId = subscription.metadata?.userId;
@@ -35,18 +44,26 @@ async function handleSubscriptionCreated(subscription: any) {
     if (!organizationId || !planType) {
       logger.error("Missing required metadata in subscription", {
         id: subscription.id,
-        metadata: subscription.metadata
+        metadata: subscription.metadata,
       });
-      
+
       // Try to get the subscription directly from Stripe to ensure metadata is up-to-date
-      const refreshedSubscription = await stripe!.subscriptions.retrieve(subscription.id);
-      
+      const refreshedSubscription = await stripe!.subscriptions.retrieve(
+        subscription.id
+      );
+
       // Check if metadata is now available in the refreshed subscription
-      if (refreshedSubscription.metadata?.organizationId && refreshedSubscription.metadata?.planType) {
-        logger.info("Retrieved missing metadata from Stripe", refreshedSubscription.metadata);
+      if (
+        refreshedSubscription.metadata?.organizationId &&
+        refreshedSubscription.metadata?.planType
+      ) {
+        logger.info(
+          "Retrieved missing metadata from Stripe",
+          refreshedSubscription.metadata
+        );
         return await handleSubscriptionCreated(refreshedSubscription);
       }
-      
+
       return;
     }
 
@@ -63,13 +80,16 @@ async function handleSubscriptionCreated(subscription: any) {
       ? new Date(subscription.trial_end * 1000)
       : null;
 
-    logger.info("Creating/updating subscription in database", { organizationId, planType });
-    
+    logger.info("Creating/updating subscription in database", {
+      organizationId,
+      planType,
+    });
+
     // Check if subscription already exists to avoid duplicates
     const existingSubscription = await db.subscription.findUnique({
       where: { stripeSubscriptionId: subscription.id },
     });
-    
+
     if (existingSubscription) {
       logger.info("Updating existing subscription", { id: subscription.id });
       await db.subscription.update({
@@ -77,7 +97,9 @@ async function handleSubscriptionCreated(subscription: any) {
         data: {
           status: subscription.status,
           stripePriceId: subscription.items.data[0].price.id,
-          currentPeriodStart: new Date(subscription.current_period_start * 1000),
+          currentPeriodStart: new Date(
+            subscription.current_period_start * 1000
+          ),
           currentPeriodEnd: new Date(subscription.current_period_end * 1000),
           planType,
           maxUsers: planLimits.maxUsers,
@@ -99,7 +121,9 @@ async function handleSubscriptionCreated(subscription: any) {
           stripeSubscriptionId: subscription.id,
           stripePriceId: subscription.items.data[0].price.id,
           status: subscription.status,
-          currentPeriodStart: new Date(subscription.current_period_start * 1000),
+          currentPeriodStart: new Date(
+            subscription.current_period_start * 1000
+          ),
           currentPeriodEnd: new Date(subscription.current_period_end * 1000),
           planType,
           maxUsers: planLimits.maxUsers,
@@ -116,7 +140,9 @@ async function handleSubscriptionCreated(subscription: any) {
           cancelAtPeriodEnd: subscription.cancel_at_period_end,
         },
       });
-      logger.info("New subscription created successfully", { id: subscription.id });
+      logger.info("New subscription created successfully", {
+        id: subscription.id,
+      });
     }
 
     // If user ID was provided, ensure their email is verified
@@ -134,19 +160,19 @@ async function handleSubscriptionCreated(subscription: any) {
         logger.info("User email verified", { userId });
       }
     }
-    
+
     // Update organization with Stripe customer ID if needed
     if (subscription.customer) {
       await db.organization.update({
         where: { id: organizationId },
-        data: { stripeCustomerId: subscription.customer }
+        data: { stripeCustomerId: subscription.customer },
       });
-      logger.info("Updated organization with Stripe customer ID", { 
-        organizationId, 
-        stripeCustomerId: subscription.customer 
+      logger.info("Updated organization with Stripe customer ID", {
+        organizationId,
+        stripeCustomerId: subscription.customer,
       });
     }
-    
+
     logger.info("Subscription creation/update completed");
   } catch (error) {
     logger.error("Error handling subscription", error);
@@ -266,6 +292,168 @@ async function handleSubscriptionDeleted(subscription: any) {
   });
 }
 
+// New function to handle enterprise checkout completions
+async function handleEnterpriseCheckoutCompleted(session: any) {
+  try {
+    logger.info("Processing enterprise checkout completion", {
+      sessionId: session.id,
+    });
+
+    const metadata = session.metadata || {};
+    const subscriptionId = session.subscription as string;
+
+    if (!subscriptionId) {
+      logger.error("No subscription ID in checkout session", {
+        sessionId: session.id,
+      });
+      return;
+    }
+
+    // Check if this is an enterprise plan
+    if (metadata.planType !== "enterprise") {
+      logger.debug("Not an enterprise checkout", {
+        planType: metadata.planType,
+      });
+      return;
+    }
+
+    // Find pending subscription in database
+    const pendingSub = await db.subscription.findFirst({
+      where: {
+        organizationId: metadata.organizationId,
+        status: "incomplete",
+        customLimits: {
+          path: ["checkoutSessionId"],
+          equals: session.id,
+        },
+      },
+      include: {
+        organization: {
+          include: {
+            owner: true,
+          },
+        },
+      },
+    });
+
+    if (!pendingSub) {
+      logger.error("No pending subscription found for enterprise checkout", {
+        sessionId: session.id,
+        organizationId: metadata.organizationId,
+      });
+      return;
+    }
+
+    // Get the subscription from Stripe
+    const subscription = await stripe!.subscriptions.retrieve(subscriptionId);
+
+    // Update the subscription with enterprise-specific metadata
+    await stripe!.subscriptions.update(subscriptionId, {
+      metadata: {
+        ...subscription.metadata,
+        organizationId: metadata.organizationId,
+        planType: "enterprise",
+        maxUsers: metadata.maxUsers,
+        maxStorage: metadata.maxStorage,
+        maxConnections: metadata.maxConnections,
+        aiCredits: metadata.aiCredits,
+      },
+    });
+
+    // Update subscription in the database
+    await db.subscription.update({
+      where: { id: pendingSub.id },
+      data: {
+        stripeSubscriptionId: subscriptionId,
+        status: subscription.status,
+        currentPeriodStart: new Date(subscription.current_period_start * 1000),
+        currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+        maxUsers: parseInt(metadata.maxUsers),
+        maxStorage: parseInt(metadata.maxStorage),
+        maxConnections: parseInt(metadata.maxConnections),
+        totalStorage: parseInt(metadata.maxStorage),
+        totalConnections: parseInt(metadata.maxConnections),
+        totalAiCredits: parseInt(metadata.aiCredits),
+        customLimits: {
+          ...pendingSub.customLimits,
+          status: "active",
+          checkoutCompletedAt: new Date().toISOString(),
+        },
+      },
+    });
+
+    // Send confirmation emails
+    const owner = pendingSub.organization.owner;
+    if (owner && owner.email) {
+      // Email to customer
+      await sgMail.send({
+        to: owner.email,
+        from: "commsync@havenmediasolutions.com",
+        subject: "Your CommSync Enterprise Subscription is Active",
+        html: `
+          <h2>Welcome to CommSync Enterprise!</h2>
+          <p>Dear ${owner.name || "Valued Customer"},</p>
+          <p>Your enterprise subscription is now active. Thank you for choosing CommSync!</p>
+          
+          <h3>Your Plan Details</h3>
+          <ul>
+            <li><strong>Team Size:</strong> ${metadata.maxUsers} users</li>
+            <li><strong>Storage:</strong> ${metadata.maxStorage}MB</li>
+            <li><strong>Connected Accounts:</strong> ${
+              metadata.maxConnections
+            }</li>
+            <li><strong>AI Credits:</strong> ${
+              metadata.aiCredits
+            } per month</li>
+          </ul>
+          
+          <p>You can now access all enterprise features by logging into your dashboard:</p>
+          <p><a href="${
+            process.env.NEXT_PUBLIC_APP_URL
+          }/dashboard" style="padding: 10px 20px; background-color: #4F46E5; color: white; text-decoration: none; border-radius: 5px;">Go to Dashboard</a></p>
+          
+          <p>If you have any questions or need assistance, please don't hesitate to contact our support team.</p>
+          
+          <p>Thank you again for your business!</p>
+        `,
+      });
+
+      // Email to admin team
+      await sgMail.send({
+        to: "commsync@havenmediasolutions.com",
+        from: "commsync@havenmediasolutions.com",
+        subject: "Enterprise Subscription Activated",
+        html: `
+          <h2>Enterprise Subscription Payment Successful</h2>
+          <p><strong>Customer:</strong> ${owner.email} (${
+          owner.name || "No name"
+        })</p>
+          <p><strong>Subscription ID:</strong> ${subscriptionId}</p>
+          <p><strong>Plan Details:</strong></p>
+          <ul>
+            <li><strong>Team Size:</strong> ${metadata.maxUsers} users</li>
+            <li><strong>Storage:</strong> ${metadata.maxStorage}MB</li>
+            <li><strong>Connected Accounts:</strong> ${
+              metadata.maxConnections
+            }</li>
+            <li><strong>AI Credits:</strong> ${
+              metadata.aiCredits
+            } per month</li>
+          </ul>
+          <p><strong>Activated At:</strong> ${new Date().toISOString()}</p>
+        `,
+      });
+    }
+
+    logger.info("Enterprise subscription activated successfully", {
+      subscriptionId,
+      sessionId: session.id,
+    });
+  } catch (error) {
+    logger.error("Error handling enterprise checkout", error);
+  }
+}
+
 export async function POST(req: Request) {
   try {
     if (!webhookSecret) {
@@ -286,22 +474,27 @@ export async function POST(req: Request) {
 
     let event;
     try {
-      event = stripe!.webhooks.constructEvent(
-        body,
-        signature,
-        webhookSecret
-      );
+      event = stripe!.webhooks.constructEvent(body, signature, webhookSecret);
     } catch (err) {
       logger.error("Webhook signature verification failed", err);
-      return new NextResponse(`Webhook signature verification failed: ${(err as Error).message}`, {
-        status: 400
-      });
+      return new NextResponse(
+        `Webhook signature verification failed: ${(err as Error).message}`,
+        {
+          status: 400,
+        }
+      );
     }
 
     logger.info("Received webhook event", { type: event.type });
-    
+
     // Only log full event data for specific event types or in debug mode
-    if (["customer.subscription.created", "customer.subscription.updated", "checkout.session.completed"].includes(event.type)) {
+    if (
+      [
+        "customer.subscription.created",
+        "customer.subscription.updated",
+        "checkout.session.completed",
+      ].includes(event.type)
+    ) {
       logger.debug("Event data for important event", event.data.object);
     }
 
@@ -321,45 +514,61 @@ export async function POST(req: Request) {
           break;
         case "checkout.session.completed":
           const session = event.data.object;
-          
-          if (session.mode === 'subscription' && session.subscription) {
+
+          if (session.mode === "subscription" && session.subscription) {
             const subscriptionId = session.subscription as string;
-            logger.info("Processing subscription from checkout", { subscriptionId });
-            
+            logger.info("Processing subscription from checkout", {
+              subscriptionId,
+            });
+
             try {
               // Extract metadata from checkout session
               const metadata = session.metadata || {};
-              
-              // Get subscription from Stripe
-              const subscription = await stripe!.subscriptions.retrieve(subscriptionId);
-              
-              // If metadata is missing in the subscription but present in the session,
-              // update the subscription with session metadata
-              if (
-                (!subscription.metadata?.organizationId || !subscription.metadata?.planType) && 
-                (metadata.organizationId && metadata.planType)
-              ) {
-                logger.info("Updating subscription with metadata from checkout session", {
-                  subscriptionId,
-                  metadata
-                });
-                
-                // Update the subscription with metadata
-                await stripe!.subscriptions.update(subscriptionId, {
-                  metadata: {
-                    ...subscription.metadata,
-                    organizationId: metadata.organizationId,
-                    planType: metadata.planType,
-                    userId: metadata.userId
-                  }
-                });
-                
-                // Retrieve updated subscription
-                const updatedSubscription = await stripe!.subscriptions.retrieve(subscriptionId);
-                await handleSubscriptionCreated(updatedSubscription);
+
+              // Handle enterprise checkouts
+              if (metadata.planType === "enterprise") {
+                await handleEnterpriseCheckoutCompleted(session);
               } else {
-                // Create or update subscription with existing metadata
-                await handleSubscriptionCreated(subscription);
+                // Standard plan checkout
+                // Get subscription from Stripe
+                const subscription = await stripe!.subscriptions.retrieve(
+                  subscriptionId
+                );
+
+                // If metadata is missing in the subscription but present in the session,
+                // update the subscription with session metadata
+                if (
+                  (!subscription.metadata?.organizationId ||
+                    !subscription.metadata?.planType) &&
+                  metadata.organizationId &&
+                  metadata.planType
+                ) {
+                  logger.info(
+                    "Updating subscription with metadata from checkout session",
+                    {
+                      subscriptionId,
+                      metadata,
+                    }
+                  );
+
+                  // Update the subscription with metadata
+                  await stripe!.subscriptions.update(subscriptionId, {
+                    metadata: {
+                      ...subscription.metadata,
+                      organizationId: metadata.organizationId,
+                      planType: metadata.planType,
+                      userId: metadata.userId,
+                    },
+                  });
+
+                  // Retrieve updated subscription
+                  const updatedSubscription =
+                    await stripe!.subscriptions.retrieve(subscriptionId);
+                  await handleSubscriptionCreated(updatedSubscription);
+                } else {
+                  // Create or update subscription with existing metadata
+                  await handleSubscriptionCreated(subscription);
+                }
               }
             } catch (error) {
               logger.error("Error processing checkout session", error);
@@ -373,7 +582,9 @@ export async function POST(req: Request) {
           if (invoice.subscription) {
             try {
               const subscriptionId = invoice.subscription as string;
-              const subscription = await stripe!.subscriptions.retrieve(subscriptionId);
+              const subscription = await stripe!.subscriptions.retrieve(
+                subscriptionId
+              );
               await handleSubscriptionCreated(subscription);
             } catch (error) {
               logger.error("Error processing invoice event", error);
@@ -396,4 +607,3 @@ export async function POST(req: Request) {
     });
   }
 }
-
