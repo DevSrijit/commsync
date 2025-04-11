@@ -65,12 +65,12 @@ export default function FooterSection() {
             {
               name: "Privacy Policy",
               Icon: Scale,
-              href: "/legal/privacy",
+              href: "/privacy",
             },
             {
               name: "Terms of Service",
               Icon: Handshake,
-              href: "/legal/terms",
+              href: "/tos",
             },
           ],
         },
