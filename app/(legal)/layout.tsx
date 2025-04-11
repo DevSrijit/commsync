@@ -20,13 +20,13 @@ export default function LegalLayout({
                     </Link>
                     <nav className="flex items-center space-x-6 text-sm font-medium">
                         <Link
-                            href="/legal/privacy"
+                            href="/privacy"
                             className="transition-colors hover:text-primary"
                         >
                             Privacy Policy
                         </Link>
                         <Link
-                            href="/legal/tos"
+                            href="/tos"
                             className="transition-colors hover:text-primary"
                         >
                             Terms of Service
@@ -41,10 +41,10 @@ export default function LegalLayout({
                         &copy; {new Date().getFullYear()} CommSync. All rights reserved.
                     </p>
                     <nav className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <Link href="/legal/privacy" className="underline underline-offset-4 hover:text-primary">
+                        <Link href="/privacy" className="underline underline-offset-4 hover:text-primary">
                             Privacy
                         </Link>
-                        <Link href="/legal/tos" className="underline underline-offset-4 hover:text-primary">
+                        <Link href="/tos" className="underline underline-offset-4 hover:text-primary">
                             Terms
                         </Link>
                     </nav>
