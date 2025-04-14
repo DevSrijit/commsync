@@ -149,6 +149,7 @@ export function ConversationView({
     imapAccounts,
     twilioAccounts,
     justcallAccounts,
+    bulkvsAccounts,
   } = useEmailStore();
   const { toast } = useToast();
   const { sendMessage } = useSendMessage();
@@ -718,7 +719,7 @@ export function ConversationView({
 
   // Debug function for SMS message direction
   function debugSmsMessageDirection(email: Email, isFromMe: boolean) {
-    if (email.accountType !== 'twilio' && email.accountType !== 'justcall') {
+    if (email.accountType !== 'twilio' && email.accountType !== 'justcall' && email.accountType !== 'bulkvs') {
       return; // Only debug SMS messages
     }
 
@@ -1019,7 +1020,7 @@ export function ConversationView({
                   // For IMAP: check if this is the account owner's email
                   isFromMe = email.accountId === contact?.accountId &&
                     !email.from.email.includes(contactEmail);
-                } else if (email.accountType === "twilio" || email.accountType === "justcall") {
+                } else if (email.accountType === "twilio" || email.accountType === "justcall" || email.accountType === "bulkvs") {
                   // For SMS platforms: check direction property directly
 
                   // First check if there's an explicit direction label
@@ -1151,7 +1152,7 @@ export function ConversationView({
                           </span>
                         </div>
                         {/* Handle SMS message display */}
-                        {(email.accountType === "twilio" || email.accountType === "justcall") ? (
+                        {(email.accountType === "twilio" || email.accountType === "justcall" || email.accountType === "bulkvs") ? (
                           <div className="whitespace-pre-wrap font-mono text-xs md:text-sm break-words">
                             {email.body}
                           </div>
@@ -1372,7 +1373,7 @@ export function ConversationView({
                         attachments: uploadedAttachments,
                         accountId: selectedAccountId || undefined
                       }, session.user.accessToken);
-                    } else if (selectedPlatform === "twilio" || selectedPlatform === "justcall") {
+                    } else if (selectedPlatform === "twilio" || selectedPlatform === "justcall" || selectedPlatform === "bulkvs") {
                       // For SMS platforms with group, send individual messages
                       const phoneNumbers = group.phoneNumbers.length > 0
                         ? group.phoneNumbers
@@ -1413,14 +1414,18 @@ export function ConversationView({
                       accountId: selectedAccountId || undefined,
                       threadId
                     }, session.user.accessToken);
-                  } else if (selectedPlatform === "twilio" || selectedPlatform === "justcall") {
+                  } else if (selectedPlatform === "twilio" || selectedPlatform === "justcall" || selectedPlatform === "bulkvs") {
                     // For SMS platforms
                     let justcallNumber = undefined;
+                    let bulkvsNumber = undefined;
 
-                    // Get JustCall phone number if needed
+                    // Get provider specific phone number if needed
                     if (selectedPlatform === "justcall" && selectedAccountId) {
                       const account = justcallAccounts.find(a => a.id === selectedAccountId);
                       justcallNumber = account?.accountIdentifier || undefined;
+                    } else if (selectedPlatform === "bulkvs" && selectedAccountId) {
+                      const account = bulkvsAccounts.find(a => a.id === selectedAccountId);
+                      bulkvsNumber = account?.accountIdentifier || undefined;
                     }
 
                     await sendMessageWithRetry({
@@ -1429,7 +1434,8 @@ export function ConversationView({
                       content,
                       attachments: uploadedAttachments,
                       accountId: selectedAccountId || undefined,
-                      justcallNumber
+                      justcallNumber,
+                      bulkvsNumber
                     }, session.user.accessToken);
                   }
                 }

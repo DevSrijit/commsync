@@ -28,7 +28,7 @@ import { Switch } from "@/components/ui/switch";
 import { htmlToSmsText } from "@/lib/utils";
 
 // Define updated message platform types
-export type MessagePlatform = "gmail" | "imap" | "twilio" | "justcall";
+export type MessagePlatform = "gmail" | "imap" | "twilio" | "justcall" | "bulkvs";
 
 interface MessageComposerProps {
     open: boolean;
@@ -39,7 +39,7 @@ interface MessageComposerProps {
 export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerProps) {
     const { data: session } = useSession();
     const { toast } = useToast();
-    const { addEmail, imapAccounts, twilioAccounts, justcallAccounts } = useEmailStore();
+    const { addEmail, imapAccounts, twilioAccounts, justcallAccounts, bulkvsAccounts } = useEmailStore();
 
     const [recipients, setRecipients] = useState("");
     const [subject, setSubject] = useState("");
@@ -64,8 +64,10 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
             setSelectedAccountId(twilioAccounts[0].id);
         } else if (platform === "justcall" && justcallAccounts.length === 1 && justcallAccounts[0].id) {
             setSelectedAccountId(justcallAccounts[0].id);
+        } else if (platform === "bulkvs" && bulkvsAccounts.length === 1 && bulkvsAccounts[0].id) {
+            setSelectedAccountId(bulkvsAccounts[0].id);
         }
-    }, [platform, imapAccounts, twilioAccounts, justcallAccounts]);
+    }, [platform, imapAccounts, twilioAccounts, justcallAccounts, bulkvsAccounts]);
 
     const handleMessageInputSave = (content: string, uploadedAttachments: File[]) => {
         setMessageContent(content);
@@ -83,7 +85,7 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
         }
 
         // Validate account selection for platforms that need it
-        if ((platform === "imap" || platform === "twilio" || platform === "justcall") && !selectedAccountId) {
+        if ((platform === "imap" || platform === "twilio" || platform === "justcall" || platform === "bulkvs") && !selectedAccountId) {
             toast({
                 title: "Account required",
                 description: `Please select a ${platform.toUpperCase()} account`,
@@ -119,15 +121,16 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
                 return false;
             }
 
-            // For twilio and justcall, send individual messages
-            if (platform === "twilio" || platform === "justcall") {
+            // For twilio, justcall, and bulkvs, send individual messages
+            if (platform === "twilio" || platform === "justcall" || platform === "bulkvs") {
                 // Convert HTML to SMS text for SMS platforms
                 const formattedContent = htmlToSmsText(contentToSend);
 
                 // Send messages sequentially
                 for (const recipient of recipientList) {
-                    // Get account details for JustCall specifically
+                    // Get account details for specific platforms
                     let justcallNumber = undefined;
+                    let bulkvsNumber = undefined;
                     let restrictOnceValue = undefined;
 
                     if (platform === "justcall") {
@@ -136,6 +139,9 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
 
                         // Convert boolean to "Yes"/"No" string for JustCall API
                         restrictOnceValue = restrictOnce ? "Yes" as const : "No" as const;
+                    } else if (platform === "bulkvs") {
+                        const account = bulkvsAccounts.find(a => a.id === selectedAccountId);
+                        bulkvsNumber = account?.accountIdentifier || undefined;
                     }
 
                     await sendMessage({
@@ -146,6 +152,7 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
                         attachments: attachmentsToSend,
                         accountId: selectedAccountId,
                         justcallNumber: justcallNumber,
+                        bulkvsNumber: bulkvsNumber,
                         restrictOnce: restrictOnceValue
                     }, {
                         accessToken: session?.user?.accessToken,
@@ -228,6 +235,14 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
                     label: account.accountIdentifier || "JustCall Account"
                 }));
             placeholder = "Select JustCall account";
+        } else if (platform === "bulkvs") {
+            accounts = bulkvsAccounts
+                .filter(account => !!account.id)
+                .map(account => ({
+                    id: account.id as string,
+                    label: account.label || account.accountIdentifier || "BulkVS Account"
+                }));
+            placeholder = "Select BulkVS account";
         }
 
         if (accounts.length === 0) {
@@ -308,7 +323,7 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
                     <Label htmlFor="recipients" className="w-20 text-sm font-medium">To:</Label>
                     <Input
                         id="recipients"
-                        placeholder={platform === "twilio" || platform === "justcall"
+                        placeholder={platform === "twilio" || platform === "justcall" || platform === "bulkvs"
                             ? "Phone number(s) with country code"
                             : "Email address(es)"
                         }
@@ -355,6 +370,7 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
                                 <SelectItem value="imap">IMAP</SelectItem>
                                 <SelectItem value="twilio">Twilio</SelectItem>
                                 <SelectItem value="justcall">JustCall</SelectItem>
+                                <SelectItem value="bulkvs">BulkVS</SelectItem>
                             </SelectContent>
                         </Select>
                     </div>

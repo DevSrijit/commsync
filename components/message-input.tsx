@@ -21,6 +21,7 @@ import {
   MessageSquare,
   ChevronDown,
   Sparkles,
+  MessageCircle,
 } from "lucide-react";
 import Placeholder from "@tiptap/extension-placeholder";
 import Link from "@tiptap/extension-link";
@@ -55,7 +56,7 @@ import {
 } from "@/lib/ai-credits";
 
 // Add MessagePlatform type
-export type MessagePlatform = "gmail" | "imap" | "twilio" | "justcall";
+export type MessagePlatform = "gmail" | "imap" | "twilio" | "justcall" | "bulkvs";
 
 interface MessageInputProps {
   onSend: (content: string, attachments: File[]) => void;
@@ -102,7 +103,7 @@ export function MessageInput({
   const [subscriptionData, setSubscriptionData] = useState<any>(null);
 
   // Get accounts for platform selection
-  const { imapAccounts, twilioAccounts, justcallAccounts } = useEmailStore();
+  const { imapAccounts, twilioAccounts, justcallAccounts, bulkvsAccounts } = useEmailStore();
 
   const editor = useEditor({
     extensions: [
@@ -184,7 +185,7 @@ export function MessageInput({
     if (editor && !editor.isEmpty) {
       const content = editor.getHTML();
       // Convert HTML to SMS text if platform is SMS
-      const formattedContent = platform === "twilio" || platform === "justcall"
+      const formattedContent = platform === "twilio" || platform === "justcall" || platform === "bulkvs"
         ? htmlToSmsText(content)
         : content;
       onSend(formattedContent, attachments);
@@ -227,6 +228,8 @@ export function MessageInput({
         return <Phone className="h-4 w-4" />;
       case "justcall":
         return <MessageSquare className="h-4 w-4" />;
+      case "bulkvs":
+        return <MessageCircle className="h-4 w-4" />;
       default:
         return <Mail className="h-4 w-4" />;
     }
@@ -243,6 +246,8 @@ export function MessageInput({
         return "Twilio SMS";
       case "justcall":
         return "JustCall SMS";
+      case "bulkvs":
+        return "BulkVS SMS";
       default:
         return platform.charAt(0).toUpperCase() + platform.slice(1);
     }
@@ -263,6 +268,9 @@ export function MessageInput({
     } else if (platform === "justcall") {
       const account = justcallAccounts.find(acc => acc.id === accountId);
       return account?.accountIdentifier || "JustCall Account";
+    } else if (platform === "bulkvs") {
+      const account = bulkvsAccounts.find(acc => acc.id === accountId);
+      return account?.label || account?.accountIdentifier || "BulkVS Account";
     }
 
     return null;
@@ -282,6 +290,8 @@ export function MessageInput({
       newAccountId = twilioAccounts[0].id;
     } else if (newPlatform === "justcall" && justcallAccounts.length > 0) {
       newAccountId = justcallAccounts[0].id;
+    } else if (newPlatform === "bulkvs" && bulkvsAccounts.length > 0) {
+      newAccountId = bulkvsAccounts[0].id;
     }
 
     onPlatformChange(newPlatform, newAccountId);
@@ -632,7 +642,7 @@ export function MessageInput({
                 if (editor && !editor.isEmpty) {
                   const content = editor.getHTML();
                   // Convert HTML to SMS text if platform is SMS
-                  const formattedContent = platform === "twilio" || platform === "justcall"
+                  const formattedContent = platform === "twilio" || platform === "justcall" || platform === "bulkvs"
                     ? htmlToSmsText(content)
                     : content;
 
@@ -712,7 +722,7 @@ export function MessageInput({
             // Insert the generated message into the editor
             if (editor && generatedMessage) {
               // For SMS platforms, convert to plain text but preserve line breaks
-              if (platform === "twilio" || platform === "justcall") {
+              if (platform === "twilio" || platform === "justcall" || platform === "bulkvs") {
                 const formattedMessage = htmlToSmsText(generatedMessage);
                 editor.commands.setContent(formattedMessage);
               } else {
