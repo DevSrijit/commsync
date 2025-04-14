@@ -96,6 +96,8 @@ import {
 } from "@/components/ui/tooltip";
 import { useTheme } from "next-themes";
 import { OrganizationDialog } from "./organization-dialog";
+import { BulkvsAccountDialog } from "./bulkvs-account-dialog";
+import { BulkvsAccountCard } from "./bulkvs-account-card";
 
 export type MessageCategory =
   | "inbox"
@@ -116,12 +118,15 @@ export function Sidebar() {
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [isImapDialogOpen, setIsImapDialogOpen] = useState(false);
   const [isJustCallDialogOpen, setIsJustCallDialogOpen] = useState(false);
+  const [isBulkvsDialogOpen, setIsBulkvsDialogOpen] = useState(false);
   const [isImapListOpen, setIsImapListOpen] = useState(false);
   const [isJustCallListOpen, setIsJustCallListOpen] = useState(false);
   const [isTwilioListOpen, setIsTwilioListOpen] = useState(false);
+  const [isBulkvsListOpen, setIsBulkvsListOpen] = useState(false);
   const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false);
   const [justCallAccounts, setJustCallAccounts] = useState<any[]>([]);
   const [twilioAccounts, setTwilioAccounts] = useState<any[]>([]);
+  const [bulkvsAccounts, setBulkvsAccounts] = useState<any[]>([]);
   const [isTwilioDialogOpen, setIsTwilioDialogOpen] = useState(false);
   const [isSyncingSMS, setIsSyncingSMS] = useState(false);
   const [isSyncingEmail, setIsSyncingEmail] = useState(false);
@@ -226,12 +231,12 @@ export function Sidebar() {
 
   // Refresh subscription data when accounts change
   useEffect(() => {
-    if (imapAccounts.length > 0 || justCallAccounts.length > 0 || twilioAccounts.length > 0) {
+    if (imapAccounts.length > 0 || justCallAccounts.length > 0 || twilioAccounts.length > 0 || bulkvsAccounts.length > 0) {
       updateSubscriptionDataBackground();
     }
-  }, [imapAccounts.length, justCallAccounts.length, twilioAccounts.length, updateSubscriptionDataBackground]);
+  }, [imapAccounts.length, justCallAccounts.length, twilioAccounts.length, bulkvsAccounts.length, updateSubscriptionDataBackground]);
 
-  // Fetch JustCall accounts
+  // Fetch JustCall, Twilio, and BulkVS accounts
   useEffect(() => {
     const fetchJustCallAccounts = async () => {
       try {
@@ -245,7 +250,6 @@ export function Sidebar() {
       }
     };
 
-    // Fetch Twilio accounts
     const fetchTwilioAccounts = async () => {
       try {
         const response = await fetch('/api/twilio/account');
@@ -258,9 +262,22 @@ export function Sidebar() {
       }
     };
 
+    const fetchBulkvsAccounts = async () => {
+      try {
+        const response = await fetch('/api/bulkvs/account');
+        if (response.ok) {
+          const data = await response.json();
+          setBulkvsAccounts(data);
+        }
+      } catch (error) {
+        console.error('Error fetching BulkVS accounts:', error);
+      }
+    };
+
     if (session?.user) {
       fetchJustCallAccounts();
       fetchTwilioAccounts();
+      fetchBulkvsAccounts();
     }
 
     // Add event listeners for account updates
@@ -272,12 +289,18 @@ export function Sidebar() {
       setTwilioAccounts(event.detail);
     };
 
+    const handleBulkvsAccountsUpdated = (event: CustomEvent) => {
+      setBulkvsAccounts(event.detail);
+    };
+
     window.addEventListener('justcall-accounts-updated', handleJustCallAccountsUpdated as EventListener);
     window.addEventListener('twilio-accounts-updated', handleTwilioAccountsUpdated as EventListener);
+    window.addEventListener('bulkvs-accounts-updated', handleBulkvsAccountsUpdated as EventListener);
 
     return () => {
       window.removeEventListener('justcall-accounts-updated', handleJustCallAccountsUpdated as EventListener);
       window.removeEventListener('twilio-accounts-updated', handleTwilioAccountsUpdated as EventListener);
+      window.removeEventListener('bulkvs-accounts-updated', handleBulkvsAccountsUpdated as EventListener);
     };
   }, [session?.user]);
 
@@ -844,6 +867,10 @@ export function Sidebar() {
                           <SiTwilio className="h-4 w-4" />
                           <span>Twilio Account</span>
                         </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setIsBulkvsDialogOpen(true)} className="gap-2">
+                          <MailPlus className="h-4 w-4" />
+                          <span>BulkVS Account</span>
+                        </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onClick={() => setIsGroupDialogOpen(true)} className="gap-2">
                           <Users className="h-4 w-4" />
@@ -922,7 +949,7 @@ export function Sidebar() {
                         <span>SMS Accounts</span>
                       </div>
                       <Badge variant="outline" className="ml-auto mr-2 font-normal">
-                        {justCallAccounts.length + twilioAccounts.length}
+                        {justCallAccounts.length + twilioAccounts.length + bulkvsAccounts.length}
                       </Badge>
                       <ChevronRight className={cn(
                         "h-4 w-4 transition-transform duration-200",
@@ -952,6 +979,18 @@ export function Sidebar() {
                       <span className="flex-1 text-left">Twilio accounts</span>
                       <Badge variant="outline" className="ml-auto font-normal">
                         {twilioAccounts.length}
+                      </Badge>
+                    </Button>
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start px-2 py-1 text-xs rounded-md"
+                      onClick={() => setIsBulkvsListOpen(true)}
+                    >
+                      <span className="flex-1 text-left">BulkVS accounts</span>
+                      <Badge variant="outline" className="ml-auto font-normal">
+                        {bulkvsAccounts.length}
                       </Badge>
                     </Button>
                   </CollapsibleContent>
@@ -1093,6 +1132,39 @@ export function Sidebar() {
           </DialogContent>
         </Dialog>
 
+        {/* BulkVS Accounts Dialog */}
+        <Dialog open={isBulkvsListOpen} onOpenChange={setIsBulkvsListOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>BulkVS Accounts</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  setIsBulkvsListOpen(false);
+                  setIsBulkvsDialogOpen(true);
+                }}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add BulkVS Account
+              </Button>
+              <div className="space-y-2">
+                {bulkvsAccounts.map((account) => (
+                  <BulkvsAccountCard
+                    key={account.id}
+                    id={account.id}
+                    phoneNumber={account.accountIdentifier}
+                    label={account.platform}
+                    lastSync={account.lastSync}
+                  />
+                ))}
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* Message Composer */}
         <MessageComposer
           open={isComposerOpen}
@@ -1120,6 +1192,12 @@ export function Sidebar() {
         <TwilioAccountDialog
           open={isTwilioDialogOpen}
           onOpenChange={setIsTwilioDialogOpen}
+        />
+
+        {/* BulkVS Account Dialog */}
+        <BulkvsAccountDialog
+          open={isBulkvsDialogOpen}
+          onOpenChange={setIsBulkvsDialogOpen}
         />
 
         {/* Add Group Dialog */}

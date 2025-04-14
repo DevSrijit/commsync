@@ -328,6 +328,7 @@ export function EmailList({
           return contactEmails.some((email) =>
           (email.accountType === 'twilio' ||
             email.accountType === 'justcall' ||
+            email.accountType === 'bulkvs' ||
             (email.labels && email.labels.includes("SMS")))
           );
         case "contacts":
@@ -365,6 +366,7 @@ export function EmailList({
   const isSMSMessage = (email: Email) =>
     email.accountType === 'twilio' ||
     email.accountType === 'justcall' ||
+    email.accountType === 'bulkvs' ||
     (email.labels && email.labels.includes("SMS"));
 
   // Get all contacts with SMS messages
@@ -390,6 +392,7 @@ export function EmailList({
     const isSMSMessage = (email: Email) =>
       email.accountType === 'twilio' ||
       email.accountType === 'justcall' ||
+      email.accountType === 'bulkvs' ||
       (email.labels && email.labels.includes('SMS'));
 
     // Count SMS messages

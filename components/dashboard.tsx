@@ -24,7 +24,7 @@ export function EmailDashboard() {
   const [selectedContact, setSelectedContact] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [isGroupSelected, setIsGroupSelected] = useState(false);
-  const { setEmails, contacts, syncTwilioAccounts, syncJustcallAccounts } = useEmailStore();
+  const { setEmails, contacts, syncTwilioAccounts, syncJustcallAccounts, syncBulkvsAccounts } = useEmailStore();
   const [isLoading, setIsLoading] = useState(true);
   const [isBackgroundSync, setIsBackgroundSync] = useState(false);
   const initialLoadComplete = useRef(false);
@@ -193,6 +193,13 @@ export function EmailDashboard() {
           console.error("Failed to sync JustCall accounts:", error);
         }
 
+        // Sync BulkVS accounts
+        try {
+          await syncBulkvsAccounts();
+        } catch (error) {
+          console.error("Failed to sync BulkVS accounts:", error);
+        }
+
         // Wait for all syncs to complete
         const results = await Promise.allSettled(syncPromises);
 
@@ -248,7 +255,7 @@ export function EmailDashboard() {
     }, 5 * 60 * 1000);
 
     return () => clearInterval(intervalId);
-  }, [session, setEmails, syncTwilioAccounts, syncJustcallAccounts]);
+  }, [session, setEmails, syncTwilioAccounts, syncJustcallAccounts, syncBulkvsAccounts]);
 
   // Set the first contact as selected by default when contacts load
   useEffect(() => {

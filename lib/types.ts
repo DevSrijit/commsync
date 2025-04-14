@@ -30,7 +30,7 @@ export interface Email {
   labels: string[]; // Keep this required
   attachments?: EmailAttachment[];
   accountId?: string;
-  accountType?: "gmail" | "imap" | "justcall" | "twilio";
+  accountType?: "gmail" | "imap" | "justcall" | "twilio" | "bulkvs";
   read?: boolean;
   platform?: string; // Added for platform indication
   source?: string; // Added to track data source (gmail-api, imap, etc.)
@@ -63,7 +63,7 @@ export interface Contact {
   lastMessageSubject: string;
   labels: string[]; // Keep this required
   accountId?: string;
-  accountType?: "gmail" | "imap" | "justcall" | "twilio";
+  accountType?: "gmail" | "imap" | "justcall" | "twilio" | "bulkvs";
   searchScore?: number;
   matchedFields?: Set<string>;
 }
@@ -166,4 +166,28 @@ export interface JustCallMessage {
 export interface JustCallWebhookPayload {
   event: string;
   data: JustCallMessage;
+}
+
+// BulkVS specific types
+export interface BulkVSMessage {
+  id: string;
+  number: string;
+  contact_number: string;
+  body: string;
+  direction: "inbound" | "outbound";
+  created_at: string;
+  updated_at: string;
+  status: string;
+  media?: any[];
+  threadId?: string;
+  // BulkVS specific fields
+  from: string;
+  to: string;
+  message?: string;
+  media_urls?: any[];
+}
+
+export interface BulkVSWebhookPayload {
+  event: string;
+  data: BulkVSMessage;
 }

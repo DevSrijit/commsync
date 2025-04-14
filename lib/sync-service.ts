@@ -6,6 +6,8 @@ import { EmailContentLoader } from "@/lib/email-content-loader";
 import { db } from "@/lib/db";
 import { JustCallService } from "@/lib/justcall-service";
 import { TwilioService } from "@/lib/twilio-service";
+import { BulkVSService } from "@/lib/bulkvs-service";
+import { Account } from "@prisma/client";
 
 export class SyncService {
   private static instance: SyncService;
@@ -216,7 +218,7 @@ export const syncImapAccounts = async (
     return {
       success: accounts.length,
       failed: 0,
-      results: accounts.map((acc) => ({
+      results: accounts.map((acc: Account) => ({
         accountId: acc.id,
         status: "success",
       })),
@@ -263,7 +265,7 @@ export const syncJustCallAccounts = async (
     console.log(`Syncing ${accounts.length} JustCall accounts`);
 
     const results = await Promise.allSettled(
-      accounts.map(async (account) => {
+      accounts.map(async (account: any) => {
         try {
           const justCallService = new JustCallService(account);
 
@@ -430,7 +432,7 @@ export const syncTwilioAccounts = async (
     console.log(`Syncing ${accounts.length} Twilio accounts`);
 
     const results = await Promise.allSettled(
-      accounts.map(async (account) => {
+      accounts.map(async (account: any) => {
         try {
           const twilioService = new TwilioService(account);
 
@@ -506,6 +508,186 @@ export const syncTwilioAccounts = async (
   }
 };
 
+// Add BulkVS sync functionality
+export const syncBulkvsAccounts = async (
+  userId?: string,
+  options?: {
+    phoneNumber?: string;
+    accountId?: string;
+    pageSize?: number;
+    lastSmsIdFetched?: string;
+    sortDirection?: "asc" | "desc";
+  }
+): Promise<{ success: number; failed: number; results: any[] }> => {
+  try {
+    // Query for all active BulkVS accounts, optionally filtered by userId and accountId
+    let query: any = { platform: "bulkvs" };
+
+    if (userId) {
+      query.userId = userId;
+    }
+
+    if (options?.accountId) {
+      query.id = options.accountId;
+    }
+
+    const accounts = await db.syncAccount.findMany({
+      where: query,
+    });
+
+    console.log(`Syncing ${accounts.length} BulkVS accounts`);
+
+    const results = await Promise.allSettled(
+      accounts.map(async (account:any) => {
+        try {
+          const bulkvsService = new BulkVSService(account);
+
+          // Get the phone number from either the options or the accountIdentifier field
+          const phoneNumber = options?.phoneNumber || account.accountIdentifier;
+
+          if (!phoneNumber) {
+            console.warn(
+              `No phone number specified for BulkVS account ${account.id}, skipping`
+            );
+            return {
+              accountId: account.id,
+              processed: 0,
+              skipped: 0,
+              error: "No phone number specified",
+            };
+          }
+
+          console.log(
+            `Syncing messages for BulkVS account ${account.id} with phone number: ${phoneNumber}`
+          );
+
+          // Use cursor-based pagination with lastSmsIdFetched
+          console.log(`BulkVS sync for account ${account.id}:`);
+          console.log(`- Phone: ${phoneNumber}`);
+          console.log(`- Sort: ${options?.sortDirection || "desc"}`);
+          console.log(
+            `- Pagination cursor: ${options?.lastSmsIdFetched || "none"}`
+          );
+
+          // Get messages using the lastSmsIdFetched for pagination instead of date-based filtering
+          const result = await bulkvsService.getMessages(
+            phoneNumber,
+            undefined, // No date filtering needed
+            options?.pageSize || 100,
+            options?.lastSmsIdFetched,
+            options?.sortDirection || "desc" // Default to desc for newest first
+          );
+
+          // Extract the messages array from the result
+          const messages = result.messages;
+          const rateLimited = result.rateLimited;
+          const retryAfter = result.retryAfter;
+
+          // Include rate limit information in the response
+          if (rateLimited) {
+            console.warn(
+              `⚠️ BulkVS API rate limit reached for account ${account.id}`
+            );
+            if (retryAfter) {
+              console.warn(
+                `   Recommended to wait ${retryAfter} seconds before next request`
+              );
+            }
+          }
+
+          // Add debug logging to inspect the retrieved messages
+          if (messages.length > 0) {
+            console.log(
+              `Retrieved ${messages.length} BulkVS messages for account ${account.id}.`
+            );
+            console.log(
+              `Message ID range: ${messages[0].id} - ${
+                messages[messages.length - 1].id
+              }`
+            );
+
+            // Remember the oldest message ID for returning to the caller
+            const oldestMessageId = messages[messages.length - 1].id;
+
+            // Log a sample of messages
+            const sampleSize = Math.min(3, messages.length);
+            console.log(`Sample of ${sampleSize} messages (showing IDs):`);
+            messages.slice(0, sampleSize).forEach((msg, idx) => {
+              console.log(`- ${msg.id}`);
+            });
+          } else {
+            console.log(`No messages retrieved for account ${account.id}`);
+          }
+
+          let processedCount = 0;
+          let skippedCount = 0;
+
+          // Process each message
+          for (const message of messages) {
+            try {
+              // Skip outbound messages as they were likely sent from our system
+              if (!message || message.direction === "outbound") {
+                skippedCount++;
+                continue;
+              }
+
+              await bulkvsService.processIncomingMessage(message);
+              processedCount++;
+            } catch (messageError) {
+              console.error(
+                `Error processing message in BulkVS account ${account.id}:`,
+                messageError,
+                "Message:",
+                JSON.stringify(message)
+              );
+              skippedCount++;
+            }
+          }
+
+          // Only update last sync time if we're not using pagination for loading more messages
+          // This way we don't affect the sync time when just loading more historical messages
+          if (!options?.lastSmsIdFetched) {
+            // Store the sync time but don't affect message timestamps
+            await db.syncAccount.update({
+              where: { id: account.id },
+              data: { lastSync: new Date() },
+            });
+          }
+
+          // Return data including the oldest message ID for pagination
+          const oldestMessageId =
+            messages.length > 0 ? messages[messages.length - 1].id : null;
+
+          return {
+            accountId: account.id,
+            processed: processedCount,
+            skipped: skippedCount,
+            lastMessageId: oldestMessageId, // Return the oldest message ID for pagination
+            rateLimited,
+            retryAfter,
+          };
+        } catch (error) {
+          console.error(`Error syncing BulkVS account ${account.id}:`, error);
+          throw error;
+        }
+      })
+    );
+
+    return {
+      success: results.filter(
+        (r: PromiseSettledResult<any>) => r.status === "fulfilled"
+      ).length,
+      failed: results.filter(
+        (r: PromiseSettledResult<any>) => r.status === "rejected"
+      ).length,
+      results,
+    };
+  } catch (error) {
+    console.error("Error in syncBulkvsAccounts:", error);
+    throw error;
+  }
+};
+
 // Sync all accounts for a user
 export const syncAllAccountsForUser = async (
   userId: string
@@ -513,15 +695,18 @@ export const syncAllAccountsForUser = async (
   imap: { success: number; failed: number; results: any[] } | null;
   justCall: { success: number; failed: number; results: any[] } | null;
   twilio: { success: number; failed: number; results: any[] } | null;
+  bulkvs: { success: number; failed: number; results: any[] } | null;
 }> => {
   const results: {
     imap: { success: number; failed: number; results: any[] } | null;
     justCall: { success: number; failed: number; results: any[] } | null;
     twilio: { success: number; failed: number; results: any[] } | null;
+    bulkvs: { success: number; failed: number; results: any[] } | null;
   } = {
     imap: null,
     justCall: null,
     twilio: null,
+    bulkvs: null,
   };
 
   try {
@@ -558,6 +743,20 @@ export const syncAllAccountsForUser = async (
   } catch (error) {
     console.error("Error syncing Twilio accounts:", error);
     results.twilio = {
+      success: 0,
+      failed: 1,
+      results: [
+        { error: error instanceof Error ? error.message : "Unknown error" },
+      ],
+    };
+  }
+
+  try {
+    // Sync BulkVS accounts
+    results.bulkvs = await syncBulkvsAccounts(userId);
+  } catch (error) {
+    console.error("Error syncing BulkVS accounts:", error);
+    results.bulkvs = {
       success: 0,
       failed: 1,
       results: [

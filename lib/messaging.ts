@@ -6,7 +6,12 @@ import { useState } from "react";
 import { uploadFilesToAppwrite } from "@/lib/appwrite-service";
 
 // Updated MessagePlatform type to match our supported platforms
-export type MessagePlatform = "gmail" | "imap" | "twilio" | "justcall";
+export type MessagePlatform =
+  | "gmail"
+  | "imap"
+  | "twilio"
+  | "justcall"
+  | "bulkvs";
 
 export interface MessageAttachment {
   name: string;
@@ -23,6 +28,7 @@ export interface MessageData {
   accountId?: string; // Added accountId for platform-specific accounts
   justcallNumber?: string;
   restrictOnce?: "Yes" | "No"; // JustCall API requires "Yes" or "No"
+  bulkvsNumber?: string;
   threadId?: string | null; // Added for Gmail threading support
 }
 
@@ -161,20 +167,54 @@ export const useSendMessage = () => {
               to: messageData.recipients,
               body: messageData.content,
               // Handle media attachments for JustCall
-              media: await processAttachmentsForJustCall(messageData.attachments),
+              media: await processAttachmentsForJustCall(
+                messageData.attachments
+              ),
               // Add JustCall number if provided in messageData (optional)
               justcall_number: messageData.justcallNumber,
               // Optional restrict_once parameter
-              restrict_once: messageData.restrictOnce
+              restrict_once: messageData.restrictOnce,
             }),
           });
 
           if (!justcallResponse.ok) {
             const errorData = await justcallResponse.json();
-            throw new Error(errorData.error || "Failed to send JustCall message");
+            throw new Error(
+              errorData.error || "Failed to send JustCall message"
+            );
           }
 
           result = await justcallResponse.json();
+          break;
+
+        case "bulkvs":
+          if (!messageData.accountId) {
+            throw new Error("BulkVS sending requires an account ID");
+          }
+
+          // Call BulkVS API endpoint
+          const bulkvsResponse = await fetch("/api/bulkvs/send", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              accountId: messageData.accountId,
+              to: messageData.recipients,
+              body: messageData.content,
+              // Handle media attachments for BulkVS
+              media: await processAttachmentsForBulkVS(messageData.attachments),
+              // Add BulkVS number if provided in messageData (optional)
+              from: messageData.bulkvsNumber,
+            }),
+          });
+
+          if (!bulkvsResponse.ok) {
+            const errorData = await bulkvsResponse.json();
+            throw new Error(errorData.error || "Failed to send BulkVS message");
+          }
+
+          result = await bulkvsResponse.json();
           break;
 
         default:
@@ -244,17 +284,35 @@ export const sendMessage = async (
 };
 
 // Helper function to process attachment files for JustCall
-async function processAttachmentsForJustCall(files?: File[]): Promise<string[]> {
+async function processAttachmentsForJustCall(
+  files?: File[]
+): Promise<string[]> {
   if (!files || files.length === 0) {
     return [];
   }
-  
+
   try {
     // Upload files to Appwrite and get public URLs
     const mediaUrls = await uploadFilesToAppwrite(files);
     return mediaUrls;
   } catch (error) {
-    console.error('Error processing attachments for JustCall:', error);
-    throw new Error('Failed to process media attachments');
+    console.error("Error processing attachments for JustCall:", error);
+    throw new Error("Failed to process media attachments");
+  }
+}
+
+// Helper function to process attachment files for BulkVS
+async function processAttachmentsForBulkVS(files?: File[]): Promise<string[]> {
+  if (!files || files.length === 0) {
+    return [];
+  }
+
+  try {
+    // Upload files to Appwrite and get public URLs
+    const mediaUrls = await uploadFilesToAppwrite(files);
+    return mediaUrls;
+  } catch (error) {
+    console.error("Error processing attachments for BulkVS:", error);
+    throw new Error("Failed to process media attachments");
   }
 }
