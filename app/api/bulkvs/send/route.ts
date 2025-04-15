@@ -39,11 +39,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    if (!body) {
+    if (!body && (!requestData.media || requestData.media.length === 0)) {
       return NextResponse.json(
         {
           error: "Missing required parameter",
-          details: "message body is required",
+          details: "message body or media is required",
         },
         { status: 400 }
       );
@@ -83,10 +83,17 @@ export async function POST(req: NextRequest) {
     // Format the recipient number if needed
     const formattedTo = to.trim();
 
+    // Determine if this is SMS or MMS based on media
+    const messageType = media.length > 0 ? "MMS" : "SMS";
+
+    console.log(
+      `Sending BulkVS ${messageType} message to ${formattedTo} using /messageSend endpoint`
+    );
+
     // Send the message
     const messageResponse = await bulkvsService.sendMessage(
       formattedTo,
-      body,
+      body || "", // Ensure body is not undefined, even for MMS with empty text
       media,
       from
     );
@@ -95,8 +102,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       {
         success: true,
-        message: "Message sent successfully",
+        message: `${messageType} message sent successfully`,
         data: messageResponse,
+        messageType,
       },
       { status: 200 }
     );
@@ -117,9 +125,38 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (
+      error.message?.includes("Not Found") ||
+      error.message?.includes("404")
+    ) {
+      return NextResponse.json(
+        {
+          error: "API endpoint not found",
+          details:
+            "The BulkVS API messageSend endpoint could not be found. Please verify API access is enabled.",
+        },
+        { status: 404 }
+      );
+    }
+
     if (error.message?.includes("phone number")) {
       return NextResponse.json(
         { error: "Invalid phone number", details: error.message },
+        { status: 400 }
+      );
+    }
+
+    // Handle campaign registration errors
+    if (
+      error.message?.includes("campaign") ||
+      error.message?.includes("10DLC")
+    ) {
+      return NextResponse.json(
+        {
+          error: "Campaign registration required",
+          details:
+            "To send SMS messages, you need to register a campaign with BulkVS. Please contact BulkVS support for assistance.",
+        },
         { status: 400 }
       );
     }

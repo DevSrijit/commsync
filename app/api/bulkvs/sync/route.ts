@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
+import { db } from "@/lib/db";
 import { syncBulkvsAccounts } from "@/lib/sync-service";
 
 export async function POST(req: NextRequest) {
   try {
+    // Validate user session
     const session = await getServerSession(authOptions);
 
     if (!session || !session.user || !session.user.id) {
@@ -14,16 +16,9 @@ export async function POST(req: NextRequest) {
     const userId = session.user.id;
     const requestData = await req.json();
 
-    // Extract options from request
-    const {
-      accountId,
-      phoneNumber,
-      pageSize,
-      lastSmsIdFetched,
-      sortDirection = "desc",
-    } = requestData;
+    // Validate required parameters
+    const { accountId } = requestData;
 
-    // Validate request parameters
     if (!accountId) {
       return NextResponse.json(
         {
@@ -34,44 +29,75 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Prepare sync options
+    // Verify account ownership
+    const account = await db.syncAccount.findUnique({
+      where: {
+        id: accountId,
+        userId,
+      },
+    });
+
+    if (!account) {
+      return NextResponse.json(
+        {
+          error: "Account not found or unauthorized",
+          details: "BulkVS account not found or you don't have access",
+        },
+        { status: 404 }
+      );
+    }
+
+    // Check if account is a BulkVS account
+    if (account.platform !== "bulkvs") {
+      return NextResponse.json(
+        {
+          error: "Invalid account type",
+          details: "The specified account is not a BulkVS account",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Extract sync options
     const options = {
-      phoneNumber,
       accountId,
-      pageSize: pageSize ? Number(pageSize) : undefined,
-      lastSmsIdFetched,
-      sortDirection: sortDirection as "asc" | "desc",
+      phoneNumber: account.accountIdentifier,
+      pageSize: requestData.pageSize || 100,
+      lastSmsIdFetched: requestData.lastSmsIdFetched,
+      sortDirection: (requestData.sortDirection as "asc" | "desc") || "desc",
+      isLoadingMore: !!requestData.isLoadingMore,
     };
 
-    // Sync BulkVS messages for the specified account
-    const result = await syncBulkvsAccounts(userId, options);
+    console.log(
+      `Syncing BulkVS account ${accountId} for user ${userId}`,
+      options
+    );
 
-    // Extract the results for the specific account
-    const accountResults = result.results
-      .map((r) => (r.status === "fulfilled" ? r.value : null))
-      .filter((r) => r && r.accountId === accountId);
+    // Since BulkVS only receives messages through webhooks and doesn't have a message retrieval API,
+    // this sync operation just updates the lastSync time to indicate a sync was attempted
+    await db.syncAccount.update({
+      where: { id: accountId },
+      data: { lastSync: new Date() },
+    });
 
-    // Format the response
-    const syncResult = accountResults[0] || {};
-    const messages = syncResult.messages || [];
-    const rateLimited = syncResult.rateLimited || false;
-    const retryAfter = syncResult.retryAfter || 0;
-
+    return NextResponse.json({
+      success: true,
+      message:
+        "BulkVS account sync completed. Note: BulkVS only receives messages through webhooks, past messages cannot be retrieved.",
+      webhook_status:
+        "Sync only updates the last sync time. Make sure you have configured webhooks in your BulkVS account to receive new messages.",
+      account: {
+        id: account.id,
+        lastSync: new Date(),
+      },
+    });
+  } catch (error: any) {
+    console.error("Error in BulkVS sync:", error);
     return NextResponse.json(
       {
-        success: true,
-        accountId,
-        messages,
-        rateLimited,
-        retryAfter,
-        lastMessageId: syncResult.lastMessageId || null,
+        error: "Failed to sync BulkVS account",
+        details: error.message || "Unknown error",
       },
-      { status: 200 }
-    );
-  } catch (error: any) {
-    console.error("Error syncing BulkVS messages:", error);
-    return NextResponse.json(
-      { error: "Failed to sync BulkVS messages", details: error.message },
       { status: 500 }
     );
   }

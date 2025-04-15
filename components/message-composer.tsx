@@ -142,6 +142,17 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
                     } else if (platform === "bulkvs") {
                         const account = bulkvsAccounts.find(a => a.id === selectedAccountId);
                         bulkvsNumber = account?.accountIdentifier || undefined;
+
+                        // For BulkVS, validate that recipient has a country code
+                        const recipientNumber = recipient.trim();
+                        if (!recipientNumber.startsWith('+')) {
+                            toast({
+                                title: "Invalid phone number format",
+                                description: "BulkVS requires phone numbers to include the country code (e.g., +1XXXXXXXXXX)",
+                                variant: "destructive",
+                            });
+                            return false;
+                        }
                     }
 
                     await sendMessage({
@@ -317,16 +328,21 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
         // For email platforms, show subject field
         const showSubjectField = platform === "gmail" || platform === "imap";
 
+        // Get placeholder text based on platform
+        let recipientPlaceholder = "Email address(es)";
+        if (platform === "twilio" || platform === "justcall") {
+            recipientPlaceholder = "Phone number(s) with country code";
+        } else if (platform === "bulkvs") {
+            recipientPlaceholder = "Phone number with country code (e.g., +1XXXXXXXXXX)";
+        }
+
         return (
             <>
                 <div className="flex items-center gap-2">
                     <Label htmlFor="recipients" className="w-20 text-sm font-medium">To:</Label>
                     <Input
                         id="recipients"
-                        placeholder={platform === "twilio" || platform === "justcall" || platform === "bulkvs"
-                            ? "Phone number(s) with country code"
-                            : "Email address(es)"
-                        }
+                        placeholder={recipientPlaceholder}
                         value={recipients}
                         onChange={(e) => setRecipients(e.target.value)}
                         className="flex-1 border-0 shadow-none focus-visible:ring-0 p-0 h-auto text-sm"

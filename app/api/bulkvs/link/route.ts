@@ -18,9 +18,14 @@ export async function POST(req: NextRequest) {
     const requestData = await req.json();
 
     // Validate input data
-    const { label, apiKey, phoneNumber } = requestData;
+    const {
+      label,
+      apiKey,
+      phoneNumber,
+      apiUsername,
+    } = requestData;
 
-    if (!label || !apiKey || !phoneNumber) {
+    if (!label || !apiKey || !phoneNumber || !apiUsername) {
       return NextResponse.json(
         {
           error: "Missing required fields",
@@ -35,6 +40,8 @@ export async function POST(req: NextRequest) {
       JSON.stringify({
         apiKey,
         phoneNumber,
+        apiUsername,
+        useBasicAuth: true,
       })
     );
 
@@ -74,34 +81,84 @@ export async function POST(req: NextRequest) {
 
       const bulkvsService = new BulkVSService(testAccount);
 
-      // Make a test request to get the phone numbers
-      const phoneNumbers = await bulkvsService.getPhoneNumbers();
+      console.log(
+        `Validating BulkVS credentials for phone number: ${phoneNumber}`
+      );
 
-      // Check if the provided phone number exists in the account
-      let phoneNumberExists = false;
-      let availableNumbers: string[] = [];
+      // First check basic API connectivity
+      const apiStatus = await bulkvsService.checkApiStatus();
+      console.log(
+        `BulkVS API status check: ${apiStatus.success ? "Success" : "Failed"}`
+      );
+      console.log(`Status message: ${apiStatus.message}`);
 
-      if (Array.isArray(phoneNumbers)) {
-        phoneNumbers.forEach((num: any) => {
-          if (num.number) {
-            availableNumbers.push(num.number);
-            if (num.number === phoneNumber) {
-              phoneNumberExists = true;
-            }
-          }
-        });
+      if (!apiStatus.success) {
+        throw new Error(
+          `BulkVS API connectivity check failed: ${apiStatus.message}`
+        );
       }
 
-      if (!phoneNumberExists && availableNumbers.length > 0) {
-        return NextResponse.json(
-          {
-            error: "Invalid phone number",
-            details:
-              "The provided phone number does not exist in your BulkVS account",
-            availableNumbers,
-          },
-          { status: 400 }
+      try {
+        // Make a test request to get the phone numbers
+        const phoneNumbers = await bulkvsService.getPhoneNumbers();
+        console.log(
+          `Received ${phoneNumbers?.length || 0} phone numbers from BulkVS API`
         );
+
+        // Check if the provided phone number exists in the account
+        let phoneNumberExists = false;
+        let availableNumbers: string[] = [];
+
+        if (Array.isArray(phoneNumbers)) {
+          phoneNumbers.forEach((num: any) => {
+            if (num.number) {
+              availableNumbers.push(num.number);
+              if (num.number === phoneNumber) {
+                phoneNumberExists = true;
+              }
+            }
+          });
+        }
+
+        if (!phoneNumberExists && availableNumbers.length > 0) {
+          return NextResponse.json(
+            {
+              error: "Invalid phone number",
+              details:
+                "The provided phone number does not exist in your BulkVS account",
+              availableNumbers,
+            },
+            { status: 400 }
+          );
+        }
+
+        // If no phone numbers were returned but there was no error, give a different message
+        if (availableNumbers.length === 0) {
+          console.warn("No phone numbers found in BulkVS account");
+
+          // Try a simpler test request to verify API access
+          try {
+            console.log("Testing BulkVS API access with a debug request");
+            const debugInfo = await bulkvsService.getAllMessagesDebug(1);
+
+            // If we get here, the API is accessible but there might be no numbers
+            console.log("BulkVS API is accessible but no phone numbers found");
+
+            // Still allow account creation if they can access the API but have no numbers
+            console.log(
+              "Proceeding with account creation despite no phone numbers found"
+            );
+          } catch (debugApiError) {
+            console.error("Debug API request also failed:", debugApiError);
+            throw new Error(
+              "Could not find any phone numbers in your BulkVS account. Please check your account status with BulkVS."
+            );
+          }
+        }
+      } catch (apiError: any) {
+        // Handle specific API errors
+        console.error("BulkVS API error:", apiError);
+        throw apiError; // Pass the error to the outer catch block
       }
     } catch (validationError: any) {
       console.error("BulkVS validation error:", validationError);
@@ -112,8 +169,40 @@ export async function POST(req: NextRequest) {
         validationError.message?.includes("401")
       ) {
         return NextResponse.json(
-          { error: "Authentication failed", details: "Invalid API key" },
+          {
+            error: "Authentication failed",
+            details:
+              "Invalid credentials - please check your API username and API Password/Token",
+          },
           { status: 401 }
+        );
+      }
+
+      if (
+        validationError.message?.includes("SyntaxError") ||
+        validationError.message?.includes("Unexpected end of JSON")
+      ) {
+        return NextResponse.json(
+          {
+            error: "BulkVS API response error",
+            details:
+              "The BulkVS API returned an invalid response. Please check if your account has API access enabled or contact BulkVS support.",
+          },
+          { status: 400 }
+        );
+      }
+
+      if (
+        validationError.message?.includes("not found") ||
+        validationError.message?.includes("404")
+      ) {
+        return NextResponse.json(
+          {
+            error: "BulkVS API endpoint not found",
+            details:
+              "The BulkVS API endpoint could not be found. Please check if your account has API access enabled or contact BulkVS support.",
+          },
+          { status: 404 }
         );
       }
 

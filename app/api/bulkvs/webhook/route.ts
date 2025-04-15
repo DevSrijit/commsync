@@ -8,30 +8,55 @@ export async function POST(req: NextRequest) {
   try {
     const webhookData = await req.json();
 
-    // Validate the webhook data
-    if (!webhookData || !webhookData.data) {
-      console.error("Invalid BulkVS webhook data");
+    // Log webhook data for debugging
+    console.log("Received BulkVS webhook data:", JSON.stringify(webhookData));
+
+    // Validate the webhook data structure
+    // BulkVS webhook has different formats for SMS and MMS
+    // SMS format: { "From": "(FROM NUMBER)", "To": ["(TO NUMBER)"], "Message": "(UPTO-160-CHARACTER-MESSAGE)" }
+    // MMS format: { "From": "(FROM NUMBER)", "To": ["(TO NUMBER)"], "Message": "", "MediaURLs": ["https://..."] }
+
+    // Extract required fields based on API docs
+    const fromNumber = webhookData.From || webhookData.from;
+    const toNumbers = webhookData.To || webhookData.to || [];
+    const toNumber = Array.isArray(toNumbers) ? toNumbers[0] : toNumbers;
+    const messageBody =
+      webhookData.Message || webhookData.message || webhookData.body || "";
+    const mediaUrls = webhookData.MediaURLs || webhookData.media_urls || [];
+
+    // Generate a unique ID if not provided
+    const messageId =
+      webhookData.RefId || webhookData.id || `bulkvs-${Date.now()}`;
+
+    // Set current timestamp if not provided
+    const messageTimestamp = formatBulkVSTimestamp(
+      webhookData.timestamp || webhookData.created_at || null
+    );
+
+    // Validate required fields
+    if (!fromNumber || !toNumber) {
+      console.error("Missing required fields in BulkVS webhook data:", {
+        fromNumber,
+        toNumber,
+      });
       return NextResponse.json(
-        { error: "Invalid webhook data" },
+        {
+          error: "Missing required fields",
+          details: "Message must include From and To phone numbers",
+        },
         { status: 400 }
       );
     }
 
-    // Extract message data
-    const messageData = webhookData.data;
-
-    // Validate the message has required fields
-    if (!messageData.id || !messageData.from || !messageData.to) {
-      console.error("Missing required fields in BulkVS webhook data");
-      return NextResponse.json(
-        { error: "Missing required fields" },
-        { status: 400 }
-      );
-    }
+    // Determine if this is an SMS or MMS based on media URLs
+    const messageType = mediaUrls.length > 0 ? "MMS" : "SMS";
+    console.log(
+      `Processing ${messageType} message from ${fromNumber} to ${toNumber}`
+    );
 
     // Find the associated BulkVS account by phone number
     // We need to check both from and to fields, as the message could be inbound or outbound
-    const potentialPhoneNumbers = [messageData.from, messageData.to];
+    const potentialPhoneNumbers = [fromNumber, toNumber];
 
     const accounts = await db.syncAccount.findMany({
       where: {
@@ -59,31 +84,45 @@ export async function POST(req: NextRequest) {
       accounts.map(async (account: any) => {
         try {
           // Determine if this is an inbound or outbound message relative to this account
-          const isInbound = messageData.to === account.accountIdentifier;
+          const isInbound = toNumber === account.accountIdentifier;
 
-          // Format the message for processing
-          const message = {
-            id: messageData.id.toString(),
-            from: messageData.from,
-            to: messageData.to,
-            message: messageData.message || messageData.body || "",
+          // Format the message for processing using BulkVSMessage interface
+          const message: BulkVSMessage = {
+            id: messageId.toString(),
+            from: fromNumber,
+            to: toNumber,
+            message: messageBody,
             direction: isInbound ? "inbound" : "outbound",
-            created_at: messageData.created_at || new Date().toISOString(),
-            media_urls: messageData.media_urls || [],
-            status: messageData.status || "delivered",
+            created_at: messageTimestamp,
+            media_urls: mediaUrls,
+            status: "delivered",
             // Add derived fields that match our standard format
             number: account.accountIdentifier,
-            contact_number: isInbound ? messageData.from : messageData.to,
-            body: messageData.message || messageData.body || "",
+            contact_number: isInbound ? fromNumber : toNumber,
+            body: messageBody,
+            updated_at: messageTimestamp,
+            media: mediaUrls,
+            threadId: [fromNumber, toNumber].sort().join("-"),
           };
+
+          console.log("Processing BulkVS message:", {
+            id: message.id,
+            type: messageType,
+            direction: message.direction,
+            from: message.from,
+            to: message.to,
+            accountId: account.id,
+          });
 
           // Create a BulkVS service instance and process the message
           const bulkvsService = new BulkVSService(account);
-          await bulkvsService.processIncomingMessage(message as BulkVSMessage);
+          await bulkvsService.processIncomingMessage(message);
 
           return {
             accountId: account.id,
             success: true,
+            messageId: message.id,
+            messageType: messageType,
           };
         } catch (error) {
           console.error(

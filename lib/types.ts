@@ -171,20 +171,26 @@ export interface JustCallWebhookPayload {
 // BulkVS specific types
 export interface BulkVSMessage {
   id: string;
-  number: string;
-  contact_number: string;
-  body: string;
+  from: string;
+  to: string | string[];
+  message: string;
+  body?: string;
   direction: "inbound" | "outbound";
   created_at: string;
-  updated_at: string;
-  status: string;
-  media?: any[];
+  updated_at?: string;
+  status?: string;
+  media_urls?: string[];
+  media?: string[];
+  number?: string;
+  contact_number?: string;
   threadId?: string;
-  // BulkVS specific fields
-  from: string;
-  to: string;
-  message?: string;
-  media_urls?: any[];
+  // Add new fields to support BulkVS API formats
+  From?: string;
+  To?: string | string[];
+  Message?: string;
+  MediaURLs?: string[];
+  RefId?: string;
+  MessageType?: "SMS" | "MMS";
 }
 
 export interface BulkVSWebhookPayload {

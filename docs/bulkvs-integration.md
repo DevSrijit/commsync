@@ -48,9 +48,9 @@ For immediate message delivery, you can set up a webhook in your BulkVS account:
 2. Navigate to API settings or Webhooks configuration
 3. Add a new webhook with the following URL:
 
-   ```
+```txt
    https://your-commsync-domain.com/api/bulkvs/webhook
-   ```
+```
 
 4. Enable the webhook for SMS events
 
