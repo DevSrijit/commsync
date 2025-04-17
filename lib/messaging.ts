@@ -11,7 +11,8 @@ export type MessagePlatform =
   | "imap"
   | "twilio"
   | "justcall"
-  | "bulkvs";
+  | "bulkvs"
+  | "nylas";
 
 export interface MessageAttachment {
   name: string;
@@ -215,6 +216,34 @@ export const useSendMessage = () => {
           }
 
           result = await bulkvsResponse.json();
+          break;
+
+        case "nylas":
+          if (!messageData.accountId) {
+            throw new Error("Nylas sending requires an account ID");
+          }
+
+          // Call Nylas API endpoint
+          const nylasResponse = await fetch("/api/nylas/send", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              accountId: messageData.accountId,
+              to: messageData.recipients,
+              subject: messageData.subject || "No subject",
+              content: messageData.content,
+              attachments: messageData.attachments,
+            }),
+          });
+
+          if (!nylasResponse.ok) {
+            const errorData = await nylasResponse.json();
+            throw new Error(errorData.error || "Failed to send Nylas email");
+          }
+
+          result = await nylasResponse.json();
           break;
 
         default:

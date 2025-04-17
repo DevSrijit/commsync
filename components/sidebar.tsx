@@ -98,6 +98,8 @@ import { useTheme } from "next-themes";
 import { OrganizationDialog } from "./organization-dialog";
 import { BulkvsAccountDialog } from "./bulkvs-account-dialog";
 import { BulkvsAccountCard } from "./bulkvs-account-card";
+import { NylasAccountDialog } from "@/components/nylas-account-dialog";
+import { formatDistanceShort } from "date-fns";
 
 export type MessageCategory =
   | "inbox"
@@ -112,17 +114,19 @@ export type MessageCategory =
 
 export function Sidebar() {
   const { data: session } = useSession();
-  const { emails, setActiveFilter, activeFilter, imapAccounts, groups } =
+  const { emails, setActiveFilter, activeFilter, imapAccounts, groups, nylasAccounts = [] } =
     useEmailStore();
   const { toast } = useToast();
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [isImapDialogOpen, setIsImapDialogOpen] = useState(false);
   const [isJustCallDialogOpen, setIsJustCallDialogOpen] = useState(false);
   const [isBulkvsDialogOpen, setIsBulkvsDialogOpen] = useState(false);
+  const [isNylasDialogOpen, setIsNylasDialogOpen] = useState(false);
   const [isImapListOpen, setIsImapListOpen] = useState(false);
   const [isJustCallListOpen, setIsJustCallListOpen] = useState(false);
   const [isTwilioListOpen, setIsTwilioListOpen] = useState(false);
   const [isBulkvsListOpen, setIsBulkvsListOpen] = useState(false);
+  const [isNylasListOpen, setIsNylasListOpen] = useState(false);
   const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false);
   const [justCallAccounts, setJustCallAccounts] = useState<any[]>([]);
   const [twilioAccounts, setTwilioAccounts] = useState<any[]>([]);
@@ -274,10 +278,23 @@ export function Sidebar() {
       }
     };
 
+    const fetchNylasAccounts = async () => {
+      try {
+        const response = await fetch('/api/nylas/accounts');
+        if (response.ok) {
+          const data = await response.json();
+          useEmailStore.getState().setNylasAccounts(data);
+        }
+      } catch (error) {
+        console.error('Error fetching Nylas accounts:', error);
+      }
+    };
+
     if (session?.user) {
       fetchJustCallAccounts();
       fetchTwilioAccounts();
       fetchBulkvsAccounts();
+      fetchNylasAccounts();
     }
 
     // Add event listeners for account updates
@@ -293,14 +310,20 @@ export function Sidebar() {
       setBulkvsAccounts(event.detail);
     };
 
+    const handleNylasAccountsUpdated = (event: CustomEvent) => {
+      useEmailStore.getState().setNylasAccounts(event.detail);
+    };
+
     window.addEventListener('justcall-accounts-updated', handleJustCallAccountsUpdated as EventListener);
     window.addEventListener('twilio-accounts-updated', handleTwilioAccountsUpdated as EventListener);
     window.addEventListener('bulkvs-accounts-updated', handleBulkvsAccountsUpdated as EventListener);
+    window.addEventListener('nylas-accounts-updated', handleNylasAccountsUpdated as EventListener);
 
     return () => {
       window.removeEventListener('justcall-accounts-updated', handleJustCallAccountsUpdated as EventListener);
       window.removeEventListener('twilio-accounts-updated', handleTwilioAccountsUpdated as EventListener);
       window.removeEventListener('bulkvs-accounts-updated', handleBulkvsAccountsUpdated as EventListener);
+      window.removeEventListener('nylas-accounts-updated', handleNylasAccountsUpdated as EventListener);
     };
   }, [session?.user]);
 
@@ -871,6 +894,10 @@ export function Sidebar() {
                           <MailPlus className="h-4 w-4" />
                           <span>BulkVS Account</span>
                         </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setIsNylasDialogOpen(true)} className="gap-2">
+                          <Mail className="h-4 w-4" />
+                          <span>Nylas Account</span>
+                        </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onClick={() => setIsGroupDialogOpen(true)} className="gap-2">
                           <Users className="h-4 w-4" />
@@ -906,29 +933,88 @@ export function Sidebar() {
                       )} />
                     </Button>
                   </CollapsibleTrigger>
-                  <CollapsibleContent className="pt-1 pb-2">
+                  <CollapsibleContent className="space-y-1 pb-1">
+                    {/* Gmail */}
+                    {session?.user?.email && (
+                      <div className="rounded-md bg-muted/50 px-3 py-2">
+                        <div className="flex items-center gap-2">
+                          <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span className="text-xs text-muted-foreground truncate">
+                            {session.user.email}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Nylas accounts */}
+                    {nylasAccounts.length > 0 && (
+                      <>
+                        {nylasAccounts.map((account) => (
+                          <div
+                            key={account.id}
+                            className="rounded-md hover:bg-muted/50 px-3 py-2 cursor-pointer"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="text-xs text-muted-foreground truncate">
+                                      {account.label || account.email}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>{account.email}<br />{account.provider}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </>
+                    )}
+
+                    {/* IMAP accounts */}
+                    {imapAccounts.length > 0 && (
+                      <>
+                        {imapAccounts.map((account) => (
+                          <div
+                            key={account.id}
+                            className="rounded-md hover:bg-muted/50 px-3 py-2 cursor-pointer"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="text-xs text-muted-foreground truncate">
+                                      {account.label || account.username}
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>{account.host}:{account.port}<br />{account.username}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </div>
+                              <span className="text-[10px] text-muted-foreground">
+                                {account.lastSync ? formatDistanceShort(new Date(account.lastSync), new Date(), { addSuffix: true }) : ''}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </>
+                    )}
+
+                    {/* Add email account button */}
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="w-full justify-start mb-1 px-2 py-1 text-xs rounded-md"
+                      className="w-full justify-start text-xs h-8 px-3"
                       onClick={() => setIsImapListOpen(true)}
                     >
-                      <span className="flex-1 text-left">Manage email accounts</span>
-                      <ExternalLink className="h-3 w-3 ml-1" />
+                      <Plus className="h-3.5 w-3.5 mr-2" />
+                      Manage email accounts
                     </Button>
-                    <div className="space-y-1">
-                      {imapAccounts.map((account) => (
-                        <div key={account.id} className="px-2 py-1 text-sm flex items-center gap-2">
-                          <span className="h-2 w-2 rounded-full bg-blue-400"></span>
-                          <span className="truncate text-xs">{account.label}</span>
-                        </div>
-                      ))}
-                      {imapAccounts.length === 0 && (
-                        <div className="px-2 py-1 text-xs text-muted-foreground italic">
-                          No accounts added
-                        </div>
-                      )}
-                    </div>
                   </CollapsibleContent>
                 </Collapsible>
 
@@ -1255,6 +1341,81 @@ export function Sidebar() {
           open={isOrganizationDialogOpen}
           onOpenChange={setIsOrganizationDialogOpen}
         />
+
+        {/* Nylas Account Dialog */}
+        <NylasAccountDialog
+          open={isNylasDialogOpen}
+          onOpenChange={setIsNylasDialogOpen}
+        />
+
+        {/* Nylas Accounts Dialog */}
+        <Dialog open={isNylasListOpen} onOpenChange={setIsNylasListOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Outlook Accounts</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  setIsNylasListOpen(false);
+                  setIsNylasDialogOpen(true);
+                }}
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Add Outlook Account
+              </Button>
+              <div className="space-y-2">
+                {nylasAccounts.map((account) => (
+                  <div key={account.id} className="bg-card rounded-lg border p-4">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="font-medium">{account.label}</h3>
+                        <p className="text-sm text-muted-foreground">{account.email}</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {account.provider} · Last sync: {account.lastSync ? new Date(account.lastSync).toLocaleString() : 'Never'}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={async () => {
+                          if (confirm("Are you sure you want to delete this account?")) {
+                            try {
+                              const response = await fetch(`/api/nylas/accounts?id=${account.id}`, {
+                                method: "DELETE",
+                              });
+                              if (response.ok) {
+                                // Update the nylasAccounts list
+                                const updatedAccounts = nylasAccounts.filter(a => a.id !== account.id);
+                                useEmailStore.getState().setNylasAccounts(updatedAccounts);
+                                toast({
+                                  title: "Account deleted",
+                                  description: "Outlook account has been removed",
+                                });
+                              }
+                            } catch (error) {
+                              console.error("Error deleting account:", error);
+                              toast({
+                                title: "Error deleting account",
+                                description: "Please try again later",
+                                variant: "destructive",
+                              });
+                            }
+                          }
+                        }}
+                      >
+                        <Trash className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </TooltipProvider>
   );

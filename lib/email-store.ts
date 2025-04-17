@@ -22,6 +22,7 @@ interface EmailStore {
   twilioAccounts: any[];
   justcallAccounts: any[];
   bulkvsAccounts: any[];
+  nylasAccounts: any[];
   groups: Group[];
   currentImapPage: number;
   currentTwilioPage: number;
@@ -50,11 +51,13 @@ interface EmailStore {
   ) => Promise<
     number | { count: number; rateLimited: boolean; retryAfter: number }
   >;
+  syncNylasAccounts: () => Promise<number>;
   syncAllPlatforms: (gmailToken?: string | null) => Promise<void>;
   setImapAccounts: (accounts: ImapAccount[]) => void;
   setTwilioAccounts: (accounts: any[]) => void;
   setJustcallAccounts: (accounts: any[]) => void;
   setBulkvsAccounts: (accounts: any[]) => void;
+  setNylasAccounts: (accounts: any[]) => void;
   setLoadPageSize: (size: number) => void;
   addGroup: (group: Group) => void;
   updateGroup: (group: Group) => void;
@@ -324,60 +327,42 @@ const generateContactsFromEmails = (emails: Email[]): Contact[] => {
 };
 
 export const useEmailStore = create<EmailStore>((set, get) => {
-  // Initialize with empty data, we'll load asynchronously
-  const initialData = {
+  // Load persisted data on initialization
+  loadPersistedData()
+    .then((data) => {
+      // Set the store with loaded data
+      set({
+        ...get(),
+        emails: data.emails,
+        contacts: generateContactsFromEmails(data.emails),
+        imapAccounts: data.imapAccounts,
+        twilioAccounts: data.twilioAccounts,
+        justcallAccounts: data.justcallAccounts,
+        groups: data.groups,
+        lastJustcallMessageIds: data.lastJustcallMessageIds,
+        lastBulkvsMessageIds: data.lastBulkvsMessageIds,
+      });
+    })
+    .catch((error) => {
+      console.error("Failed to load persisted data:", error);
+    });
+
+  return {
     emails: [],
+    contacts: [],
+    activeFilter: "inbox",
+    activeGroup: null,
     imapAccounts: [],
     twilioAccounts: [],
     justcallAccounts: [],
-    groups: [],
-    lastJustcallMessageIds: {},
-    lastBulkvsMessageIds: {},
-  };
-
-  // Load saved page size from localStorage if available
-  const savedPageSize =
-    typeof window !== "undefined"
-      ? parseInt(localStorage.getItem("loadPageSize") || "100")
-      : 100;
-
-  // Load data asynchronously after initialization
-  if (typeof window !== "undefined") {
-    // Need to use void to tell TypeScript this is intentionally not being awaited
-    void (async () => {
-      try {
-        const persistedData = await loadPersistedData();
-        set({
-          emails: persistedData.emails,
-          contacts: generateContactsFromEmails(persistedData.emails),
-          imapAccounts: persistedData.imapAccounts,
-          twilioAccounts: persistedData.twilioAccounts,
-          justcallAccounts: persistedData.justcallAccounts,
-          groups: persistedData.groups,
-          lastJustcallMessageIds: persistedData.lastJustcallMessageIds,
-          lastBulkvsMessageIds: persistedData.lastBulkvsMessageIds,
-        });
-      } catch (error) {
-        console.error("Error loading persisted data:", error);
-      }
-    })();
-  }
-
-  return {
-    emails: initialData.emails,
-    contacts: [],
-    activeFilter: "inbox" as MessageCategory,
-    activeGroup: null,
-    imapAccounts: initialData.imapAccounts,
-    twilioAccounts: initialData.twilioAccounts,
-    justcallAccounts: initialData.justcallAccounts,
     bulkvsAccounts: [],
-    groups: initialData.groups,
+    nylasAccounts: [],
+    groups: [],
     currentImapPage: 1,
     currentTwilioPage: 1,
-    lastJustcallMessageIds: initialData.lastJustcallMessageIds,
-    lastBulkvsMessageIds: initialData.lastBulkvsMessageIds,
-    loadPageSize: savedPageSize,
+    lastJustcallMessageIds: {},
+    lastBulkvsMessageIds: {},
+    loadPageSize: 50,
 
     syncEmails: async (
       gmailToken: string | null,
@@ -1623,53 +1608,76 @@ export const useEmailStore = create<EmailStore>((set, get) => {
     },
 
     syncAllPlatforms: async (gmailToken = null) => {
-      console.log("Syncing all messaging platforms...");
+      console.log("Syncing all platforms...");
+      const syncResults = {
+        gmail: 0,
+        imap: 0,
+        twilio: 0,
+        justcall: 0,
+        bulkvs: 0,
+        nylas: 0, // Add Nylas to results
+      };
+
+      // Sync emails from Gmail API
       try {
-        const store = get();
-
-        // Sync all account types in parallel
-        const [imapCount, twilioCount, justcallResult, bulkvsResult] =
-          await Promise.all([
-            store.syncImapAccounts().catch((err) => {
-              console.error("Error syncing IMAP accounts:", err);
-              return 0;
-            }),
-            store.syncTwilioAccounts().catch((err) => {
-              console.error("Error syncing Twilio accounts:", err);
-              return 0;
-            }),
-            store.syncJustcallAccounts().catch((err) => {
-              console.error("Error syncing JustCall accounts:", err);
-              return 0;
-            }),
-            store.syncBulkvsAccounts().catch((err) => {
-              console.error("Error syncing BulkVS accounts:", err);
-              return 0;
-            }),
-          ]);
-
-        console.log(
-          `Synced: ${imapCount} IMAP, ${twilioCount} Twilio, ${
-            typeof justcallResult === "number"
-              ? justcallResult
-              : justcallResult?.count || 0
-          } JustCall, ${
-            typeof bulkvsResult === "number"
-              ? bulkvsResult
-              : bulkvsResult?.count || 0
-          } BulkVS messages`
-        );
-
-        // Sync Gmail emails if token is provided
-        if (gmailToken) {
-          await store.syncEmails(gmailToken);
-        }
-
-        // Sync groups
-        await store.syncGroups();
+        syncResults.gmail = await get().syncEmails(gmailToken);
       } catch (error) {
-        console.error("Error syncing all platforms:", error);
+        console.error("Error syncing Gmail:", error);
       }
+
+      // Sync IMAP accounts
+      try {
+        syncResults.imap = await get().syncImapAccounts();
+      } catch (error) {
+        console.error("Error syncing IMAP accounts:", error);
+      }
+
+      // Sync Twilio accounts
+      try {
+        syncResults.twilio = await get().syncTwilioAccounts();
+      } catch (error) {
+        console.error("Error syncing Twilio accounts:", error);
+      }
+
+      // Sync JustCall accounts
+      try {
+        const result = await get().syncJustcallAccounts();
+        if (typeof result === "number") {
+          syncResults.justcall = result;
+        } else {
+          syncResults.justcall = result.count;
+        }
+      } catch (error) {
+        console.error("Error syncing JustCall accounts:", error);
+      }
+
+      // Sync BulkVS accounts
+      try {
+        const result = await get().syncBulkvsAccounts();
+        if (typeof result === "number") {
+          syncResults.bulkvs = result;
+        } else {
+          syncResults.bulkvs = result.count;
+        }
+      } catch (error) {
+        console.error("Error syncing BulkVS accounts:", error);
+      }
+
+      // Sync Nylas accounts
+      try {
+        syncResults.nylas = await get().syncNylasAccounts();
+      } catch (error) {
+        console.error("Error syncing Nylas accounts:", error);
+      }
+
+      // Also sync contact groups
+      try {
+        await get().syncGroups();
+      } catch (error) {
+        console.error("Error syncing groups:", error);
+      }
+
+      console.log("Sync completed with results:", syncResults);
     },
 
     deleteConversation: (contactEmail: string) => {
@@ -1846,6 +1854,67 @@ export const useEmailStore = create<EmailStore>((set, get) => {
         return totalMessages;
       } catch (error) {
         console.error("Error in syncBulkvsAccounts:", error);
+        return 0;
+      }
+    },
+
+    setNylasAccounts: (accounts) => {
+      set({ nylasAccounts: accounts });
+      // Also persist to cache if needed
+      setCacheValue("nylasAccounts", accounts);
+    },
+
+    syncNylasAccounts: async () => {
+      try {
+        const response = await fetch("/api/nylas/sync");
+        if (!response.ok) {
+          throw new Error(
+            `Failed to sync Nylas accounts: ${response.statusText}`
+          );
+        }
+
+        const data = await response.json();
+        const results = data.results || [];
+
+        // Fetch updated Nylas accounts to get the latest data
+        const accountsResponse = await fetch("/api/nylas/accounts");
+        if (accountsResponse.ok) {
+          const accounts = await accountsResponse.json();
+          if (accounts && Array.isArray(accounts)) {
+            set((state) => ({ ...state, nylasAccounts: accounts }));
+          }
+        }
+
+        // Convert Nylas messages to our Email format and add them
+        if (data.emails && Array.isArray(data.emails)) {
+          const currentEmails = get().emails;
+          const existingIds = new Set(currentEmails.map((email) => email.id));
+
+          // Filter out duplicates
+          const newEmails = data.emails.filter(
+            (email: Email) => !existingIds.has(email.id)
+          );
+
+          if (newEmails.length > 0) {
+            // Merge with existing emails
+            const mergedEmails = [...currentEmails, ...newEmails];
+
+            // Sort by date descending (newest first)
+            mergedEmails.sort((a, b) => {
+              const dateA = a.date ? new Date(a.date).getTime() : 0;
+              const dateB = b.date ? new Date(b.date).getTime() : 0;
+              return dateB - dateA;
+            });
+
+            get().setEmails(mergedEmails);
+          }
+
+          return newEmails.length;
+        }
+
+        return 0;
+      } catch (error) {
+        console.error("Error syncing Nylas accounts:", error);
         return 0;
       }
     },

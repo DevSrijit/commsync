@@ -538,7 +538,7 @@ export const syncBulkvsAccounts = async (
     console.log(`Syncing ${accounts.length} BulkVS accounts`);
 
     const results = await Promise.allSettled(
-      accounts.map(async (account:any) => {
+      accounts.map(async (account: any) => {
         try {
           const bulkvsService = new BulkVSService(account);
 
@@ -696,17 +696,20 @@ export const syncAllAccountsForUser = async (
   justCall: { success: number; failed: number; results: any[] } | null;
   twilio: { success: number; failed: number; results: any[] } | null;
   bulkvs: { success: number; failed: number; results: any[] } | null;
+  nylas: { success: number; failed: number; results: any[] } | null;
 }> => {
   const results: {
     imap: { success: number; failed: number; results: any[] } | null;
     justCall: { success: number; failed: number; results: any[] } | null;
     twilio: { success: number; failed: number; results: any[] } | null;
     bulkvs: { success: number; failed: number; results: any[] } | null;
+    nylas: { success: number; failed: number; results: any[] } | null;
   } = {
     imap: null,
     justCall: null,
     twilio: null,
     bulkvs: null,
+    nylas: null,
   };
 
   try {
@@ -765,5 +768,226 @@ export const syncAllAccountsForUser = async (
     };
   }
 
+  try {
+    // Sync Nylas accounts
+    results.nylas = await syncNylasAccounts(userId);
+  } catch (error) {
+    console.error("Error syncing Nylas accounts:", error);
+    results.nylas = {
+      success: 0,
+      failed: 1,
+      results: [
+        { error: error instanceof Error ? error.message : "Unknown error" },
+      ],
+    };
+  }
+
   return results;
+};
+
+export const syncNylasAccounts = async (
+  userId?: string
+): Promise<{ success: number; failed: number; results: any[] }> => {
+  console.log(`Syncing Nylas accounts for user ID: ${userId || "all"}`);
+
+  try {
+    // Fetch Nylas accounts from the database
+    const accounts = await db.syncAccount.findMany({
+      where: {
+        ...(userId ? { userId } : {}),
+        platform: "nylas",
+      },
+    });
+
+    console.log(`Found ${accounts.length} Nylas accounts to sync`);
+
+    if (accounts.length === 0) {
+      return { success: 0, failed: 0, results: [] };
+    }
+
+    const results = [];
+    let successCount = 0;
+    let failedCount = 0;
+
+    // Process each account
+    for (const account of accounts) {
+      try {
+        console.log(
+          `Syncing Nylas account: ${account.id} (${account.accountIdentifier})`
+        );
+
+        // Get messages since last sync
+        const fromDate = account.lastSync || undefined;
+
+        // Fetch emails from the Nylas API
+        const response = await fetch(
+          `${
+            process.env.NEXT_PUBLIC_APP_URL || ""
+          }/api/nylas/emails?accountId=${account.id}${
+            fromDate ? `&fromDate=${new Date(fromDate).toISOString()}` : ""
+          }&limit=100`
+        );
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch emails: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        const emails = data.emails || [];
+
+        // Process emails by storing them in the database
+        let newEmailCount = 0;
+
+        for (const email of emails) {
+          try {
+            // Find or create sender by email
+            const from = email.from;
+
+            if (!from || !from.email) {
+              console.warn(`Missing sender email in message:`, email.id);
+              continue;
+            }
+
+            // Find existing sender
+            const existingSender = await db.sender.findFirst({
+              where: {
+                platform: "nylas",
+                identifier: from.email,
+              },
+              include: {
+                contact: true,
+              },
+            });
+
+            let contactId: string;
+
+            if (existingSender) {
+              // Use existing contact
+              contactId = existingSender.contactId;
+            } else {
+              // Create new contact and sender
+              const newContact = await db.contact.create({
+                data: {
+                  userId: account.userId,
+                  name: from.name || from.email,
+                  email: from.email,
+                  senders: {
+                    create: {
+                      platform: "nylas",
+                      identifier: from.email,
+                    },
+                  },
+                },
+              });
+              contactId = newContact.id;
+            }
+
+            // Find or create conversation
+            let conversation = await db.conversation.findFirst({
+              where: {
+                contactId,
+              },
+            });
+
+            if (!conversation) {
+              conversation = await db.conversation.create({
+                data: {
+                  contactId,
+                  title: `Conversation with ${from.name || from.email}`,
+                },
+              });
+            }
+
+            // Check if message already exists
+            const existingMessage = await db.message.findFirst({
+              where: {
+                syncAccountId: account.id,
+                externalId: email.id,
+              },
+            });
+
+            if (!existingMessage) {
+              // Add the new message
+              await db.message.create({
+                data: {
+                  conversationId: conversation.id,
+                  syncAccountId: account.id,
+                  platform: "nylas",
+                  externalId: email.id,
+                  direction: "inbound",
+                  content: email.body || email.snippet || "",
+                  contentType: "html",
+                  metadata: JSON.stringify(email),
+                  attachments:
+                    email.attachments && email.attachments.length > 0
+                      ? JSON.stringify(email.attachments)
+                      : null,
+                  sentAt: new Date(email.date),
+                  isRead: !email.unread,
+                },
+              });
+
+              newEmailCount++;
+
+              // Update conversation last activity
+              await db.conversation.update({
+                where: { id: conversation.id },
+                data: { lastActivity: new Date() },
+              });
+            }
+          } catch (emailError) {
+            console.error(
+              `Error processing Nylas email ${email.id}:`,
+              emailError
+            );
+          }
+        }
+
+        // Update account last sync time
+        await db.syncAccount.update({
+          where: { id: account.id },
+          data: { lastSync: new Date() },
+        });
+
+        console.log(
+          `Synced ${newEmailCount} new emails for Nylas account ${account.id}`
+        );
+
+        results.push({
+          accountId: account.id,
+          success: true,
+          newEmails: newEmailCount,
+        });
+
+        successCount++;
+      } catch (accountError) {
+        console.error(
+          `Error syncing Nylas account ${account.id}:`,
+          accountError
+        );
+
+        results.push({
+          accountId: account.id,
+          success: false,
+          error:
+            accountError instanceof Error
+              ? accountError.message
+              : "Unknown error",
+        });
+
+        failedCount++;
+      }
+    }
+
+    return { success: successCount, failed: failedCount, results };
+  } catch (error) {
+    console.error("Error syncing Nylas accounts:", error);
+    return {
+      success: 0,
+      failed: 0,
+      results: [
+        { error: error instanceof Error ? error.message : "Unknown error" },
+      ],
+    };
+  }
 };
