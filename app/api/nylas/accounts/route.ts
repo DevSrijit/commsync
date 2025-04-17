@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { SyncAccountModel } from "@/lib/types";
+import { SyncAccount } from "@prisma/client";
+
+// Extended SyncAccount type to include potential fields not in current schema
+interface ExtendedSyncAccount extends SyncAccount {
+  label?: string;
+  settings?: string;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -28,12 +34,14 @@ export async function GET(request: NextRequest) {
     });
 
     // Transform accounts to a safe format for the client
-    const safeAccounts = accounts.map((account) => ({
+    const safeAccounts = accounts.map((account: ExtendedSyncAccount) => ({
       id: account.id,
-      label: account.label,
+      label: account.label || `Nylas (${account.accountIdentifier})`,
       email: account.accountIdentifier,
       platform: account.platform,
-      provider: JSON.parse(account.settings || "{}").provider || "outlook",
+      provider: account.settings
+        ? JSON.parse(account.settings || "{}").provider || "outlook"
+        : "outlook",
       lastSync: account.lastSync,
     }));
 
