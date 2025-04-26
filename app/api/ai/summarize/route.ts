@@ -64,7 +64,7 @@ export async function POST(req: Request) {
                Focus on clarity and brevity. Respond only with the summary text.`,
         // The main content for the AI to process
         prompt: conversationText,
-        maxTokens: 200,
+        maxTokens: 500,
       });
 
       // Stream the result back to the client

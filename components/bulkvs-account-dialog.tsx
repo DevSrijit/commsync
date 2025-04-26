@@ -192,7 +192,7 @@ export function BulkvsAccountDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent className="sm:max-w-[425px] w-full">
                 <DialogHeader>
                     <DialogTitle>Link BulkVS Account</DialogTitle>
                     <DialogDescription>
@@ -281,17 +281,6 @@ export function BulkvsAccountDialog({
                                 <strong>Important:</strong> To receive messages, you <u>must</u> configure a webhook in your BulkVS account.
                                 BulkVS does not provide an API to fetch past messages, so webhook integration is the only way to receive incoming messages.
                             </p>
-                            <p className="mt-1">
-                                In your BulkVS dashboard under "Messaging" → "Messaging Webhooks":
-                            </p>
-                            <ol className="list-decimal pl-4 mt-1">
-                                <li>Create a new webhook with your chosen name</li>
-                                <li>Set the Message URL to: <strong>https://commsync.gg/api/bulkvs/webhook</strong></li>
-                                <li>Click "Add" to save the webhook</li>
-                                <li>Click on the new webhook in the list to edit it</li>
-                                <li>Set "Delivery Receipt" to "false"</li>
-                                <li>Assign this webhook to your phone number(s) under "Inbound" → "DIDs – Manage"</li>
-                            </ol>
                             <p className="mt-1">If you're having trouble connecting, please contact BulkVS support to ensure your account has API access enabled.</p>
                         </div>
 
