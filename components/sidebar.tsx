@@ -33,6 +33,7 @@ import {
   Sun,
   Moon,
   UsersRound,
+  PlusCircle,
 } from "lucide-react";
 import { SiTwilio } from "@icons-pack/react-simple-icons";
 import { Button } from "@/components/ui/button";
@@ -98,6 +99,8 @@ import { useTheme } from "next-themes";
 import { OrganizationDialog } from "./organization-dialog";
 import { BulkvsAccountDialog } from "./bulkvs-account-dialog";
 import { BulkvsAccountCard } from "./bulkvs-account-card";
+import { DiscordAccountDialog } from "./discord-account-dialog";
+import { DiscordAccountCard } from "./discord-account-card";
 
 export type MessageCategory =
   | "inbox"
@@ -131,10 +134,13 @@ export function Sidebar() {
   const [isSyncingSMS, setIsSyncingSMS] = useState(false);
   const [isSyncingEmail, setIsSyncingEmail] = useState(false);
   const [isOrganizationDialogOpen, setIsOrganizationDialogOpen] = useState(false);
+  const [discordAccounts, setDiscordAccounts] = useState<any[]>([]);
+  const [showDiscordAccountDialog, setShowDiscordAccountDialog] = useState(false);
 
   // State for account collapsible sections
   const [isEmailAccountsOpen, setIsEmailAccountsOpen] = useState(true);
   const [isSMSAccountsOpen, setIsSMSAccountsOpen] = useState(true);
+  const [isRealtimeMessengersOpen, setIsRealtimeMessengersOpen] = useState(true);
 
   // Use useRef to store subscription data and avoid re-renders
   const subscriptionDataRef = useRef<StoredSubscriptionData | null>(null);
@@ -414,6 +420,41 @@ export function Sidebar() {
     const store = useEmailStore.getState();
     store.setLoadPageSize(newSize);
   };
+
+  // Add Discord accounts event listener
+  const handleDiscordAccountsUpdated = (event: CustomEvent) => {
+    if (event.detail) {
+      setDiscordAccounts(event.detail);
+    } else {
+      fetchDiscordAccounts();
+    }
+  };
+
+  useEffect(() => {
+    window.addEventListener('discord-accounts-updated', handleDiscordAccountsUpdated as EventListener);
+    return () => {
+      window.removeEventListener('discord-accounts-updated', handleDiscordAccountsUpdated as EventListener);
+    };
+  }, []);
+
+  // Fetch Discord accounts
+  const fetchDiscordAccounts = async () => {
+    try {
+      const response = await fetch('/api/discord/account');
+      if (response.ok) {
+        const accounts = await response.json();
+        setDiscordAccounts(accounts);
+      }
+    } catch (error) {
+      console.error('Error fetching Discord accounts:', error);
+    }
+  };
+
+  // Add fetchDiscordAccounts to the initial fetch functions
+  useEffect(() => {
+    // ... existing fetch calls ...
+    fetchDiscordAccounts();
+  }, []);
 
   return (
     <TooltipProvider>
@@ -995,6 +1036,57 @@ export function Sidebar() {
                     </Button>
                   </CollapsibleContent>
                 </Collapsible>
+
+                {/* Realtime Messengers Collapsible */}
+                <Collapsible
+                  open={isRealtimeMessengersOpen}
+                  onOpenChange={setIsRealtimeMessengersOpen}
+                  className="px-2"
+                >
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="flex w-full justify-between px-2 py-1 h-8 font-medium text-sm"
+                    >
+                      <div className="flex items-center">
+                        <MessageSquarePlus className="h-4 w-4 mr-2" />
+                        <span>Realtime Messengers</span>
+                      </div>
+                      <Badge variant="outline" className="ml-auto mr-2 font-normal">
+                        {discordAccounts.length}
+                      </Badge>
+                      <ChevronRight className={cn(
+                        "h-4 w-4 transition-transform duration-200",
+                        isRealtimeMessengersOpen ? "transform rotate-90" : ""
+                      )} />
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="pt-1 pb-2 space-y-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start px-2 py-1 text-xs rounded-md"
+                      onClick={() => setShowDiscordAccountDialog(true)}
+                    >
+                      <span className="flex-1 text-left">Discord accounts</span>
+                      <Badge variant="outline" className="ml-auto font-normal">
+                        {discordAccounts.length}
+                      </Badge>
+                    </Button>
+
+                    {discordAccounts.length > 0 && (
+                      <div className="space-y-1 px-1">
+                        {discordAccounts.map((account) => (
+                          <div key={account.id} className="px-2 py-1 text-sm flex items-center gap-2">
+                            <span className="h-2 w-2 rounded-full bg-indigo-400"></span>
+                            <span className="truncate text-xs">{account.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CollapsibleContent>
+                </Collapsible>
               </div>
             </div>
           </div>
@@ -1254,6 +1346,12 @@ export function Sidebar() {
         <OrganizationDialog
           open={isOrganizationDialogOpen}
           onOpenChange={setIsOrganizationDialogOpen}
+        />
+
+        {/* Discord account dialog */}
+        <DiscordAccountDialog
+          open={showDiscordAccountDialog}
+          onOpenChange={setShowDiscordAccountDialog}
         />
       </div>
     </TooltipProvider>

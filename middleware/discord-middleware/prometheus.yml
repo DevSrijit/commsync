@@ -1,0 +1,33 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Remote write configuration for hosted Grafana
+remote_write:
+  - url: ${GRAFANA_CLOUD_PROM_URL}
+    basic_auth:
+      username: ${GRAFANA_CLOUD_PROM_USERNAME}
+      password: ${GRAFANA_CLOUD_PROM_API_KEY}
+    write_relabel_configs:
+      - source_labels: [__name__]
+        regex: "up|discord_.*" # Only send discord metrics plus uptime
+        action: keep
+
+scrape_configs:
+  - job_name: "discord-middleware"
+    scrape_interval: 10s
+    static_configs:
+      - targets: ["discord-middleware:3001"]
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: "discord-middleware"
+      - source_labels: [__address__]
+        target_label: service
+        replacement: "discord-middleware"
+
+  - job_name: "prometheus"
+    scrape_interval: 10s
+    static_configs:
+      - targets: ["localhost:9090"]

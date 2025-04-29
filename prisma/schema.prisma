@@ -41,24 +41,25 @@ model Session {
 }
 
 model User {
-  id                 String          @id @default(cuid())
+  id                 String           @id @default(cuid())
   name               String?
-  email              String?         @unique
+  email              String?          @unique
   emailVerified      DateTime?
   image              String?
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
   accounts           Account[]
   sessions           Session[]
   imapAccounts       ImapAccount[]
-  groups             Group[]         @relation("UserGroups")
+  groups             Group[]          @relation("UserGroups")
   syncAccounts       SyncAccount[]
   contacts           Contact[]
   twilioAccounts     TwilioAccount[]
   clientCache        ClientCache[]
-  organizations      Organization[]  @relation("OrganizationMembers")
-  ownedOrganizations Organization[]  @relation("OrganizationOwner")
+  organizations      Organization[]   @relation("OrganizationMembers")
+  ownedOrganizations Organization[]   @relation("OrganizationOwner")
   stripeCustomerId   String? // Stripe customer ID for individual subscriptions
+  discordAccounts    DiscordAccount[]
 }
 
 model VerificationToken {
@@ -279,4 +280,63 @@ model Subscription {
   trialEndsAt          DateTime? // When the trial period ends, if applicable
   trialStartedAt       DateTime?    @default(now()) // When the trial started
   hasTrialEnded        Boolean      @default(false) // Track if trial has ended
+}
+
+model DiscordAccount {
+  id              String           @id @default(cuid())
+  userId          String
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label           String
+  accessToken     String
+  refreshToken    String
+  expiresAt       DateTime
+  discordUserId   String
+  discordUserTag  String?
+  lastSync        DateTime         @default(now())
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  discordMessages DiscordMessage[]
+  discordChannels DiscordChannel[] @relation("DiscordAccountChannels")
+
+  @@index([userId])
+  @@index([discordUserId])
+}
+
+model DiscordChannel {
+  id               String           @id @default(cuid())
+  discordChannelId String
+  name             String?
+  type             String // "dm", "group_dm"
+  recipients       Json? // Array of user objects
+  lastMessageId    String?
+  lastRead         DateTime?
+  unreadCount      Int              @default(0)
+  discordAccounts  DiscordAccount[] @relation("DiscordAccountChannels")
+  messages         DiscordMessage[]
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([discordChannelId])
+}
+
+model DiscordMessage {
+  id               String         @id @default(cuid())
+  discordMessageId String
+  discordAccountId String
+  discordAccount   DiscordAccount @relation(fields: [discordAccountId], references: [id], onDelete: Cascade)
+  channelId        String
+  channel          DiscordChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  author           Json // Discord user object
+  content          String         @db.Text
+  embeds           Json? // Array of embed objects
+  attachments      Json? // Array of attachment objects
+  timestamp        DateTime
+  editedTimestamp  DateTime?
+  isRead           Boolean        @default(false)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([discordAccountId])
+  @@index([channelId])
+  @@index([discordMessageId])
 }

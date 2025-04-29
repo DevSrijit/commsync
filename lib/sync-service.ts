@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { JustCallService } from "@/lib/justcall-service";
 import { TwilioService } from "@/lib/twilio-service";
 import { BulkVSService } from "@/lib/bulkvs-service";
+import { DiscordService } from "@/lib/discord-service";
 import { Account } from "@prisma/client";
 
 export class SyncService {
@@ -538,7 +539,7 @@ export const syncBulkvsAccounts = async (
     console.log(`Syncing ${accounts.length} BulkVS accounts`);
 
     const results = await Promise.allSettled(
-      accounts.map(async (account:any) => {
+      accounts.map(async (account: any) => {
         try {
           const bulkvsService = new BulkVSService(account);
 
@@ -688,6 +689,130 @@ export const syncBulkvsAccounts = async (
   }
 };
 
+// Add Discord sync functionality
+export const syncDiscordAccounts = async (
+  userId?: string,
+  options?: {
+    accountId?: string;
+    limit?: number;
+    lastMessageId?: string;
+  }
+): Promise<{ success: number; failed: number; results: any[] }> => {
+  try {
+    // Query for all active Discord accounts, optionally filtered by userId and accountId
+    let query: any = {};
+
+    if (userId) {
+      query.userId = userId;
+    }
+
+    if (options?.accountId) {
+      query.id = options.accountId;
+    }
+
+    const accounts = await db.discordAccount.findMany({
+      where: query,
+    });
+
+    console.log(`Syncing ${accounts.length} Discord accounts`);
+
+    // Filter out accounts with expired tokens
+    const validAccounts = accounts.filter((account) => {
+      const now = new Date();
+      return new Date(account.expiresAt) > now;
+    });
+
+    if (validAccounts.length < accounts.length) {
+      console.log(
+        `Skipping ${
+          accounts.length - validAccounts.length
+        } accounts with expired tokens`
+      );
+    }
+
+    const results = await Promise.allSettled(
+      validAccounts.map(async (account: any) => {
+        try {
+          // Initialize Discord service
+          const discordService = new DiscordService(account);
+
+          // Connect to Discord
+          const connected = await discordService.connect();
+
+          if (!connected) {
+            throw new Error("Failed to connect to Discord");
+          }
+
+          // Get channels
+          const channels = await discordService.getChannels();
+
+          console.log(
+            `Found ${channels.length} channels for Discord account ${account.id}`
+          );
+
+          // Update last sync time
+          await db.discordAccount.update({
+            where: { id: account.id },
+            data: { lastSync: new Date() },
+          });
+
+          // Disconnect when done
+          await discordService.disconnect();
+
+          return {
+            accountId: account.id,
+            channelsCount: channels.length,
+            status: "success",
+          };
+        } catch (error) {
+          console.error(`Error syncing Discord account ${account.id}:`, error);
+
+          // Check if token has expired
+          if (
+            error instanceof Error &&
+            error.message.includes("invalid token")
+          ) {
+            // Mark account as needing token refresh
+            await db.discordAccount.update({
+              where: { id: account.id },
+              data: {
+                expiresAt: new Date(0), // Set to a very old date to force refresh
+              },
+            });
+
+            return {
+              accountId: account.id,
+              error: "Auth token expired, needs refresh",
+              status: "auth_failed",
+            };
+          }
+
+          throw error;
+        }
+      })
+    );
+
+    return {
+      success: results.filter(
+        (r: PromiseSettledResult<any>) => r.status === "fulfilled"
+      ).length,
+      failed: results.filter(
+        (r: PromiseSettledResult<any>) => r.status === "rejected"
+      ).length,
+      results,
+    };
+  } catch (error) {
+    console.error("Error in syncDiscordAccounts:", error);
+    return {
+      success: 0,
+      failed: 1,
+      results: [
+        { error: error instanceof Error ? error.message : "Unknown error" },
+      ],
+    };
+  }
+};
+
 // Sync all accounts for a user
 export const syncAllAccountsForUser = async (
   userId: string
@@ -696,17 +821,20 @@ export const syncAllAccountsForUser = async (
   justCall: { success: number; failed: number; results: any[] } | null;
   twilio: { success: number; failed: number; results: any[] } | null;
   bulkvs: { success: number; failed: number; results: any[] } | null;
+  discord: { success: number; failed: number; results: any[] } | null;
 }> => {
   const results: {
     imap: { success: number; failed: number; results: any[] } | null;
     justCall: { success: number; failed: number; results: any[] } | null;
     twilio: { success: number; failed: number; results: any[] } | null;
     bulkvs: { success: number; failed: number; results: any[] } | null;
+    discord: { success: number; failed: number; results: any[] } | null;
   } = {
     imap: null,
     justCall: null,
     twilio: null,
     bulkvs: null,
+    discord: null,
   };
 
   try {
@@ -757,6 +885,20 @@ export const syncAllAccountsForUser = async (
   } catch (error) {
     console.error("Error syncing BulkVS accounts:", error);
     results.bulkvs = {
+      success: 0,
+      failed: 1,
+      results: [
+        { error: error instanceof Error ? error.message : "Unknown error" },
+      ],
+    };
+  }
+
+  try {
+    // Sync Discord accounts
+    results.discord = await syncDiscordAccounts(userId);
+  } catch (error) {
+    console.error("Error syncing Discord accounts:", error);
+    results.discord = {
       success: 0,
       failed: 1,
       results: [
