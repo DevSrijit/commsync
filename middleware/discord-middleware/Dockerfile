@@ -3,11 +3,8 @@ FROM oven/bun:latest
 WORKDIR /app
 
 # Install dependencies
-COPY package.json ./
+COPY package.json prisma ./
 RUN bun install --production
-
-# Copy source code
-COPY . .
 
 # Generate Prisma client
 RUN bunx prisma generate --no-engine
