@@ -1,16 +1,19 @@
-FROM node:20-alpine
+FROM oven/bun:latest
 
 WORKDIR /app
 
 # Install dependencies
 COPY package.json package-lock.json ./
-RUN npm ci --only=production
+RUN bun install --frozen-lockfile --production
 
 # Copy source code
 COPY . .
 
+# Generate Prisma client
+RUN bunx prisma generate
+
 # Expose port
-EXPOSE 3001
+EXPOSE 3000
 
 # Start server
-CMD ["node", "server.js"] 
+CMD ["bun", "start"] 

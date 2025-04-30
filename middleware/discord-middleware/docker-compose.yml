@@ -8,9 +8,9 @@ services:
     container_name: discord-middleware
     restart: unless-stopped
     ports:
-      - "3001:3001"
+      - "3421:3000"
     environment:
-      - PORT=3001
+      - PORT=3000
       - DATABASE_URL=${DATABASE_URL}
       - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
       - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET}
@@ -31,7 +31,7 @@ services:
           cpus: '1'
           memory: 1G
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]  # Use the container's API port
       interval: 30s
       timeout: 10s
       retries: 3

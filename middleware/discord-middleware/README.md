@@ -431,3 +431,55 @@ DEBUG=discord-middleware:* docker-compose up -d
 | E008 | Memory limit exceeded | Increase container memory allocation |
 | E009 | Disk space full | Clean up logs or increase storage allocation |
 | E010 | Connection pool exhausted | Increase MAX_CONCURRENT_CONNECTIONS |
+
+## Database Configuration
+
+This service uses the same database as the main CommsSync application. The Prisma schema in this directory is a copy of the main schema to ensure consistent modeling.
+
+## Environment Setup
+
+1. Copy `.env.example` to `.env` and fill in the required variables:
+
+```bash
+cp .env.example .env
+```
+
+2. Set the `DATABASE_URL` to point to the same database as your main CommsSync application.
+
+## Development
+
+```bash
+# Install dependencies
+npm install
+
+# Generate Prisma client
+npx prisma generate
+
+# Start development server
+npm run dev
+```
+
+## Docker Deployment
+
+```bash
+# Build and start with docker-compose
+docker-compose up -d
+```
+
+## Prisma Schema Updates
+
+When the main application's schema changes, you'll need to update the schema in this directory:
+
+1. Copy the updated schema from the main application
+2. Run `npx prisma generate` to update the client
+
+## Connection to Main Application
+
+This middleware exposes REST APIs that the main CommsSync application can use to:
+
+- Register Discord accounts
+- Send messages
+- Sync channels
+- Query metrics
+
+The data is stored in the shared database and can be accessed by both applications.

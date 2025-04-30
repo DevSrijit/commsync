@@ -1,6 +1,6 @@
 require("dotenv").config();
 const express = require("express");
-const { PrismaClient } = require("@prisma/client");
+const prisma = require("./db");
 const {
   Client,
   GatewayIntentBits,
@@ -121,9 +121,6 @@ function startServer() {
   // Initialize Express app
   const app = express();
   const PORT = process.env.PORT || 3001;
-
-  // Initialize Prisma client
-  const prisma = new PrismaClient();
 
   // Configure middleware
   app.use(cors());
@@ -1002,6 +999,36 @@ function startServer() {
     process.exit(0);
   });
 
+  // Add a middleware to track API latency and requests
+  app.use((req, res, next) => {
+    const start = Date.now();
+
+    // Record the endpoint
+    const endpoint = req.path;
+
+    // When the response is finished
+    res.on("finish", () => {
+      // Record the request
+      apiRequestsCounter.inc({
+        worker_id: process.pid.toString(),
+        endpoint,
+        status: res.statusCode.toString(),
+      });
+
+      // Record the latency
+      const duration = (Date.now() - start) / 1000; // Convert to seconds
+      apiLatencyHistogram.observe(
+        {
+          worker_id: process.pid.toString(),
+          endpoint,
+        },
+        duration
+      );
+    });
+
+    next();
+  });
+
   // Start server
   app.listen(PORT, async () => {
     console.log(
@@ -1015,33 +1042,3 @@ function startServer() {
     setInterval(processConnectionQueue, 5000);
   });
 }
-
-// Add a middleware to track API latency and requests
-app.use((req, res, next) => {
-  const start = Date.now();
-
-  // Record the endpoint
-  const endpoint = req.path;
-
-  // When the response is finished
-  res.on("finish", () => {
-    // Record the request
-    apiRequestsCounter.inc({
-      worker_id: process.pid.toString(),
-      endpoint,
-      status: res.statusCode.toString(),
-    });
-
-    // Record the latency
-    const duration = (Date.now() - start) / 1000; // Convert to seconds
-    apiLatencyHistogram.observe(
-      {
-        worker_id: process.pid.toString(),
-        endpoint,
-      },
-      duration
-    );
-  });
-
-  next();
-});
