@@ -10,7 +10,7 @@ RUN bun install --frozen-lockfile --production
 COPY . .
 
 # Generate Prisma client
-RUN bunx prisma generate
+RUN bunx prisma generate --no-engine
 
 # Expose port
 EXPOSE 3000
