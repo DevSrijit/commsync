@@ -4,7 +4,7 @@
   "description": "Discord middleware for CommsSync",
   "main": "server.js",
   "scripts": {
-    "start": "bun server.js",
+    "start": "bun run server.js",
     "postinstall": "bunx prisma generate --no-engine",
     "dev": "nodemon server.js",
     "start:cluster": "NODE_ENV=production bun server.js"
