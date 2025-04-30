@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "postinstall": "bunx prisma generate --no-engine",
     "dev": "nodemon server.js",
     "start:cluster": "NODE_ENV=production node server.js"
   },
