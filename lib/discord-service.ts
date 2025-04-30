@@ -110,44 +110,9 @@ export class DiscordService {
         content,
       });
 
-      if (response.status === 200 && response.data.success) {
-        const sentMessage = response.data.message;
-
-        // Store the sent message in the database
-        await db.discordMessage.create({
-          data: {
-            discordMessageId: sentMessage.id,
-            discordAccountId: this.account.id,
-            channelId: dbChannel.id,
-            author: sentMessage.author,
-            content: sentMessage.content || "",
-            embeds:
-              sentMessage.embeds?.length > 0 ? sentMessage.embeds : undefined,
-            attachments:
-              sentMessage.attachments?.length > 0
-                ? sentMessage.attachments
-                : undefined,
-            timestamp: new Date(sentMessage.timestamp),
-            editedTimestamp: sentMessage.editedTimestamp
-              ? new Date(sentMessage.editedTimestamp)
-              : null,
-            isRead: true, // Mark as read since we sent it
-          },
-        });
-
-        // Update the channel's last message ID
-        await db.discordChannel.update({
-          where: { id: dbChannel.id },
-          data: {
-            lastMessageId: sentMessage.id,
-            updatedAt: new Date(),
-          },
-        });
-
-        return true;
-      }
-
-      return false;
+      // The middleware server already creates the message record in the database
+      // So we just need to check if the request was successful
+      return response.status === 200 && response.data.success;
     } catch (error) {
       console.error("Error sending Discord message:", error);
       return false;
