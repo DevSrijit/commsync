@@ -928,6 +928,22 @@ function startServer() {
     }
   });
 
+  app.get("/", (req, res) => {
+    res.json({
+      status: "Discord middleware is running",
+      workerId: process.pid,
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      activeConnections: discordClients.size,
+      queueLength: connectionQueue.length,
+      maxConcurrentConnections: MAX_CONCURRENT_CONNECTIONS,
+      shardCount: SHARD_COUNT,
+      numWorkers: NUM_WORKERS,
+      connectionPoolCheckInterval: CONNECTION_POOL_CHECK_INTERVAL,
+      inactiveTimeout: INACTIVE_TIMEOUT,
+    });
+  });
+
   // Load all active accounts on startup
   async function loadActiveAccounts() {
     try {
