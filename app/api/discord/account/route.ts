@@ -1,107 +1,181 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { authOptions } from "@/lib/auth-options";
 import { db } from "@/lib/db";
+import { DiscordService } from "@/lib/discord-service";
 
+// GET handler to fetch all Discord accounts for the user
 export async function GET(req: NextRequest) {
   try {
-    // Ensure user is authenticated
     const session = await getServerSession(authOptions);
 
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        {
-          error: "Unauthorized",
-          details: "You must be logged in to access Discord accounts",
-        },
-        { status: 401 }
-      );
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const userId = session.user.id;
-
-    // Get all Discord accounts for this user
-    const accounts = await db.discordAccount.findMany({
-      where: { userId },
-      orderBy: { createdAt: "desc" },
+    const discordAccounts = await db.discordAccount.findMany({
+      where: {
+        userId: session.user.id,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
     });
 
-    return NextResponse.json(accounts);
+    return NextResponse.json(discordAccounts);
   } catch (error) {
     console.error("Error fetching Discord accounts:", error);
-
     return NextResponse.json(
-      {
-        error: "FetchError",
-        details:
-          error instanceof Error ? error.message : "Unknown error occurred",
-      },
+      { error: "Failed to fetch Discord accounts" },
       { status: 500 }
     );
   }
 }
 
-export async function DELETE(req: NextRequest) {
+// POST handler to add a new Discord account
+export async function POST(req: NextRequest) {
   try {
-    // Ensure user is authenticated
     const session = await getServerSession(authOptions);
 
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        {
-          error: "Unauthorized",
-          details: "You must be logged in to delete Discord accounts",
-        },
-        { status: 401 }
-      );
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const userId = session.user.id;
+    const json = await req.json();
+    const {
+      accessToken,
+      refreshToken,
+      expiresAt,
+      discordUserId,
+      username,
+      avatar,
+    } = json;
 
-    // Get account ID from query parameters
-    const url = new URL(req.url);
-    const accountId = url.searchParams.get("id");
-
-    if (!accountId) {
+    if (!accessToken || !refreshToken || !expiresAt || !discordUserId) {
       return NextResponse.json(
-        { error: "MissingAccountId", details: "Account ID is required" },
+        { error: "Missing required fields" },
         { status: 400 }
       );
     }
 
-    // Ensure the account belongs to the user
+    // Check if account already exists
+    const existingAccount = await db.discordAccount.findFirst({
+      where: {
+        userId: session.user.id,
+        discordUserId,
+      },
+    });
+
+    if (existingAccount) {
+      // Update existing account
+      const updatedAccount = await db.discordAccount.update({
+        where: {
+          id: existingAccount.id,
+        },
+        data: {
+          accessToken,
+          refreshToken,
+          expiresAt: new Date(expiresAt),
+          username,
+          avatar,
+        },
+      });
+
+      // Register with middleware server
+      const discordService = new DiscordService(updatedAccount);
+      await discordService.register();
+
+      return NextResponse.json(updatedAccount);
+    }
+
+    // Create new account
+    const newAccount = await db.discordAccount.create({
+      data: {
+        userId: session.user.id,
+        accessToken,
+        refreshToken,
+        expiresAt: new Date(expiresAt),
+        discordUserId,
+        username,
+        avatar,
+      },
+    });
+
+    // Register with middleware server
+    const discordService = new DiscordService(newAccount);
+    await discordService.register();
+
+    return NextResponse.json(newAccount);
+  } catch (error) {
+    console.error("Error adding Discord account:", error);
+    return NextResponse.json(
+      { error: "Failed to add Discord account" },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE handler to remove a Discord account
+export async function DELETE(req: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "Missing account ID" },
+        { status: 400 }
+      );
+    }
+
+    // Get the account before deleting
     const account = await db.discordAccount.findFirst({
       where: {
-        id: accountId,
-        userId,
+        id,
+        userId: session.user.id,
       },
     });
 
     if (!account) {
       return NextResponse.json(
-        {
-          error: "AccountNotFound",
-          details: "Discord account not found or doesn't belong to you",
-        },
+        { error: "Discord account not found" },
         { status: 404 }
       );
     }
 
-    // Delete the account
+    // Unregister from middleware server
+    const discordService = new DiscordService(account);
+    await discordService.unregister();
+
+    // Delete account
     await db.discordAccount.delete({
-      where: { id: accountId },
+      where: {
+        id,
+      },
+    });
+
+    // Delete related channels and messages
+    await db.discordChannel.deleteMany({
+      where: {
+        discordAccounts: {
+          some: {
+            id,
+          },
+        },
+      },
     });
 
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error deleting Discord account:", error);
-
     return NextResponse.json(
-      {
-        error: "DeleteError",
-        details:
-          error instanceof Error ? error.message : "Unknown error occurred",
-      },
+      { error: "Failed to delete Discord account" },
       { status: 500 }
     );
   }

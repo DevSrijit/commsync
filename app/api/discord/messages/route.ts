@@ -6,212 +6,216 @@ import { DiscordService } from "@/lib/discord-service";
 import axios from "axios";
 import { DiscordMessage } from "@prisma/client";
 
+// GET handler to fetch messages for a Discord channel
 export async function GET(req: NextRequest) {
   try {
-    // Ensure user is authenticated
     const session = await getServerSession(authOptions);
 
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        {
-          error: "Unauthorized",
-          details: "You must be logged in to access Discord messages",
-        },
-        { status: 401 }
-      );
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const userId = session.user.id;
-
-    // Extract parameters from query string
-    const url = new URL(req.url);
-    const channelId = url.searchParams.get("channelId");
-    const limit = url.searchParams.get("limit")
-      ? parseInt(url.searchParams.get("limit")!)
-      : 50;
-    const before = url.searchParams.get("before") || undefined;
+    const { searchParams } = new URL(req.url);
+    const channelId = searchParams.get("channelId");
+    const before = searchParams.get("before");
+    const limit = searchParams.get("limit") || "50";
 
     if (!channelId) {
       return NextResponse.json(
-        { error: "MissingChannelId", details: "Channel ID is required" },
+        { error: "Missing channel ID" },
         { status: 400 }
       );
     }
 
-    // Check if the channel belongs to the user
+    // Verify channel belongs to a discord account owned by the user
     const channel = await db.discordChannel.findFirst({
       where: {
         id: channelId,
         discordAccounts: {
           some: {
-            userId,
+            userId: session.user.id,
           },
         },
       },
       include: {
-        discordAccounts: {
-          where: {
-            userId,
-          },
-          take: 1,
-        },
-      },
-    });
-
-    if (!channel || channel.discordAccounts.length === 0) {
-      return NextResponse.json(
-        {
-          error: "ChannelNotFound",
-          details: "Discord channel not found or doesn't belong to you",
-        },
-        { status: 404 }
-      );
-    }
-
-    // Get messages for this channel
-    const messages = await db.discordMessage.findMany({
-      where: {
-        channelId,
-        ...(before ? { id: { lt: before } } : {}),
-      },
-      orderBy: {
-        timestamp: "desc",
-      },
-      take: limit,
-    });
-
-    // Mark messages as read
-    const unreadMessageIds = messages
-      .filter((message: DiscordMessage) => !message.isRead)
-      .map((message: DiscordMessage) => message.id);
-
-    if (unreadMessageIds.length > 0) {
-      await db.discordMessage.updateMany({
-        where: {
-          id: {
-            in: unreadMessageIds,
-          },
-        },
-        data: {
-          isRead: true,
-        },
-      });
-    }
-
-    return NextResponse.json(messages);
-  } catch (error) {
-    console.error("Error fetching Discord messages:", error);
-
-    return NextResponse.json(
-      {
-        error: "FetchError",
-        details:
-          error instanceof Error ? error.message : "Unknown error occurred",
-      },
-      { status: 500 }
-    );
-  }
-}
-
-export async function POST(req: NextRequest) {
-  try {
-    // Get the auth session to ensure user is logged in
-    const session = await getServerSession(authOptions);
-
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: "Unauthorized", message: "You must be logged in" },
-        { status: 401 }
-      );
-    }
-
-    const userId = session.user.id;
-    const body = await req.json();
-    const { accountId, channelId, content } = body;
-
-    if (!accountId || !channelId || !content) {
-      return NextResponse.json(
-        {
-          error: "Bad Request",
-          message:
-            "Discord account ID, channel ID, and message content are required",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Verify account belongs to user
-    const account = await db.discordAccount.findFirst({
-      where: {
-        id: accountId,
-        userId,
-      },
-    });
-
-    if (!account) {
-      return NextResponse.json(
-        { error: "Not Found", message: "Discord account not found" },
-        { status: 404 }
-      );
-    }
-
-    // Verify channel exists and is associated with the account
-    const channel = await db.discordChannel.findFirst({
-      where: {
-        id: channelId,
-        discordAccounts: {
-          some: {
-            id: accountId,
-          },
-        },
+        discordAccounts: true,
       },
     });
 
     if (!channel) {
       return NextResponse.json(
-        { error: "Not Found", message: "Discord channel not found" },
+        { error: "Discord channel not found" },
         { status: 404 }
       );
     }
 
-    // Send message via middleware
-    try {
-      const middlewareUrl =
-        process.env.DISCORD_MIDDLEWARE_URL || "http://localhost:3001";
-      const response = await axios.post(`${middlewareUrl}/send-message`, {
-        accountId: account.id,
-        discordChannelId: channel.discordChannelId,
-        content,
-      });
+    // Get the account for this channel
+    const account = channel.discordAccounts[0];
 
-      if (response.status === 200 && response.data.success) {
-        // The message was already stored in the database by the middleware
-        return NextResponse.json({
-          success: true,
-          message: response.data.message,
-        });
-      } else {
-        throw new Error(`Middleware returned status ${response.status}`);
-      }
-    } catch (error) {
-      console.error("Error sending message via Discord middleware:", error);
+    if (!account) {
       return NextResponse.json(
-        {
-          error: "MessageError",
-          message:
-            "Failed to send Discord message. The middleware service may be unavailable.",
-        },
-        { status: 502 }
+        { error: "Discord account not found for this channel" },
+        { status: 404 }
       );
     }
+
+    // Get messages
+    const discordService = new DiscordService(account);
+    const messages = await discordService.getMessages(
+      channelId,
+      parseInt(limit),
+      before || undefined
+    );
+
+    return NextResponse.json(messages);
+  } catch (error) {
+    console.error("Error fetching Discord messages:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch Discord messages" },
+      { status: 500 }
+    );
+  }
+}
+
+// POST handler to send a message to a Discord channel
+export async function POST(req: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const { channelId, content } = body;
+
+    if (!channelId || !content) {
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 }
+      );
+    }
+
+    // Verify channel belongs to a discord account owned by the user
+    const channel = await db.discordChannel.findFirst({
+      where: {
+        id: channelId,
+        discordAccounts: {
+          some: {
+            userId: session.user.id,
+          },
+        },
+      },
+      include: {
+        discordAccounts: true,
+      },
+    });
+
+    if (!channel) {
+      return NextResponse.json(
+        { error: "Discord channel not found" },
+        { status: 404 }
+      );
+    }
+
+    // Get the account for this channel
+    const account = channel.discordAccounts[0];
+
+    if (!account) {
+      return NextResponse.json(
+        { error: "Discord account not found for this channel" },
+        { status: 404 }
+      );
+    }
+
+    // Send message
+    const discordService = new DiscordService(account);
+    const success = await discordService.sendMessage(channelId, content);
+
+    if (!success) {
+      return NextResponse.json(
+        { error: "Failed to send Discord message" },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error sending Discord message:", error);
-
     return NextResponse.json(
-      {
-        error: "ServerError",
-        message: "An error occurred while sending the Discord message",
+      { error: "Failed to send Discord message" },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH handler to mark a Discord message as read
+export async function PATCH(req: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const { messageId, channelId } = body;
+
+    if (!messageId || !channelId) {
+      return NextResponse.json(
+        { error: "Missing required fields" },
+        { status: 400 }
+      );
+    }
+
+    // Verify channel belongs to a discord account owned by the user
+    const channel = await db.discordChannel.findFirst({
+      where: {
+        id: channelId,
+        discordAccounts: {
+          some: {
+            userId: session.user.id,
+          },
+        },
       },
+      include: {
+        discordAccounts: true,
+      },
+    });
+
+    if (!channel) {
+      return NextResponse.json(
+        { error: "Discord channel not found" },
+        { status: 404 }
+      );
+    }
+
+    // Get the account for this channel
+    const account = channel.discordAccounts[0];
+
+    if (!account) {
+      return NextResponse.json(
+        { error: "Discord account not found for this channel" },
+        { status: 404 }
+      );
+    }
+
+    // Mark message as read
+    const discordService = new DiscordService(account);
+    const success = await discordService.markMessageAsRead(messageId);
+
+    if (!success) {
+      return NextResponse.json(
+        { error: "Failed to mark Discord message as read" },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error marking Discord message as read:", error);
+    return NextResponse.json(
+      { error: "Failed to mark Discord message as read" },
       { status: 500 }
     );
   }

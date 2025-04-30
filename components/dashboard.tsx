@@ -18,13 +18,32 @@ import {
 } from "./ui/resizable";
 import { getCacheValue, setCacheValue, removeCacheValue } from "@/lib/client-cache-browser";
 import { cn } from "@/lib/utils";
+import { MessageCategory } from "./sidebar";
+import { useRealtimeStore, RealtimePlatform } from "@/lib/realtime-store";
+import { RealtimeChannelList } from "./realtime-channel-list";
+import { RealtimeConversationView } from "./realtime-conversation-view";
 
 export function EmailDashboard() {
   const { data: session } = useSession();
   const [selectedContact, setSelectedContact] = useState<string | null>(null);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [isGroupSelected, setIsGroupSelected] = useState(false);
-  const { setEmails, contacts, syncTwilioAccounts, syncJustcallAccounts, syncBulkvsAccounts } = useEmailStore();
+  const {
+    setEmails,
+    contacts,
+    syncTwilioAccounts,
+    syncJustcallAccounts,
+    syncBulkvsAccounts,
+    activeFilter
+  } = useEmailStore();
+
+  const {
+    activeChannelId,
+    activePlatform,
+    setActiveChannel,
+    clearActiveChannel
+  } = useRealtimeStore();
+
   const [isLoading, setIsLoading] = useState(true);
   const [isBackgroundSync, setIsBackgroundSync] = useState(false);
   const initialLoadComplete = useRef(false);
@@ -68,6 +87,27 @@ export function EmailDashboard() {
     setSelectedContact(email);
     setIsGroupSelected(isGroup);
     setSelectedGroupId(groupId || null);
+
+    // Reset realtime channel selection if selecting an email contact
+    clearActiveChannel();
+
+    if (isMobileView) {
+      setShowConversation(true);
+    }
+  };
+
+  // Handle realtime channel selection
+  const handleChannelSelect = (
+    channelId: string,
+    platform: RealtimePlatform
+  ) => {
+    setActiveChannel(channelId, platform);
+
+    // Reset email contact selection
+    setSelectedContact(null);
+    setIsGroupSelected(false);
+    setSelectedGroupId(null);
+
     if (isMobileView) {
       setShowConversation(true);
     }
@@ -78,6 +118,7 @@ export function EmailDashboard() {
     if (isMobileView) {
       setShowConversation(false);
       setSelectedContact(null);
+      clearActiveChannel();
     }
   };
 
@@ -257,19 +298,181 @@ export function EmailDashboard() {
     return () => clearInterval(intervalId);
   }, [session, setEmails, syncTwilioAccounts, syncJustcallAccounts, syncBulkvsAccounts]);
 
-  // Set the first contact as selected by default when contacts load
-  useEffect(() => {
-    // Don't auto-select first contact on initial load
-    // Only select if user explicitly requests via UI
-    // This allows the welcome screen to show on first load
+  // Render correct components based on active filter
+  const renderMainContent = () => {
+    if (activeFilter === "messengers") {
+      return (
+        <>
+          {/* Desktop Layout */}
+          <div className="hidden md:flex md:flex-1 md:h-full">
+            <ResizablePanelGroup
+              direction="horizontal"
+              className="flex-1 h-full overflow-hidden"
+            >
+              <ResizableHandle />
 
-    // We've removed the auto-selection behavior:
-    // if (contacts.length > 0 && !selectedContact) {
-    //   setSelectedContact(contacts[0].email);
-    //   setIsGroupSelected(false);
-    //   setSelectedGroupId(null);
-    // }
-  }, [contacts, selectedContact]);
+              {/* Main Area Panel */}
+              <ResizablePanel
+                defaultSize={85}
+                className="flex flex-col h-full overflow-hidden"
+              >
+                <ResizablePanelGroup
+                  direction="horizontal"
+                  className="flex-1 h-full overflow-hidden"
+                >
+                  {/* Channel List Panel */}
+                  <ResizablePanel
+                    defaultSize={30}
+                    minSize={25}
+                    maxSize={40}
+                    className="h-full"
+                  >
+                    <div className="w-full h-full z-0">
+                      <RealtimeChannelList
+                        isLoading={isLoading}
+                        selectedChannelId={activeChannelId}
+                        onSelectChannel={handleChannelSelect}
+                        className="w-full"
+                      />
+                    </div>
+                  </ResizablePanel>
+
+                  <ResizableHandle />
+
+                  {/* Conversation View Panel */}
+                  <ResizablePanel
+                    defaultSize={70}
+                    className="flex flex-col h-full overflow-hidden"
+                  >
+                    <RealtimeConversationView
+                      channelId={activeChannelId}
+                      platform={activePlatform}
+                      isLoading={isLoading}
+                      onBack={handleBackToList}
+                    />
+                  </ResizablePanel>
+                </ResizablePanelGroup>
+              </ResizablePanel>
+            </ResizablePanelGroup>
+          </div>
+
+          {/* Mobile Layout */}
+          <div className="flex flex-col h-full md:hidden">
+            <div className={cn(
+              "h-full w-full",
+              isMobileView && showConversation ? "hidden" : "block"
+            )}>
+              <RealtimeChannelList
+                isLoading={isLoading}
+                selectedChannelId={activeChannelId}
+                onSelectChannel={handleChannelSelect}
+                className="w-full"
+              />
+            </div>
+
+            <div className={cn(
+              "h-full w-full",
+              isMobileView && !showConversation ? "hidden" : "block"
+            )}>
+              <RealtimeConversationView
+                channelId={activeChannelId}
+                platform={activePlatform}
+                isLoading={isLoading}
+                onBack={handleBackToList}
+              />
+            </div>
+          </div>
+        </>
+      );
+    } else {
+      // Default email view
+      return (
+        <>
+          {/* Desktop Layout */}
+          <div className="hidden md:flex md:flex-1 md:h-full">
+            <ResizablePanelGroup
+              direction="horizontal"
+              className="flex-1 h-full overflow-hidden"
+            >
+              <ResizableHandle />
+
+              {/* Main Area Panel */}
+              <ResizablePanel
+                defaultSize={85}
+                className="flex flex-col h-full overflow-hidden"
+              >
+                <ResizablePanelGroup
+                  direction="horizontal"
+                  className="flex-1 h-full overflow-hidden"
+                >
+                  {/* Channel List Panel */}
+                  <ResizablePanel
+                    defaultSize={30}
+                    minSize={25}
+                    maxSize={40}
+                    className="h-full"
+                  >
+                    <div className="w-full h-full z-0">
+                      <EmailList
+                        isLoading={isLoading}
+                        selectedContact={selectedContact}
+                        onSelectContact={handleContactSelect}
+                        className="w-full"
+                      />
+                    </div>
+                  </ResizablePanel>
+
+                  <ResizableHandle />
+
+                  {/* Conversation View Panel */}
+                  <ResizablePanel
+                    defaultSize={70}
+                    className="flex flex-col h-full overflow-hidden"
+                  >
+                    <ConversationView
+                      contactEmail={selectedContact}
+                      isLoading={isLoading}
+                      isGroup={isGroupSelected}
+                      groupId={selectedGroupId}
+                      onBack={handleBackToList}
+                    />
+                  </ResizablePanel>
+                </ResizablePanelGroup>
+              </ResizablePanel>
+            </ResizablePanelGroup>
+          </div>
+
+          {/* Mobile Layout */}
+          <div className="flex flex-col h-full md:hidden">
+            <div className={cn(
+              "h-full w-full",
+              isMobileView && showConversation ? "hidden" : "block"
+            )}>
+              <EmailList
+                isLoading={isLoading}
+                selectedContact={selectedContact}
+                onSelectContact={handleContactSelect}
+                className="w-full"
+              />
+            </div>
+
+            <div className={cn(
+              "h-full w-full",
+              isMobileView && !showConversation ? "hidden" : "block"
+            )}>
+              <ConversationView
+                contactEmail={selectedContact}
+                isLoading={isLoading}
+                isGroup={isGroupSelected}
+                groupId={selectedGroupId}
+                onBack={handleBackToList}
+              />
+            </div>
+          </div>
+        </>
+      );
+    }
+  };
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background">
@@ -292,88 +495,7 @@ export function EmailDashboard() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
-        {/* Desktop Layout */}
-        <div className="hidden md:flex md:flex-1 md:h-full">
-          <ResizablePanelGroup
-            direction="horizontal"
-            className="flex-1 h-full overflow-hidden"
-          >
-
-            <ResizableHandle />
-
-            {/* Main Area Panel */}
-            <ResizablePanel
-              defaultSize={85}
-              className="flex flex-col h-full overflow-hidden"
-            >
-              <ResizablePanelGroup
-                direction="horizontal"
-                className="flex-1 h-full overflow-hidden"
-              >
-                {/* Channel List Panel */}
-                <ResizablePanel
-                  defaultSize={30}
-                  minSize={25}
-                  maxSize={40}
-                  className="h-full"
-                >
-                  <div className="w-full h-full z-0">
-                    <EmailList
-                      isLoading={isLoading}
-                      selectedContact={selectedContact}
-                      onSelectContact={handleContactSelect}
-                      className="w-full"
-                    />
-                  </div>
-                </ResizablePanel>
-
-                <ResizableHandle />
-
-                {/* Conversation View Panel */}
-                <ResizablePanel
-                  defaultSize={70}
-                  className="flex flex-col h-full overflow-hidden"
-                >
-                  <ConversationView
-                    contactEmail={selectedContact}
-                    isLoading={isLoading}
-                    isGroup={isGroupSelected}
-                    groupId={selectedGroupId}
-                    onBack={handleBackToList}
-                  />
-                </ResizablePanel>
-              </ResizablePanelGroup>
-            </ResizablePanel>
-          </ResizablePanelGroup>
-        </div>
-
-        {/* Mobile Layout */}
-        <div className="flex flex-col h-full md:hidden">
-          <div className={cn(
-            "h-full w-full",
-            isMobileView && showConversation ? "hidden" : "block"
-          )}>
-            <EmailList
-              isLoading={isLoading}
-              selectedContact={selectedContact}
-              onSelectContact={handleContactSelect}
-              className="w-full"
-            />
-          </div>
-
-          <div className={cn(
-            "h-full w-full",
-            isMobileView && !showConversation ? "hidden" : "block"
-          )}>
-            <ConversationView
-              contactEmail={selectedContact}
-              isLoading={isLoading}
-              isGroup={isGroupSelected}
-              groupId={selectedGroupId}
-              onBack={handleBackToList}
-            />
-          </div>
-        </div>
+        {renderMainContent()}
       </div>
     </div>
   );
