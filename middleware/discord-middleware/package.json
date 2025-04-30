@@ -4,10 +4,10 @@
   "description": "Discord middleware for CommsSync",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "bun server.js",
     "postinstall": "bunx prisma generate --no-engine",
     "dev": "nodemon server.js",
-    "start:cluster": "NODE_ENV=production node server.js"
+    "start:cluster": "NODE_ENV=production bun server.js"
   },
   "dependencies": {
     "@prisma/client": "^6.7.0",
