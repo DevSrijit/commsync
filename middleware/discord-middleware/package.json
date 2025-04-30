@@ -4,7 +4,7 @@
   "description": "Discord middleware for CommsSync",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "bun server.js",
     "dev": "nodemon server.js",
     "start:cluster": "NODE_ENV=production bun server.js"
   },
