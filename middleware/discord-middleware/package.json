@@ -10,7 +10,7 @@
     "start:cluster": "NODE_ENV=production node server.js"
   },
   "dependencies": {
-    "@prisma/client": "^5.0.0",
+    "@prisma/client": "^6.7.0",
     "axios": "^1.6.0",
     "body-parser": "^1.20.2",
     "cors": "^2.8.5",
@@ -22,7 +22,7 @@
   },
   "devDependencies": {
     "nodemon": "^3.0.1",
-    "prisma": "^5.0.0"
+    "prisma": "6.7.0"
   },
   "engines": {
     "node": ">=18.0.0"
