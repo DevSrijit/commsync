@@ -6,7 +6,7 @@ services:
     container_name: discord-middleware
     restart: unless-stopped
     ports:
-      - "3081:3000"
+      - "3421:3000"
     environment:
       - PORT=3000
       - DATABASE_URL=${DATABASE_URL}
