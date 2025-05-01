@@ -15,9 +15,9 @@ export function formatJustCallTimestamp(
 ): string {
   if (!dateStr && !timeStr) {
     const fallbackTime = new Date().toISOString();
-    console.log(
-      `No date or time provided, using current time: ${fallbackTime}`
-    );
+    // console.log(
+    //   `No date or time provided, using current time: ${fallbackTime}`
+    // );
     return fallbackTime;
   }
 
@@ -124,9 +124,9 @@ export class JustCallService {
           `No phone number found for JustCall account ${this.accountId}, some functionality may be limited`
         );
       } else {
-        console.log(
-          `JustCall service initialized for phone number: ${this.phoneNumber}`
-        );
+        // console.log(
+        //   `JustCall service initialized for phone number: ${this.phoneNumber}`
+        // );
       }
     } catch (error) {
       console.error("Error initializing JustCall service:", error);
@@ -177,9 +177,9 @@ export class JustCallService {
       if (justcallNumber) {
         // This should be the number assigned to your JustCall account
         queryParams.append("justcall_number", justcallNumber);
-        console.log(
-          `Filtering messages for JustCall number: ${justcallNumber}`
-        );
+        // console.log(
+        //   `Filtering messages for JustCall number: ${justcallNumber}`
+        // );
       } else {
         console.warn(
           "No JustCall phone number provided for filtering messages"
@@ -189,15 +189,15 @@ export class JustCallService {
       // Use cursor-based pagination with last_sms_id_fetched instead of page number
       if (lastSmsIdFetched) {
         queryParams.append("last_sms_id_fetched", lastSmsIdFetched);
-        console.log(
-          `Using cursor-based pagination with last_sms_id_fetched: ${lastSmsIdFetched}`
-        );
+        // console.log(
+        //   `Using cursor-based pagination with last_sms_id_fetched: ${lastSmsIdFetched}`
+        // );
       } else {
-        console.log("Initial fetch (no pagination cursor)");
+        // console.log("Initial fetch (no pagination cursor)");
       }
 
       url = `${url}?${queryParams.toString()}`;
-      console.log(`JustCall API request: ${url}`);
+      // console.log(`JustCall API request: ${url}`);
 
       const response = await fetch(url, {
         method: "GET",
@@ -260,26 +260,26 @@ export class JustCallService {
 
       // Log all messages with their timestamps for debugging
       if (messages.length > 0) {
-        console.log(`Retrieved ${messages.length} JustCall messages.`);
-        console.log(
-          `First message ID: ${messages[0].id}, Last message ID: ${
-            messages[messages.length - 1].id
-          }`
-        );
+        // console.log(`Retrieved ${messages.length} JustCall messages.`);
+        // console.log(
+        //   `First message ID: ${messages[0].id}, Last message ID: ${
+        //     messages[messages.length - 1].id
+        //   }`
+        // );
 
         // Show the first 3 messages for debugging
         const sampleSize = Math.min(3, messages.length);
-        console.log(`Sample of first ${sampleSize} messages:`);
+        // console.log(`Sample of first ${sampleSize} messages:`);
         messages.slice(0, sampleSize).forEach((msg, idx) => {
-          console.log(`Message ${idx + 1}:`, {
-            id: msg.id,
-            direction: msg.direction,
-            contact_number: msg.contact_number,
-            date: msg.sms_user_date || msg.sms_date,
-          });
+          // console.log(`Message ${idx + 1}:`, {
+          //   id: msg.id,
+          //   direction: msg.direction,
+          //   contact_number: msg.contact_number,
+          //   date: msg.sms_user_date || msg.sms_date,
+          // });
         });
       } else {
-        console.log("No messages returned from JustCall API");
+        // console.log("No messages returned from JustCall API");
       }
 
       // Create a map to group messages by conversation
@@ -654,7 +654,7 @@ export class JustCallService {
       // Using the V2 SMS endpoints as per the documentation
       let url = `${this.baseUrl}/texts?per_page=${limit}`;
 
-      console.log(`[DEBUG] Fetching all texts without filters from: ${url}`);
+      // console.log(`[DEBUG] Fetching all texts without filters from: ${url}`);
 
       const response = await fetch(url, {
         method: "GET",
@@ -664,21 +664,21 @@ export class JustCallService {
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         const statusCode = response.status;
-        console.error(`[DEBUG] JustCall API error: ${statusCode}`, errorData);
+        // console.error(`[DEBUG] JustCall API error: ${statusCode}`, errorData);
         return { error: errorData, status: statusCode };
       }
 
       const data = await response.json();
-      console.log(
-        `[DEBUG] JustCall API response: Found ${data?.data?.length || 0} texts`
-      );
+      // console.log(
+      //   `[DEBUG] JustCall API response: Found ${data?.data?.length || 0} texts`
+      // );
 
       // Log the first few texts to see what's coming back
       if (data?.data?.length > 0) {
         const sampleTexts = data.data.slice(0, 3);
-        console.log(
-          `[DEBUG] Sample texts: ${JSON.stringify(sampleTexts, null, 2)}`
-        );
+        // console.log(
+        //   `[DEBUG] Sample texts: ${JSON.stringify(sampleTexts, null, 2)}`
+        // );
 
         // Extract unique phone numbers to help with debugging
         const justcallNumbers = new Set();
@@ -689,16 +689,16 @@ export class JustCallService {
           if (text.contact_number) contactNumbers.add(text.contact_number);
         });
 
-        console.log(
-          `[DEBUG] JustCall numbers in texts: ${Array.from(
-            justcallNumbers
-          ).join(", ")}`
-        );
-        console.log(
-          `[DEBUG] Contact numbers in texts: ${Array.from(contactNumbers).join(
-            ", "
-          )}`
-        );
+        // console.log(
+        //   `[DEBUG] JustCall numbers in texts: ${Array.from(
+        //     justcallNumbers
+        //   ).join(", ")}`
+        // );
+        // console.log(
+        //   `[DEBUG] Contact numbers in texts: ${Array.from(contactNumbers).join(
+        //     ", "
+        //   )}`
+        // );
       }
 
       return data;

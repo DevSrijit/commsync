@@ -7,6 +7,9 @@ const {
   Partials,
   Events,
   ChannelType,
+  REST,
+  Routes,
+  ShardManager,
 } = require("discord.js");
 const cors = require("cors");
 const bodyParser = require("body-parser");
@@ -23,7 +26,7 @@ const MAX_CONCURRENT_CONNECTIONS =
   process.env.MAX_CONCURRENT_CONNECTIONS || 100;
 const CONNECTION_POOL_CHECK_INTERVAL = 60 * 1000; // 1 minute
 const INACTIVE_TIMEOUT = 24 * 60 * 60 * 1000; // 24 hours
-const SHARD_COUNT = process.env.SHARD_COUNT || 2;
+const SHARD_COUNT = 20;
 const NUM_WORKERS = process.env.NUM_WORKERS || os.cpus().length;
 
 // Create logs directory if it doesn't exist
@@ -127,8 +130,12 @@ function startServer() {
   app.use(bodyParser.json());
   app.use(morgan("combined", { stream: accessLogStream }));
 
-  // Discord client instances
-  const discordClients = new Map();
+  // Track REST API clients for each account
+  const discordRestClients = new Map();
+
+  // Track WebSocket clients for user accounts (for receiving messages)
+  const discordWsClients = new Map();
+
   const connectionQueue = [];
   const activeConnections = new Set();
 
@@ -139,7 +146,7 @@ function startServer() {
   app.get("/health", (req, res) => {
     res.json({
       status: "ok",
-      activeConnections: discordClients.size,
+      activeConnections: discordWsClients.size,
       queueLength: connectionQueue.length,
       workerId: process.pid,
       memory: process.memoryUsage(),
@@ -180,7 +187,7 @@ function startServer() {
     const staleAccountIds = [];
 
     // Check for inactive connections
-    for (const [accountId, data] of discordClients.entries()) {
+    for (const [accountId, data] of discordWsClients.entries()) {
       if (now - data.lastActivity > INACTIVE_TIMEOUT) {
         console.log(`Cleaning up inactive connection for account ${accountId}`);
         staleAccountIds.push(accountId);
@@ -190,10 +197,11 @@ function startServer() {
     // Clean up stale connections
     for (const accountId of staleAccountIds) {
       try {
-        const client = discordClients.get(accountId)?.client;
+        const client = discordWsClients.get(accountId)?.client;
         if (client) {
           client.destroy();
-          discordClients.delete(accountId);
+          discordWsClients.delete(accountId);
+          discordRestClients.delete(accountId);
           activeConnections.delete(accountId);
         }
       } catch (error) {
@@ -205,13 +213,18 @@ function startServer() {
     processConnectionQueue();
   }, CONNECTION_POOL_CHECK_INTERVAL);
 
+  // Create a REST client for making API calls
+  function createRestClient(token) {
+    return new REST({ version: "10" }).setToken(token);
+  }
+
   // Initialize Discord client for an account
   async function initializeDiscordClient(account) {
     // Update last activity timestamp if the client already exists
-    if (discordClients.has(account.id)) {
-      discordClients.get(account.id).lastActivity = Date.now();
+    if (discordWsClients.has(account.id)) {
+      discordWsClients.get(account.id).lastActivity = Date.now();
       console.log(`Client for account ${account.id} already exists`);
-      return discordClients.get(account.id).client;
+      return discordWsClients.get(account.id).client;
     }
 
     // If we've reached the connection limit, queue this request
@@ -224,16 +237,36 @@ function startServer() {
 
     console.log(`Initializing Discord client for account ${account.id}`);
 
-    // Create new Discord client with sharding if needed
+    // Check if token needs refreshing before initializing
+    const now = new Date();
+    if (new Date(account.expiresAt) <= now) {
+      try {
+        const refreshed = await refreshToken(account);
+        if (!refreshed) {
+          throw new Error("Failed to refresh token");
+        }
+        // Get the refreshed account data
+        account = await prisma.discordAccount.findUnique({
+          where: { id: account.id },
+        });
+      } catch (error) {
+        console.error(`Token refresh failed for account ${account.id}:`, error);
+        throw new Error("Token expired and refresh failed");
+      }
+    }
+
+    // Create new Discord client with default single-process configuration
     const client = new Client({
       intents: [
         GatewayIntentBits.DirectMessages,
         GatewayIntentBits.MessageContent,
       ],
       partials: [Partials.Message, Partials.Channel, Partials.User],
-      shards: SHARD_COUNT > 1 ? "auto" : undefined,
-      shardCount: SHARD_COUNT > 1 ? SHARD_COUNT : undefined,
     });
+
+    // Create a REST client for API calls
+    const restClient = createRestClient(account.accessToken);
+    discordRestClients.set(account.id, restClient);
 
     // Set up event handlers
     client.on(Events.ClientReady, async () => {
@@ -254,15 +287,16 @@ function startServer() {
       console.error(`Discord client error for account ${account.id}:`, error);
     });
 
-    // Log in to Discord
+    // Log in to Discord with OAuth token
     try {
+      // For discord.js with user tokens, we need to pass it directly
       await client.login(account.accessToken);
 
       // Add to active connections
       activeConnections.add(account.id);
 
       // Store client in map with last activity timestamp
-      discordClients.set(account.id, {
+      discordWsClients.set(account.id, {
         client,
         lastActivity: Date.now(),
       });
@@ -272,7 +306,10 @@ function startServer() {
       console.error(`Failed to log in for account ${account.id}:`, error);
 
       // Check if token has expired
-      if (error.message.includes("TOKEN_INVALID")) {
+      if (
+        error.message.includes("TOKEN_INVALID") ||
+        error.message.includes("401")
+      ) {
         console.log(
           `Token expired for account ${account.id}, attempting to refresh...`
         );
@@ -289,7 +326,11 @@ function startServer() {
             activeConnections.add(account.id);
             await client.login(updatedAccount.accessToken);
 
-            discordClients.set(account.id, {
+            // Update the REST client with the new token
+            const newRestClient = createRestClient(updatedAccount.accessToken);
+            discordRestClients.set(account.id, newRestClient);
+
+            discordWsClients.set(account.id, {
               client,
               lastActivity: Date.now(),
             });
@@ -376,8 +417,8 @@ function startServer() {
       }
 
       // Update last activity timestamp for this account's connection
-      if (discordClients.has(account.id)) {
-        discordClients.get(account.id).lastActivity = Date.now();
+      if (discordWsClients.has(account.id)) {
+        discordWsClients.get(account.id).lastActivity = Date.now();
       }
 
       const channelType =
@@ -498,27 +539,94 @@ function startServer() {
     };
   }
 
+  // Make an authenticated API request using the REST client
+  async function makeApiRequest(
+    account,
+    endpoint,
+    method = "GET",
+    body = null
+  ) {
+    try {
+      const restClient = discordRestClients.get(account.id);
+
+      if (!restClient) {
+        throw new Error("REST client not initialized");
+      }
+
+      let response;
+
+      switch (method.toUpperCase()) {
+        case "GET":
+          response = await restClient.get(endpoint);
+          break;
+        case "POST":
+          response = await restClient.post(endpoint, body);
+          break;
+        case "PATCH":
+          response = await restClient.patch(endpoint, body);
+          break;
+        case "PUT":
+          response = await restClient.put(endpoint, body);
+          break;
+        case "DELETE":
+          response = await restClient.delete(endpoint);
+          break;
+        default:
+          throw new Error(`Unsupported method: ${method}`);
+      }
+
+      return response;
+    } catch (error) {
+      // Check if token expired
+      if (error.status === 401) {
+        // Try to refresh the token
+        const refreshed = await refreshToken(account);
+        if (refreshed) {
+          // Get updated account
+          const updatedAccount = await prisma.discordAccount.findUnique({
+            where: { id: account.id },
+          });
+
+          // Update REST client
+          const newRestClient = createRestClient(updatedAccount.accessToken);
+          discordRestClients.set(account.id, newRestClient);
+
+          // Retry the request
+          return makeApiRequest(updatedAccount, endpoint, method, body);
+        }
+      }
+
+      throw error;
+    }
+  }
+
   // Sync channels for an account
   async function syncChannels(client, account) {
     try {
       // Update last activity timestamp
-      if (discordClients.has(account.id)) {
-        discordClients.get(account.id).lastActivity = Date.now();
+      if (discordWsClients.has(account.id)) {
+        discordWsClients.get(account.id).lastActivity = Date.now();
       }
 
-      // Fetch DM channels
-      const dmChannels = client.channels.cache.filter(
-        (channel) =>
-          channel.type === ChannelType.DM ||
-          channel.type === ChannelType.GroupDM
-      );
+      // Use the REST API to fetch DM channels
+      const rest = discordRestClients.get(account.id);
+      if (!rest) {
+        throw new Error("REST client not found");
+      }
+
+      // Fetch user's DM channels using the REST API
+      const dmChannels = await makeApiRequest(account, Routes.userChannels());
 
       console.log(
-        `Found ${dmChannels.size} DM channels to sync for account ${account.id}`
+        `Found ${dmChannels.length} DM channels to sync for account ${account.id}`
       );
 
-      for (const [_, channel] of dmChannels) {
-        await syncChannel(channel, account);
+      for (const channel of dmChannels) {
+        // Only process DM and group DM channels
+        if (channel.type === 1 || channel.type === 3) {
+          // 1 = DM, 3 = Group DM
+          await syncChannelViaRest(channel, account);
+        }
       }
 
       // Update last sync time
@@ -546,24 +654,29 @@ function startServer() {
     }
   }
 
-  // Sync a single channel
-  async function syncChannel(channel, account) {
+  // Sync a single channel using REST API
+  async function syncChannelViaRest(channel, account) {
     try {
-      const channelType = channel.type === ChannelType.DM ? "dm" : "group_dm";
+      const channelType = channel.type === 1 ? "dm" : "group_dm";
       let channelName = "Unknown Channel";
       let recipients = [];
 
       // Get channel name and recipients based on channel type
-      if (channel.type === ChannelType.DM) {
-        channelName = channel.recipient?.username || "Direct Message";
-        recipients = [
-          {
-            id: channel.recipient?.id,
-            username: channel.recipient?.username,
-            avatar: channel.recipient?.avatar,
-          },
-        ];
-      } else if (channel.type === ChannelType.GroupDM) {
+      if (channel.type === 1) {
+        // DM
+        if (channel.recipients && channel.recipients.length > 0) {
+          const recipient = channel.recipients[0];
+          channelName = recipient.username || "Direct Message";
+          recipients = [
+            {
+              id: recipient.id,
+              username: recipient.username,
+              avatar: recipient.avatar,
+            },
+          ];
+        }
+      } else if (channel.type === 3) {
+        // Group DM
         channelName = channel.name || "Group Message";
         recipients =
           channel.recipients?.map((user) => ({
@@ -595,13 +708,16 @@ function startServer() {
         });
       }
 
-      // Fetch messages from this channel (limit to 50 for initial sync)
+      // Fetch messages from this channel using REST API (limit to 50 for initial sync)
       try {
-        const messages = await channel.messages.fetch({ limit: 50 });
+        const messages = await makeApiRequest(
+          account,
+          Routes.channelMessages(channel.id, { limit: 50 })
+        );
 
-        for (const [_, message] of messages) {
-          // Skip messages from the bot itself
-          if (message.author.id === channel.client.user.id) {
+        for (const message of messages) {
+          // Skip messages from the user itself
+          if (message.author.id === account.discordUserId) {
             continue;
           }
 
@@ -626,25 +742,27 @@ function startServer() {
                   avatar: message.author.avatar,
                 },
                 content: message.content || "",
-                embeds: message.embeds.length > 0 ? message.embeds : undefined,
+                embeds: message.embeds?.length > 0 ? message.embeds : undefined,
                 attachments:
-                  message.attachments.size > 0
-                    ? Array.from(message.attachments.values())
+                  message.attachments?.length > 0
+                    ? message.attachments
                     : undefined,
-                timestamp: message.createdAt,
-                editedTimestamp: message.editedAt,
+                timestamp: new Date(message.timestamp),
+                editedTimestamp: message.edited_timestamp
+                  ? new Date(message.edited_timestamp)
+                  : null,
               },
             });
           }
         }
 
         // Update the channel's last message ID
-        if (messages.size > 0) {
-          const lastMessage = messages.first();
+        if (messages.length > 0) {
+          const lastMessage = messages[0]; // Messages are returned newest first
           await prisma.discordChannel.update({
             where: { id: dbChannel.id },
             data: {
-              lastMessageId: lastMessage?.id,
+              lastMessageId: lastMessage.id,
               updatedAt: new Date(),
             },
           });
@@ -682,11 +800,12 @@ function startServer() {
       }
 
       // Check if account is already registered
-      if (discordClients.has(accountId)) {
+      if (discordWsClients.has(accountId)) {
         // Disconnect existing client
-        const existingClient = discordClients.get(accountId).client;
+        const existingClient = discordWsClients.get(accountId).client;
         existingClient.destroy();
-        discordClients.delete(accountId);
+        discordWsClients.delete(accountId);
+        discordRestClients.delete(accountId);
         activeConnections.delete(accountId);
       }
 
@@ -697,6 +816,10 @@ function startServer() {
         expiresAt: new Date(expiresAt),
         discordUserId,
       };
+
+      // Initialize REST client
+      const restClient = createRestClient(accessToken);
+      discordRestClients.set(accountId, restClient);
 
       // Initialize Discord client for this account
       try {
@@ -726,11 +849,12 @@ function startServer() {
       }
 
       // Check if client exists
-      if (discordClients.has(accountId)) {
+      if (discordWsClients.has(accountId)) {
         // Disconnect client
-        const client = discordClients.get(accountId).client;
+        const client = discordWsClients.get(accountId).client;
         client.destroy();
-        discordClients.delete(accountId);
+        discordWsClients.delete(accountId);
+        discordRestClients.delete(accountId);
         activeConnections.delete(accountId);
 
         console.log(`Discord client for account ${accountId} unregistered`);
@@ -765,13 +889,27 @@ function startServer() {
         return res.status(404).json({ error: "Account not found" });
       }
 
-      // Get Discord client
+      // Check if token is expired
+      if (new Date(account.expiresAt) <= new Date()) {
+        const refreshed = await refreshToken(account);
+        if (!refreshed) {
+          return res.status(401).json({ error: "Failed to refresh token" });
+        }
+      }
+
+      // Get or initialize REST client
+      if (!discordRestClients.has(accountId)) {
+        const restClient = createRestClient(account.accessToken);
+        discordRestClients.set(accountId, restClient);
+      }
+
+      // Get Discord client for WebSocket events
       let client;
 
-      if (discordClients.has(accountId)) {
+      if (discordWsClients.has(accountId)) {
         // Update last activity timestamp
-        discordClients.get(accountId).lastActivity = Date.now();
-        client = discordClients.get(accountId).client;
+        discordWsClients.get(accountId).lastActivity = Date.now();
+        client = discordWsClients.get(accountId).client;
       } else {
         // Initialize client if not already done
         try {
@@ -813,29 +951,18 @@ function startServer() {
         return res.status(404).json({ error: "Account not found" });
       }
 
-      // Get Discord client
-      let client;
-
-      if (discordClients.has(accountId)) {
-        // Update last activity timestamp
-        discordClients.get(accountId).lastActivity = Date.now();
-        client = discordClients.get(accountId).client;
-      } else {
-        // Initialize client if not already done
-        try {
-          client = await initializeDiscordClient(account);
-        } catch (error) {
-          return res.status(500).json({
-            error: `Failed to initialize Discord client: ${error.message}`,
-          });
+      // Check if token is expired
+      if (new Date(account.expiresAt) <= new Date()) {
+        const refreshed = await refreshToken(account);
+        if (!refreshed) {
+          return res.status(401).json({ error: "Failed to refresh token" });
         }
       }
 
-      // Get Discord channel
-      const discordChannel = await client.channels.fetch(discordChannelId);
-
-      if (!discordChannel) {
-        return res.status(404).json({ error: "Discord channel not found" });
+      // Get or initialize REST client
+      if (!discordRestClients.has(accountId)) {
+        const restClient = createRestClient(account.accessToken);
+        discordRestClients.set(accountId, restClient);
       }
 
       // Find db channel
@@ -849,59 +976,71 @@ function startServer() {
         return res.status(404).json({ error: "Channel not found in database" });
       }
 
-      // Send message
-      const sentMessage = await discordChannel.send(content);
+      // Send message using REST API
+      try {
+        const messageData = await makeApiRequest(
+          account,
+          Routes.channelMessages(discordChannelId),
+          "POST",
+          { content }
+        );
 
-      // Format message for response
-      const messageData = {
-        id: sentMessage.id,
-        content: sentMessage.content,
-        author: {
-          id: client.user.id,
-          username: client.user.username,
-          avatar: client.user.avatar,
-        },
-        timestamp: sentMessage.createdTimestamp,
-        editedTimestamp: sentMessage.editedTimestamp,
-        embeds: sentMessage.embeds,
-        attachments: Array.from(sentMessage.attachments.values()),
-      };
+        // Format message for response
+        const formattedMessage = {
+          id: messageData.id,
+          content: messageData.content,
+          author: {
+            id: messageData.author.id,
+            username: messageData.author.username,
+            avatar: messageData.author.avatar,
+          },
+          timestamp: new Date(messageData.timestamp),
+          editedTimestamp: messageData.edited_timestamp
+            ? new Date(messageData.edited_timestamp)
+            : null,
+          embeds: messageData.embeds || [],
+          attachments: messageData.attachments || [],
+        };
 
-      // Store message in database
-      await prisma.discordMessage.create({
-        data: {
-          discordMessageId: sentMessage.id,
-          discordAccountId: accountId,
-          channelId: dbChannel.id,
-          author: messageData.author,
-          content: sentMessage.content || "",
-          embeds:
-            sentMessage.embeds.length > 0 ? sentMessage.embeds : undefined,
-          attachments:
-            sentMessage.attachments.size > 0
-              ? Array.from(sentMessage.attachments.values())
-              : undefined,
-          timestamp: sentMessage.createdAt,
-          editedTimestamp: sentMessage.editedAt,
-          isRead: true, // Mark as read since we sent it
-        },
-      });
+        // Store message in database
+        await prisma.discordMessage.create({
+          data: {
+            discordMessageId: messageData.id,
+            discordAccountId: accountId,
+            channelId: dbChannel.id,
+            author: formattedMessage.author,
+            content: messageData.content || "",
+            embeds:
+              messageData.embeds?.length > 0 ? messageData.embeds : undefined,
+            attachments:
+              messageData.attachments?.length > 0
+                ? messageData.attachments
+                : undefined,
+            timestamp: formattedMessage.timestamp,
+            editedTimestamp: formattedMessage.editedTimestamp,
+            isRead: true, // Mark as read since we sent it
+          },
+        });
 
-      // Update channel's last message ID
-      await prisma.discordChannel.update({
-        where: { id: dbChannel.id },
-        data: {
-          lastMessageId: sentMessage.id,
-          updatedAt: new Date(),
-        },
-      });
+        // Update channel's last message ID
+        await prisma.discordChannel.update({
+          where: { id: dbChannel.id },
+          data: {
+            lastMessageId: messageData.id,
+            updatedAt: new Date(),
+          },
+        });
 
-      res.json({
-        success: true,
-        message: messageData,
-      });
+        res.json({
+          success: true,
+          message: formattedMessage,
+        });
+      } catch (error) {
+        console.error("Error sending message:", error);
+        res.status(500).json({ error: error.message });
+      }
     } catch (error) {
-      console.error("Error sending message:", error);
+      console.error("Error in send-message endpoint:", error);
       res.status(500).json({ error: error.message });
     }
   });
@@ -934,7 +1073,7 @@ function startServer() {
       workerId: process.pid,
       uptime: process.uptime(),
       memory: process.memoryUsage(),
-      activeConnections: discordClients.size,
+      activeConnections: discordWsClients.size,
       queueLength: connectionQueue.length,
       maxConcurrentConnections: MAX_CONCURRENT_CONNECTIONS,
       shardCount: SHARD_COUNT,
@@ -967,6 +1106,11 @@ function startServer() {
         await Promise.allSettled(
           batch.map(async (account) => {
             try {
+              // Create REST client first
+              const restClient = createRestClient(account.accessToken);
+              discordRestClients.set(account.id, restClient);
+
+              // Then initialize WebSocket client
               await initializeDiscordClient(account);
             } catch (error) {
               console.error(
@@ -991,13 +1135,14 @@ function startServer() {
   function cleanup() {
     console.log("Shutting down Discord middleware server...");
 
-    for (const [accountId, data] of discordClients.entries()) {
+    for (const [accountId, data] of discordWsClients.entries()) {
       console.log(`Disconnecting client for account ${accountId}`);
       data.client.destroy();
     }
 
     // Clear maps and sets
-    discordClients.clear();
+    discordWsClients.clear();
+    discordRestClients.clear();
     activeConnections.clear();
 
     // Close Prisma connection

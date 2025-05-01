@@ -120,6 +120,7 @@ model SyncAccount {
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   messages          Message[]
+  settings          Json? // Additional settings for the platform
 
   @@index([userId])
   @@index([platform])
