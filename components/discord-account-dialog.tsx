@@ -88,9 +88,8 @@ export function DiscordAccountDialog({
       const state = encodeURIComponent(JSON.stringify({ label: values.label }));
       const clientId = process.env.DISCORD_CLIENT_ID || "1367228499890278410";
       const redirectUri = encodeURIComponent(`${window.location.origin}/api/discord/callback`);
-      const scope = encodeURIComponent("identify messages.read dm_channels.read dm_channels.messages.read dm_channels.messages.write gdm.join messages.read");
 
-      const actual_url = `https://discord.com/oauth2/authorize?client_id=${clientId}&response_type=code&redirect_uri=${redirectUri}&scope=${scope}&state=${state}`
+      const actual_url = `https://discord.com/oauth2/authorize?client_id=${clientId}&response_type=code&redirect_uri=${redirectUri}&scope=identify+dm_channels.messages.read+dm_channels.messages.write+dm_channels.read+gdm.join+messages.read&state=${state}`
 
       // Redirect to Discord OAuth
       window.location.href = actual_url;
