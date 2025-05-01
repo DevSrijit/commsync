@@ -16,7 +16,7 @@ const logger = {
 
 export async function GET(req: NextRequest) {
   try {
-    logger.info("Starting subscription check");
+    //logger.info("Starting subscription check");
     
     // Get user session
     const session = await getServerSession(authOptions);
@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
       );
     }
     
-    logger.info(`Checking subscription for user: ${session.user.email}`);
+    //logger.info(`Checking subscription for user: ${session.user.email}`);
     
     // Find user with organizations and subscriptions
     const user = await db.user.findUnique({
@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
     });
     
     if (!user) {
-      logger.info(`User not found in database: ${session.user.email}`);
+      //logger.info(`User not found in database: ${session.user.email}`);
       return NextResponse.json(
         { hasActiveSubscription: false, error: 'User not found' },
         { status: 404 }
@@ -52,14 +52,14 @@ export async function GET(req: NextRequest) {
     }
     
     if (!user.organizations || user.organizations.length === 0) {
-      logger.info(`User has no organizations`, { userId: user.id });
+     // logger.info(`User has no organizations`, { userId: user.id });
       return NextResponse.json({
         hasActiveSubscription: false,
         organizations: []
       });
     }
     
-    logger.info(`Found user with ${user.organizations.length} organizations`);
+    //logger.info(`Found user with ${user.organizations.length} organizations`);
     
     // Import stripe dynamically to avoid circular dependencies
     const { stripe } = await import('@/lib/stripe');
@@ -73,13 +73,13 @@ export async function GET(req: NextRequest) {
           );
           
           // Update subscription status in database to match Stripe's data
-          logger.info(`Refreshing subscription from Stripe`, {
-            subscriptionId: org.subscription.id,
-            status: {
-              before: org.subscription.status,
-              after: stripeSubscription.status
-            }
-          });
+          // logger.info(`Refreshing subscription from Stripe`, {
+          //   subscriptionId: org.subscription.id,
+          //   status: {
+          //     before: org.subscription.status,
+          //     after: stripeSubscription.status
+          //   }
+          // });
             
           await db.subscription.update({
             where: { id: org.subscription.id },
@@ -131,7 +131,7 @@ export async function GET(req: NextRequest) {
         };
       });
     
-    logger.info(`Subscription details`, { subscriptions: subscriptionDetails });
+    //logger.info(`Subscription details`, { subscriptions: subscriptionDetails });
     
     // Check if any organization has an active subscription
     const hasActiveSubscription = user.organizations.some(
@@ -139,7 +139,7 @@ export async function GET(req: NextRequest) {
         org.subscription && hasActiveAccess(org.subscription)
     );
 
-    logger.info(`Active subscription check result: ${hasActiveSubscription}`);
+    //logger.info(`Active subscription check result: ${hasActiveSubscription}`);
     
     return NextResponse.json({
       hasActiveSubscription,
@@ -159,7 +159,7 @@ export async function GET(req: NextRequest) {
       })),
     });
   } catch (error) {
-    logger.error('Error checking subscription', error);
+    //logger.error('Error checking subscription', error);
     return NextResponse.json(
       { hasActiveSubscription: false, error: 'Internal server error' },
       { status: 500 }

@@ -74,14 +74,14 @@ export async function GET(request: Request) {
             continue;
           }
 
-          console.log(`Fetching messages for JustCall account ${account.id}:`);
-          console.log(`- Phone: ${phoneToUse}`);
-          console.log(`- Sort direction: ${sortDirection}`);
-          console.log(
-            `- Pagination cursor (lastSmsIdFetched): ${
-              lastSmsIdFetched || "none"
-            }`
-          );
+         // console.log(`Fetching messages for JustCall account ${account.id}:`);
+         // console.log(`- Phone: ${phoneToUse}`);
+         // console.log(`- Sort direction: ${sortDirection}`);
+         // console.log(
+         //   `- Pagination cursor (lastSmsIdFetched): ${
+         //     lastSmsIdFetched || "none"
+         //   }`
+         // );
 
           // Use cursor-based pagination with lastSmsIdFetched instead of page numbers
           const result = await justcallService.getMessages(
@@ -116,15 +116,15 @@ export async function GET(request: Request) {
             }
           }
 
-          console.log(
-            `Retrieved ${justcallMessages.length} messages from JustCall`
-          );
+          //console.log(
+          //  `Retrieved ${justcallMessages.length} messages from JustCall`
+          //);
 
           // Log the ID range to help with troubleshooting pagination
           if (justcallMessages.length > 0) {
             const firstId = justcallMessages[0].id;
             const lastId = justcallMessages[justcallMessages.length - 1].id;
-            console.log(`Message ID range: ${firstId} - ${lastId}`);
+            //console.log(`Message ID range: ${firstId} - ${lastId}`);
           }
 
           // Add messages to our collection (even if partial due to rate limiting)

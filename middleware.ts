@@ -69,7 +69,7 @@ export async function middleware(request: NextRequest) {
         console.error("Error triggering automatic sync:", error);
       });
 
-      console.log("Triggered automatic sync at", new Date().toISOString());
+      //console.log("Triggered automatic sync at", new Date().toISOString());
     } catch (error) {
       console.error("Failed to trigger automatic sync:", error);
     }

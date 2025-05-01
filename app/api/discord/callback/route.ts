@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
         client_secret: process.env.DISCORD_CLIENT_SECRET!,
         grant_type: "authorization_code",
         code,
-        redirect_uri: `${process.env.NEXTAUTH_URL}/api/discord/callback`,
+        redirect_uri: `${new URL(req.url).origin}/api/discord/callback`,
       }),
     });
 

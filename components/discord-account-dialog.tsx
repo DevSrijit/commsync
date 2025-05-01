@@ -60,17 +60,17 @@ export function DiscordAccountDialog({
 
   const handleSubmit = async (values: DiscordAccountFormValues) => {
     setIsLoading(true);
-    
+
     // Force refresh the session before submitting
     try {
-      await fetch("/api/auth/session", { 
+      await fetch("/api/auth/session", {
         method: "GET",
         credentials: "include"
       });
     } catch (error) {
       console.error("Failed to refresh session:", error);
     }
-    
+
     // Check if user is authenticated
     if (status !== "authenticated" || !session) {
       toast({
@@ -81,23 +81,23 @@ export function DiscordAccountDialog({
       setIsLoading(false);
       return;
     }
-    
+
     try {
       // Redirect to Discord OAuth flow with the label as state
       // The state parameter will be returned to the callback URL
       const state = encodeURIComponent(JSON.stringify({ label: values.label }));
-      const clientId = process.env.NEXT_PUBLIC_DISCORD_CLIENT_ID;
+      const clientId = process.env.DISCORD_CLIENT_ID || "1367228499890278410";
       const redirectUri = encodeURIComponent(`${window.location.origin}/api/discord/callback`);
-      const scope = encodeURIComponent("identify messages.read direct_messages.read");
-      
-      const url = `https://discord.com/api/oauth2/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=${scope}&state=${state}`;
-      
+      const scope = encodeURIComponent("identify messages.read dm_channels.read dm_channels.messages.read dm_channels.messages.write gdm.join messages.read");
+
+      const actual_url = `https://discord.com/oauth2/authorize?client_id=${clientId}&response_type=code&redirect_uri=${redirectUri}&scope=${scope}&state=${state}`
+
       // Redirect to Discord OAuth
-      window.location.href = url;
-      
+      window.location.href = actual_url;
+
     } catch (error) {
       console.error("Error initiating Discord OAuth flow:", error);
-      
+
       toast({
         title: "Error linking account",
         description: error instanceof Error ? error.message : "Unknown error occurred",
@@ -118,10 +118,10 @@ export function DiscordAccountDialog({
         </DialogHeader>
 
         {limitReached && !isLoadingLimits && (
-          <LimitReachedOverlay 
-            type="connections" 
-            used={usedConnections} 
-            limit={maxConnections} 
+          <LimitReachedOverlay
+            type="connections"
+            used={usedConnections}
+            limit={maxConnections}
           />
         )}
 
@@ -150,17 +150,17 @@ export function DiscordAccountDialog({
               <p className="mt-2">
                 The Discord integration will allow you to:
               </p>
-              
+
               <ul className="list-disc pl-4 mt-1">
                 <li>View and synchronize direct messages and group chats</li>
                 <li>Respond to messages through CommsSync</li>
                 <li>Keep a searchable archive of your conversations</li>
               </ul>
-              
+
               <div className="mt-3 flex items-center">
-                <a 
-                  href="https://discord.com/safety/privacy-policy" 
-                  target="_blank" 
+                <a
+                  href="https://discord.com/safety/privacy-policy"
+                  target="_blank"
                   rel="noopener noreferrer"
                   className="text-blue-600 hover:text-blue-800 flex items-center"
                 >

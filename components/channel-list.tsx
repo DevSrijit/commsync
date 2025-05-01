@@ -398,35 +398,34 @@ export function EmailList({
     // Count SMS messages
     const smsMessages = emails.filter(isSMSMessage);
     setSmsCount(smsMessages.length);
-
-    if (smsMessages.length > 0) {
-      // Log some details about the first few SMS messages
-      const sampleSize = Math.min(3, smsMessages.length);
-      console.log(`Sample of ${sampleSize} SMS messages:`);
-      smsMessages.slice(0, sampleSize).forEach((msg, i) => {
-        // Use type assertion to access justcallTimes
-        const justcallTimesStr = (msg as any).justcallTimes
-          ? JSON.stringify((msg as any).justcallTimes)
-          : 'N/A';
-
-        console.log(`SMS #${i + 1}: 
-  - id: ${msg.id}
-  - from: ${msg.from.name} (${msg.from.email}) 
-  - accountType: ${msg.accountType}
-  - labels: ${msg.labels?.join(', ')}
-  - date: ${msg.date}
-  - justcallTimes: ${justcallTimesStr}
-  - has body: ${Boolean(msg.body)}`);
-      });
-
-      // Log sorted SMS contacts
-      if (smsContacts.length > 0) {
-        console.log(`Top 3 SMS contacts by lastMessageDate:`);
-        sortedSMSContacts.slice(0, 3).forEach((contact, i) => {
-          console.log(`Contact #${i + 1}: ${contact.name} (${contact.email}), lastMessageDate: ${contact.lastMessageDate}`);
-        });
-      }
-    }
+    // if (smsMessages.length > 0) {
+    //   // Log some details about the first few SMS messages
+    //   const sampleSize = Math.min(3, smsMessages.length);
+    //   console.log(`Sample of ${sampleSize} SMS messages:`);
+    //   smsMessages.slice(0, sampleSize).forEach((msg, i) => {
+    //     // Use type assertion to access justcallTimes
+    //     const justcallTimesStr = (msg as any).justcallTimes
+    //       ? JSON.stringify((msg as any).justcallTimes)
+    //       : 'N/A';
+    //
+    //     console.log(`SMS #${i + 1}: 
+    //   - id: ${msg.id}
+    //   - from: ${msg.from.name} (${msg.from.email}) 
+    //   - accountType: ${msg.accountType}
+    //   - labels: ${msg.labels?.join(', ')}
+    //   - date: ${msg.date}
+    //   - justcallTimes: ${justcallTimesStr}
+    //   - has body: ${Boolean(msg.body)}`);
+    //   });
+    //
+    //   // Log sorted SMS contacts
+    //   if (smsContacts.length > 0) {
+    //     console.log(`Top 3 SMS contacts by lastMessageDate:`);
+    //     sortedSMSContacts.slice(0, 3).forEach((contact, i) => {
+    //       console.log(`Contact #${i + 1}: ${contact.name} (${contact.email}), lastMessageDate: ${contact.lastMessageDate}`);
+    //     });
+    //   }
+    // }
   }, [emails, activeFilter, contacts, sortedSMSContacts, smsContacts]);
 
   // If we have no SMS contacts but have SMS messages, create contact entries for them
