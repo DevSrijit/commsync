@@ -18,7 +18,13 @@ declare module "next-auth" {
       image?: string | null;
       accessToken?: string;
       refreshToken?: string;
+      isOnboarded?: boolean;
     };
+  }
+
+  interface JWT {
+    id?: string;
+    isOnboarded?: boolean;
   }
 }
 
@@ -93,6 +99,9 @@ export const authOptions: NextAuthOptions = {
         session.user.email = token.email;
         session.user.image = token.picture;
 
+        // Include isOnboarded status in session
+        session.user.isOnboarded = token.isOnboarded;
+
         // Only include these for Google OAuth users
         if (token.accessToken) {
           session.user.accessToken = token.accessToken as string;
@@ -117,6 +126,9 @@ export const authOptions: NextAuthOptions = {
         }
         return token;
       }
+
+      // Add isOnboarded status to token
+      token.isOnboarded = dbUser.isOnboarded;
 
       if (account && account.provider === "google") {
         token.accessToken = account.access_token;
@@ -157,6 +169,7 @@ export const authOptions: NextAuthOptions = {
         picture: dbUser.image,
         accessToken: token.accessToken,
         refreshToken: token.refreshToken,
+        isOnboarded: token.isOnboarded,
       };
     },
     async signIn({ user, account }) {

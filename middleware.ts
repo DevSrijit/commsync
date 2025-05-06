@@ -28,7 +28,7 @@ export async function middleware(request: NextRequest) {
 
   // Define protected routes that require authentication
   const protectedRoutes = ["/dashboard", "/pricing"];
-  const authRoutes = ["/login", "/auth"];
+  const authRoutes = ["/login", "/auth", "/register"];
 
   // Redirect authenticated users away from auth pages
   if (isAuthenticated && (path === "/" || authRoutes.includes(path))) {
@@ -47,6 +47,15 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(
       new URL(`/login?callbackUrl=${callbackUrl}`, request.url)
     );
+  }
+
+  // Check onboarding status for dashboard access
+  if (isAuthenticated && path.startsWith("/dashboard")) {
+    // If isOnboarded is explicitly false, redirect to pricing
+    // If isOnboarded is true or not present, allow access
+    if (token.isOnboarded === false || token.isOnboarded === undefined) {
+      return NextResponse.redirect(new URL("/pricing", request.url));
+    }
   }
 
   // Get the internal API key
