@@ -62,20 +62,59 @@ export function RegisterForm() {
             const result = await response.json()
 
             if (!response.ok) {
-                throw new Error(result.message || 'Registration failed')
+                // Handle specific error cases with appropriate messages
+                if (response.status === 409) {
+                    toast({
+                        title: "Account already exists",
+                        description: "Please sign in with your existing account or use a different email.",
+                        variant: "destructive",
+                    })
+                } else if (response.status === 400) {
+                    toast({
+                        title: "Invalid information",
+                        description: result.message || "Please check your information and try again.",
+                        variant: "destructive",
+                    })
+                } else {
+                    toast({
+                        title: "Registration failed",
+                        description: result.message || "Please try again later.",
+                        variant: "destructive",
+                    })
+                }
+                return
             }
 
+            // On successful registration
             toast({
                 title: "Registration successful!",
-                description: "You can now sign in with your credentials.",
+                description: "Your account has been created. Please choose a subscription plan.",
             })
 
-            router.push('/login')
+            // Sign in the user automatically after registration
+            const signInResponse = await fetch('/api/auth/signin/credentials', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    email: data.email,
+                    password: data.password,
+                    redirect: false,
+                    json: true,
+                }),
+            })
+
+            // Redirect to pricing page regardless of signin result
+            // This ensures users see plans right after signup
+            setTimeout(() => {
+                router.push('/pricing')
+            }, 500)
         } catch (error: any) {
             console.error("Registration error:", error)
             toast({
-                title: "Registration failed",
-                description: error.message || "Please try again later.",
+                title: "Something went wrong",
+                description: "We couldn't complete your registration. Please try again.",
                 variant: "destructive",
             })
         } finally {
@@ -84,7 +123,7 @@ export function RegisterForm() {
     }
 
     return (
-        <Card className="w-[400px] z-20">
+        <Card className="w-full max-w-[400px] z-20 mx-4">
             <CardHeader>
                 <CardTitle className="text-2xl text-center">Create an Account</CardTitle>
                 <CardDescription className="text-center">Sign up for CommSync</CardDescription>

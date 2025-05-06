@@ -21,7 +21,7 @@ import { SiGoogle } from "@icons-pack/react-simple-icons"
 
 const loginFormSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address" }),
-  password: z.string().min(8, { message: "Password must be at least 8 characters" }),
+  password: z.string().min(1, { message: "Password is required" }),
 })
 
 type LoginFormValues = z.infer<typeof loginFormSchema>
@@ -35,9 +35,24 @@ export function GoogleLoginButton() {
   const handleGoogleSignIn = async () => {
     try {
       setIsLoading(true)
-      await signIn("google", { callbackUrl })
+      const result = await signIn("google", { callbackUrl, redirect: false })
+
+      if (result?.error) {
+        toast({
+          title: "Google sign-in failed",
+          description: "There was a problem signing in with Google. Please try again.",
+          variant: "destructive",
+        })
+      }
+
+      // If successful, redirect will happen automatically
     } catch (error) {
       console.error("Google sign in error:", error)
+      toast({
+        title: "Sign-in error",
+        description: "We couldn't connect to Google. Please try again later.",
+        variant: "destructive",
+      })
     } finally {
       setIsLoading(false)
     }
@@ -69,7 +84,7 @@ export function LoginForm() {
   const [isLoading, setIsLoading] = useState(false)
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard"
-  
+
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginFormSchema),
     defaultValues: {
@@ -88,20 +103,38 @@ export function LoginForm() {
       })
 
       if (response?.error) {
-        toast({
-          title: "Login failed",
-          description: "Invalid email or password. Please try again.",
-          variant: "destructive",
-        })
+        // Handle specific error cases
+        if (response.error === "CredentialsSignin") {
+          toast({
+            title: "Login failed",
+            description: "Invalid email or password. Please check your credentials and try again.",
+            variant: "destructive",
+          })
+        } else {
+          toast({
+            title: "Login failed",
+            description: "There was a problem signing in. Please try again.",
+            variant: "destructive",
+          })
+        }
         return
       }
 
-      window.location.href = callbackUrl
+      // On successful login
+      toast({
+        title: "Login successful",
+        description: "Welcome back to CommSync!",
+      })
+
+      // Redirect with a slight delay to allow the toast to be seen
+      setTimeout(() => {
+        window.location.href = callbackUrl
+      }, 500)
     } catch (error) {
       console.error("Sign in error:", error)
       toast({
         title: "Something went wrong",
-        description: "Please try again later.",
+        description: "We couldn't process your login. Please try again later.",
         variant: "destructive",
       })
     } finally {
@@ -110,7 +143,7 @@ export function LoginForm() {
   }
 
   return (
-    <Card className="w-[400px] z-20">
+    <Card className="w-full max-w-[400px] z-20 mx-4">
       <CardHeader>
         <CardTitle className="text-2xl text-center">CommSync</CardTitle>
         <CardDescription className="text-center">Sign in to your account</CardDescription>
@@ -144,6 +177,11 @@ export function LoginForm() {
                 </FormItem>
               )}
             />
+            <div className="flex justify-end">
+              <Link href="/forgot-password" className="text-xs text-muted-foreground hover:text-primary">
+                Forgot password?
+              </Link>
+            </div>
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? (
                 <>
@@ -156,13 +194,13 @@ export function LoginForm() {
             </Button>
           </form>
         </Form>
-        
+
         <div className="flex items-center space-x-2">
           <Separator className="flex-1" />
           <span className="text-xs text-muted-foreground">OR</span>
           <Separator className="flex-1" />
         </div>
-        
+
         <Suspense fallback={
           <Button variant="outline" className="w-full" disabled>
             <LoadingSpinner className="mr-2 h-4 w-4" />
@@ -173,7 +211,7 @@ export function LoginForm() {
         </Suspense>
       </CardContent>
       <CardFooter className="flex flex-col space-y-2">
-        <div className="text-xs text-muted-foreground text-center">
+        <div className="text-sm text-center">
           Don't have an account? <Link href="/register" className="underline hover:text-primary">Sign up</Link>
         </div>
       </CardFooter>
