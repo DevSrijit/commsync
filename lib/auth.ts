@@ -100,7 +100,7 @@ export const authOptions: NextAuthOptions = {
         session.user.image = token.picture;
 
         // Include isOnboarded status in session
-        session.user.isOnboarded = token.isOnboarded;
+        session.user.isOnboarded = token.isOnboarded as boolean;
 
         // Only include these for Google OAuth users
         if (token.accessToken) {

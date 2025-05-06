@@ -55,7 +55,7 @@ export async function POST(req: Request) {
       // Use the Vercel AI SDK streamText function
       const result = await streamText({
         // Using a cost-effective and fast model suitable for summarization
-        // You might switch to 'gpt-4o' or others based on desired quality/cost
+        // switch to 'gpt-4o' or others based on desired quality/cost
         model: openai("gpt-4o-mini"),
         // Provide a system prompt to guide the AI
         system: `You are an expert summarization assistant. 

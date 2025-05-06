@@ -1,4 +1,5 @@
 import sgMail from "@sendgrid/mail";
+import nodemailer from "nodemailer";
 
 // Initialize SendGrid
 if (!process.env.SENDGRID_API_KEY) {
@@ -93,33 +94,36 @@ export async function sendVerificationEmail(to: string, token: string) {
   }
 }
 
-// Email template for password reset
-export async function sendPasswordResetEmail(to: string, token: string) {
-  const resetUrl = `${APP_URL}/reset-password?token=${token}`;
-
+/**
+ * Sends a password reset email with a link to reset the password
+ * @param email Recipient email address
+ * @param name User's name or fallback
+ * @param resetUrl URL with token for password reset
+ * @returns Promise with success status and error if applicable
+ */
+export async function sendPasswordResetEmail(
+  email: string,
+  name: string,
+  resetUrl: string
+) {
   const msg = {
-    to,
+    to: email,
     from: FROM_EMAIL,
     subject: "Reset Your CommSync Password",
     html: `
-      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #4F46E5;">Reset Your Password</h2>
-        <p>We received a request to reset your password for your CommSync account.</p>
-        <p>Please click the button below to create a new password:</p>
-        
-        <div style="margin: 30px 0;">
-          <a href="${resetUrl}" style="padding: 10px 20px; background-color: #4F46E5; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">
-            Reset Password
-          </a>
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e9e9e9; border-radius: 5px;">
+        <h2 style="color: #4F46E5; text-align: center; margin-bottom: 20px;">Password Reset</h2>
+        <p>Hello ${name},</p>
+        <p>We received a request to reset your password for your CommSync account. Click the button below to set a new password:</p>
+        <div style="text-align: center; margin: 30px 0;">
+          <a href="${resetUrl}" style="background-color: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold;">Reset Password</a>
         </div>
-        
-        <p>Or copy and paste this link into your browser:</p>
-        <p style="word-break: break-all;">${resetUrl}</p>
-        
         <p>If you didn't request a password reset, you can safely ignore this email.</p>
-        <p>The link will expire in 1 hour for security reasons.</p>
-        
-        <p>Best regards,<br>The CommSync Team</p>
+        <p>This link will expire in 1 hour for security reasons.</p>
+        <p>Regards,<br>The CommSync Team</p>
+        <hr style="border: none; border-top: 1px solid #e9e9e9; margin: 20px 0;">
+        <p style="font-size: 12px; color: #666; text-align: center;">If you're having trouble clicking the button, copy and paste this URL into your browser:<br>
+        <a href="${resetUrl}" style="color: #4F46E5; word-break: break-all;">${resetUrl}</a></p>
       </div>
     `,
   };
