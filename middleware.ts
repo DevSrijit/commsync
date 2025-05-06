@@ -53,7 +53,7 @@ export async function middleware(request: NextRequest) {
   if (isAuthenticated && path.startsWith("/dashboard")) {
     // If isOnboarded is explicitly false, redirect to pricing
     // If isOnboarded is true or not present, allow access
-    if (token.isOnboarded === false || token.isOnboarded === undefined) {
+    if (token.isOnboarded === false) {
       return NextResponse.redirect(new URL("/pricing", request.url));
     }
   }
