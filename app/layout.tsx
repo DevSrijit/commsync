@@ -3,6 +3,7 @@ import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
 import { Toaster } from "@/components/ui/toaster"
+import { SmoothCursor } from "@/components/ui/smooth-cursor";
 import { Providers } from "@/components/providers"
 
 const inter = Inter({ subsets: ["latin"] })
@@ -24,6 +25,7 @@ export default function RootLayout({
           <main className="scroll-smooth">
             {children}
           </main>
+          <SmoothCursor />
         </Providers>
         <Toaster />
       </body>
