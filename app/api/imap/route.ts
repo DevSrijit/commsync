@@ -9,7 +9,7 @@ import {
   ImapFetchResult,
 } from "@/lib/imap-service";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth-options";
+import { authOptions } from "@/lib/auth";
 import { encryptData, decryptData } from "@/lib/encryption";
 import { db } from "@/lib/db";
 
@@ -106,7 +106,10 @@ export async function POST(req: NextRequest) {
           // Store SMTP configuration
           smtpHost: account.smtpHost || account.host,
           smtpPort: account.smtpPort || (account.secure ? 465 : 587),
-          smtpSecure: account.smtpSecure !== undefined ? account.smtpSecure : account.secure
+          smtpSecure:
+            account.smtpSecure !== undefined
+              ? account.smtpSecure
+              : account.secure,
         };
 
         const accountJson = JSON.stringify(processedAccount);
@@ -191,43 +194,58 @@ export async function POST(req: NextRequest) {
         imap_account = await db.imapAccount.findFirst({
           where: {
             id: data.accountId,
-            userId: session.user.id
-          }
+            userId: session.user.id,
+          },
         });
 
         if (!imap_account) {
-          return NextResponse.json({ error: "IMAP account not found" }, { status: 404 });
+          return NextResponse.json(
+            { error: "IMAP account not found" },
+            { status: 404 }
+          );
         }
       }
 
       // Ensure we have a valid account
       if (!imap_account) {
-        return NextResponse.json({ error: "Missing IMAP account" }, { status: 400 });
+        return NextResponse.json(
+          { error: "Missing IMAP account" },
+          { status: 400 }
+        );
       }
 
       const { to, subject, body, html, attachments, cc, bcc } = data;
-      
+
       try {
         // Decrypt the credentials from the database
         const decryptedCreds = decryptData(imap_account.credentials);
         const credsObject = JSON.parse(decryptedCreds);
-        
+
         // Create ImapAccount object with decrypted credentials and including SMTP details
         const imapAccount: ImapAccount = {
           ...imap_account,
           host: credsObject.host || imap_account.host,
           port: credsObject.port || imap_account.port,
           password: credsObject.password,
-          secure: credsObject.secure !== undefined ? credsObject.secure : (imap_account.port === 465 || imap_account.port === 993),
+          secure:
+            credsObject.secure !== undefined
+              ? credsObject.secure
+              : imap_account.port === 465 || imap_account.port === 993,
           username: credsObject.user || credsObject.username,
           // Include SMTP configuration if available
           smtpHost: credsObject.smtpHost,
           smtpPort: credsObject.smtpPort,
-          smtpSecure: credsObject.smtpSecure
+          smtpSecure: credsObject.smtpSecure,
         };
-        
-        console.log(`Using email configuration: IMAP host=${imapAccount.host}:${imapAccount.port}, SMTP host=${imapAccount.smtpHost || imapAccount.host}:${imapAccount.smtpPort || "default"}`);
-      
+
+        console.log(
+          `Using email configuration: IMAP host=${imapAccount.host}:${
+            imapAccount.port
+          }, SMTP host=${imapAccount.smtpHost || imapAccount.host}:${
+            imapAccount.smtpPort || "default"
+          }`
+        );
+
         const email = await sendImapEmail({
           account: imapAccount,
           to,
@@ -244,29 +262,31 @@ export async function POST(req: NextRequest) {
           {
             id: email.messageId || `sent-${Date.now()}`,
             threadId: email.messageId || `sent-${Date.now()}`,
-            from: { 
-              name: imap_account.label || imap_account.username || "", 
-              email: imap_account.username || "" 
+            from: {
+              name: imap_account.label || imap_account.username || "",
+              email: imap_account.username || "",
             },
-            to: Array.isArray(to) 
-              ? to.map((recipient: string) => ({ 
-                  name: recipient.split('@')[0] || recipient, 
-                  email: recipient 
+            to: Array.isArray(to)
+              ? to.map((recipient: string) => ({
+                  name: recipient.split("@")[0] || recipient,
+                  email: recipient,
                 }))
-              : [{ 
-                  name: to.split('@')[0] || to, 
-                  email: to 
-                }],
+              : [
+                  {
+                    name: to.split("@")[0] || to,
+                    email: to,
+                  },
+                ],
             subject: subject || "(No Subject)",
             body: html || body || "",
             date: new Date().toISOString(),
             labels: ["sent"],
-            attachments: attachments || []
+            attachments: attachments || [],
           },
           "imap",
           imap_account.id
         );
-        
+
         return NextResponse.json({ success: true, email: standardizedEmail });
       } catch (error: any) {
         console.error("Error in sendEmail:", {
@@ -381,16 +401,20 @@ export async function POST(req: NextRequest) {
 
       // Filter messages in memory based on contact email and threadId/messageId
       let conversationEmails = emails.messages;
-      
+
       // First filter by contact email if provided
       if (contactEmail) {
         conversationEmails = conversationEmails.filter(
-          (email) => 
-            email.from?.email === contactEmail || 
-            (email.to && email.to.some((recipient: { email: string }) => recipient.email === contactEmail))
+          (email) =>
+            email.from?.email === contactEmail ||
+            (email.to &&
+              email.to.some(
+                (recipient: { email: string }) =>
+                  recipient.email === contactEmail
+              ))
         );
       }
-      
+
       // Then apply additional filters if provided
       if (threadId) {
         conversationEmails = conversationEmails.filter(

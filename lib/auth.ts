@@ -1,6 +1,8 @@
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
+import CredentialsProvider from "next-auth/providers/credentials";
+import { compare } from "bcrypt";
 import { Session } from "next-auth";
 import { JWT } from "next-auth/jwt";
 
@@ -31,13 +33,51 @@ export const authOptions: NextAuthOptions = {
     error: "/login",
   },
   providers: [
+    CredentialsProvider({
+      id: "credentials",
+      name: "Email",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password) {
+          return null;
+        }
+
+        const user = await db.user.findUnique({
+          where: {
+            email: credentials.email,
+          },
+        });
+
+        if (!user || !user.password) {
+          return null;
+        }
+
+        const isValidPassword = await compare(
+          credentials.password,
+          user.password
+        );
+
+        if (!isValidPassword) {
+          return null;
+        }
+
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          image: user.image,
+        };
+      },
+    }),
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       authorization: {
         params: {
-          scope:
-            "https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email https://mail.google.com/",
+          scope: "openid",
           prompt: "consent",
           access_type: "offline",
           response_type: "code",
@@ -52,8 +92,14 @@ export const authOptions: NextAuthOptions = {
         session.user.name = token.name;
         session.user.email = token.email;
         session.user.image = token.picture;
-        session.user.accessToken = token.accessToken as string;
-        session.user.refreshToken = token.refreshToken as string;
+
+        // Only include these for Google OAuth users
+        if (token.accessToken) {
+          session.user.accessToken = token.accessToken as string;
+        }
+        if (token.refreshToken) {
+          session.user.refreshToken = token.refreshToken as string;
+        }
       }
 
       return session;
@@ -72,14 +118,18 @@ export const authOptions: NextAuthOptions = {
         return token;
       }
 
-      if (account) {
+      if (account && account.provider === "google") {
         token.accessToken = account.access_token;
         token.refreshToken = account.refresh_token;
         token.expiresAt = account.expires_at;
       }
 
-      // Refresh expired token
-      if (token.expiresAt && Date.now() > (token.expiresAt as number) * 1000) {
+      // Refresh expired token for Google OAuth
+      if (
+        token.refreshToken &&
+        token.expiresAt &&
+        Date.now() > (token.expiresAt as number) * 1000
+      ) {
         try {
           const response = await fetch("https://oauth2.googleapis.com/token", {
             method: "POST",

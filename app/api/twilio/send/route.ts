@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth-options";
+import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { TwilioService } from "@/lib/twilio-service";
 import { z } from "zod";
@@ -17,10 +17,7 @@ export async function POST(req: Request) {
     // Verify authentication
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
-      return NextResponse.json(
-        { error: "Not authenticated" },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
     // Parse and validate request body
@@ -34,14 +31,19 @@ export async function POST(req: Request) {
       );
     }
 
-    const { twilioAccountId, to, body: messageBody, mediaUrls } = validationResult.data;
+    const {
+      twilioAccountId,
+      to,
+      body: messageBody,
+      mediaUrls,
+    } = validationResult.data;
 
     // Verify that the Twilio account belongs to this user
     const twilioAccount = await db.syncAccount.findFirst({
       where: {
         id: twilioAccountId,
         userId: session.user.id,
-        platform: 'twilio'
+        platform: "twilio",
       },
     });
 
@@ -59,27 +61,29 @@ export async function POST(req: Request) {
     // Format the message as Email type for consistent handling in UI
     const formattedMessage = {
       id: message.sid || `sent-${Date.now()}`,
-      threadId: [to, twilioAccount.accountIdentifier].sort().join('-'),
+      threadId: [to, twilioAccount.accountIdentifier].sort().join("-"),
       from: {
-        name: 'You',
+        name: "You",
         email: twilioAccount.accountIdentifier,
       },
-      to: [{
-        name: 'Contact',
-        email: to,
-      }],
-      subject: 'SMS Message',
+      to: [
+        {
+          name: "Contact",
+          email: to,
+        },
+      ],
+      subject: "SMS Message",
       body: messageBody,
       date: new Date().toISOString(),
-      labels: ['SMS', 'sent'],
-      accountType: 'twilio',
+      labels: ["SMS", "sent"],
+      accountType: "twilio",
       accountId: twilioAccount.id,
-      platform: 'twilio'
+      platform: "twilio",
     };
 
     return NextResponse.json({
       success: true,
-      message: formattedMessage
+      message: formattedMessage,
     });
   } catch (error: any) {
     console.error("Error sending SMS:", error);
@@ -88,4 +92,4 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
-} 
+}

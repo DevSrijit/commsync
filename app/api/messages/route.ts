@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth-options";
+import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { TwilioService } from "@/lib/twilio-service";
 import { JustCallService } from "@/lib/justcall-service";

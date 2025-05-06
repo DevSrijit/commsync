@@ -1,5 +1,4 @@
 import { PrismaClient } from "@prisma/client";
-import { withAccelerate } from "@prisma/extension-accelerate";
 
 declare global {
   var prisma: PrismaClient | undefined;
@@ -40,11 +39,6 @@ export const db = isBrowser
       log:
         process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
     })
-      .$extends(withAccelerate())
-      .$extends({
-        // Add query timing metrics
-        query: timingMiddleware,
-      });
 
 if (process.env.NODE_ENV !== "production" && !isBrowser) globalThis.prisma = db;
 

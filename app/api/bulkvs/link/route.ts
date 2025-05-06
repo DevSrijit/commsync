@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth-options";
+import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { encryptData } from "@/lib/encryption";
 import { BulkVSService } from "@/lib/bulkvs-service";
@@ -18,12 +18,7 @@ export async function POST(req: NextRequest) {
     const requestData = await req.json();
 
     // Validate input data
-    const {
-      label,
-      apiKey,
-      phoneNumber,
-      apiUsername,
-    } = requestData;
+    const { label, apiKey, phoneNumber, apiUsername } = requestData;
 
     if (!label || !apiKey || !phoneNumber || !apiUsername) {
       return NextResponse.json(
