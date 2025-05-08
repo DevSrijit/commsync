@@ -10,9 +10,10 @@ import PreFooter from "@/components/hero/pre-footer";
 import FooterSection from "@/components/hero/footer";
 import FeatureSection from "@/components/hero/feature";
 import AiLines from "@/components/hero/ai-lines";
+
 const Landing = () => {
   return (
-    <div className="bg-white dark:bg-black ">
+    <div className="bg-white dark:bg-black w-full min-w-full">
       <HeroSection
         title="Welcome to CommSync"
         subtitle={{

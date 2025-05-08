@@ -3,6 +3,8 @@ import { Separator } from "@/components/ui/separator";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Book } from "@/components/ui/book";
+import { Scale } from "dicons";
 
 export const metadata: Metadata = {
     title: "Terms of Service | CommSync",
@@ -18,6 +20,22 @@ export default function TermsOfServicePage() {
                     Last Updated: April 10, 2025
                 </p>
                 <Separator className="mt-6 mb-10 w-1/3" />
+            </div>
+
+            <div className="flex flex-col items-center mb-8">
+                <main className="flex items-center gap-6">
+                    <Book depth={6.5} texture={true} color="#F4A460" textColor="#fff">
+                        <div className="p-3 mb-2 grid gap-3">
+                            <h1 className="font-semibold">
+                                CommSync Legal
+                            </h1>
+                            <p className="text-sm text-muted-foreground">
+                                Terms of Service
+                            </p>
+                            <Scale className="w-4 h-4" />
+                        </div>
+                    </Book>
+                </main>
             </div>
 
             <Card className="p-6 mb-8 border border-border/40 shadow-sm">
