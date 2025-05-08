@@ -1,7 +1,6 @@
 "use client"
 
 import { signIn } from "next-auth/react"
-import { Mail, User } from "lucide-react"
 import { useSearchParams } from "next/navigation"
 import { Suspense } from "react"
 import { useForm } from "react-hook-form"
@@ -18,6 +17,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Separator } from "@/components/ui/separator"
 import { toast } from "@/components/ui/use-toast"
 import { SiGoogle } from "@icons-pack/react-simple-icons"
+
 
 const loginFormSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address" }),

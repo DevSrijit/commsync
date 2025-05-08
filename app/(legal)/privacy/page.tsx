@@ -11,17 +11,6 @@ export const metadata: Metadata = {
     description: "How CommSync protects your privacy and personal information",
 };
 
-interface BookProps {
-    children: React.ReactNode;
-    color?: string;
-    textColor?: string;
-    texture?: boolean;
-    depth?: number;
-    variant?: 'default' | 'simple';
-    illustration?: React.ReactNode;
-    width?: number;
-  }
-
 export default function PrivacyPolicyPage() {
     return (
         <div className="container max-w-4xl mx-auto py-12 px-4 sm:px-6">

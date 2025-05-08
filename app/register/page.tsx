@@ -1,5 +1,7 @@
 import { RegisterForm } from "@/components/register-form"
 import Threads from '@/components/Threads/Threads';
+import { Suspense } from "react";
+import { LoadingSpinner } from "@/components/loading-spinner";
 
 export default function RegisterPage() {
   return (
@@ -12,7 +14,13 @@ export default function RegisterPage() {
         />
       </div>
       <div className="flex min-h-screen items-center justify-center bg-background z-20">
-        <RegisterForm />
+        <Suspense fallback={
+          <div className="flex justify-center items-center">
+            <LoadingSpinner className="h-10 w-10" />
+          </div>
+        }>
+          <RegisterForm />
+        </Suspense>
       </div>
     </div>
   )

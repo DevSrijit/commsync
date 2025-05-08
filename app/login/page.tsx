@@ -1,5 +1,7 @@
 import { LoginForm } from "@/components/login-form"
 import Threads from '@/components/Threads/Threads';
+import { Suspense } from "react";
+import { LoadingSpinner } from "@/components/loading-spinner";
 
 export default function LoginPage() {
   return (
@@ -12,7 +14,13 @@ export default function LoginPage() {
         />
       </div>
       <div className="flex min-h-screen items-center justify-center bg-background z-20">
-        <LoginForm />
+        <Suspense fallback={
+          <div className="flex justify-center items-center">
+            <LoadingSpinner className="h-10 w-10" />
+          </div>
+        }>
+          <LoginForm />
+        </Suspense>
       </div>
     </div>
   )
