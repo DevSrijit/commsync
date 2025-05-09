@@ -34,7 +34,7 @@ export default function PreFooter() {
   return (
     <div
       ref={sectionRef}
-      className="relative flex flex-col items-center justify-center lg:flex-row lg:items-center lg:justify-between min-h-screen px-6 py-12 md:px-10 lg:px-16 overflow-hidden bg-white dark:bg-black"
+      className="relative flex flex-col items-center justify-center lg:flex-row lg:items-center lg:justify-between min-h-screen px-6 py-12 md:px-10 lg:px-16 overflow-hidden bg-[#FAFAFA] dark:bg-black"
     >
       <AnimatePresence>
         {isVisible && (

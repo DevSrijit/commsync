@@ -370,7 +370,7 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
                 onOpenChange(newOpen);
             }
         }}>
-            <DialogContent className="sm:max-w-[700px] h-[65vh] flex flex-col p-2">
+            <DialogContent className="sm:max-w-[700px] h-[80vh] flex flex-col p-2">
                 <DialogHeader className="px-4 py-3 border-b flex flex-row items-center justify-between">
                     <div className="flex items-center gap-3">
                         <DialogTitle className="text-lg font-medium">New Message</DialogTitle>
@@ -408,7 +408,7 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
                         {renderRecipientField()}
                     </div>
 
-                    <div className="relative flex h-[40vh] min-h-0">
+                    <div className="relative flex-1 min-h-0">
                         <MessageInput
                             onSend={handleMessageInputSave}
                             isLoading={isSubmitting}

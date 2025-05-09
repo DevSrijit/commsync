@@ -136,7 +136,7 @@ export const SkeletonTwo = () => {
                backdrop-blur-xl p-[1px] shadow-lg
                transition-colors duration-700">
         <div className="relative h-full w-full rounded-[22px] 
-                 bg-white/90 dark:bg-black/90 
+                 bg-[#FAFAFA]/90 dark:bg-black/90 
                  backdrop-blur-md flex items-center justify-center overflow-hidden group
                  transition-all duration-700">
           {/* Abstract Background Shapes */}
@@ -175,7 +175,7 @@ export const SkeletonTwo = () => {
                          dark:from-purple-400/80 dark:to-blue-400/80 
                          rounded-xl rotate-45 transform transition-all duration-500 group-hover:rotate-90" />
                 <div className="absolute inset-2 
-                         bg-white dark:bg-black 
+                         bg-[#FAFAFA] dark:bg-black 
                          rounded-lg transition-colors duration-700" />
                 <div className="absolute inset-4 
                          bg-gradient-to-br from-indigo-500/80 to-pink-500/80 

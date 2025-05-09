@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { Search, Users, RotateCw, ChevronLeft, ChevronRight, Command, X, PanelLeft } from "lucide-react";
+import { Search, Users, RotateCw, ChevronLeft, ChevronRight, Command, X, PanelLeft, Mail, MessageSquare, Pencil, Trash2, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useEmailStore } from "@/lib/email-store";
 import { ContactItem } from "@/components/contact-item";
@@ -15,6 +15,9 @@ import { useToast } from "@/hooks/use-toast";
 import Fuse from 'fuse.js';
 import Highlighter from 'react-highlight-words';
 import { motion, AnimatePresence } from "framer-motion";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import GroupDialog from "@/components/group-dialog";
 
 // Pagination component with Apple-inspired design
 const Pagination = ({
@@ -112,6 +115,12 @@ export function EmailList({
   className,
 }: EmailListProps) {
   const { contacts, emails, activeFilter, groups, setEmails } = useEmailStore();
+  const { toast } = useToast();
+  const { data: session } = useSession();
+
+  // Group management state
+  const [isGroupDialogOpen, setIsGroupDialogOpen] = useState(false);
+  const [groupToEdit, setGroupToEdit] = useState<Group | undefined>(undefined);
 
   // Debug log to trace the issue
   useEffect(() => {
@@ -131,8 +140,6 @@ export function EmailList({
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(100);
   const containerRef = useRef<HTMLDivElement>(null);
-  const { data: session } = useSession();
-  const { toast } = useToast();
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [showSearchPopup, setShowSearchPopup] = useState(false);
@@ -518,33 +525,91 @@ export function EmailList({
   // Determine if we're on the last page
   const isLastPage = currentPage === totalPages;
 
-  const GroupItem = ({ group, isSelected, onClick }: {
+  const GroupItem = ({ group, isSelected, onClick, onEdit, onDelete }: {
     group: Group;
     isSelected: boolean;
     onClick: () => void;
+    onEdit: () => void;
+    onDelete: () => void;
   }) => {
     return (
       <div
         className={cn(
-          "p-4 cursor-pointer hover:bg-accent/50 rounded-lg border m-2",
-          isSelected && "bg-accent"
+          "p-3 cursor-pointer hover:bg-accent/50 rounded-lg border m-2 transition-colors relative group",
+          isSelected && "bg-accent border-primary/20"
         )}
         onClick={onClick}
       >
-        <div className="flex justify-between items-start mb-1">
-          <div className="flex items-center">
-            <Users className="h-4 w-4 mr-2 text-muted-foreground" />
-            <h3 className="font-medium">{group.name}</h3>
+        <div className="flex gap-3 items-center">
+          <div className="h-9 w-9 rounded-md bg-primary/10 text-primary flex items-center justify-center font-medium flex-shrink-0">
+            {group.name.charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium truncate">{group.name}</span>
+              <Badge variant="outline" className="text-xs">
+                {group.addresses.length + group.phoneNumbers.length} contacts
+              </Badge>
+            </div>
+            <div className="flex -space-x-2 mt-1.5">
+              {/* Show avatars for first few addresses */}
+              {Array(Math.min(4, Math.max(group.addresses.length, group.phoneNumbers.length))).fill(0).map((_, j) => (
+                <Avatar key={j} className="h-5 w-5 ring-2 ring-background">
+                  <AvatarFallback className="text-[10px]">
+                    {group.addresses[j]?.charAt(0).toUpperCase() ||
+                      group.phoneNumbers[j]?.charAt(0).toUpperCase() ||
+                      String.fromCharCode(65 + j % 26)}
+                  </AvatarFallback>
+                </Avatar>
+              ))}
+              {/* Show +X more if there are additional contacts */}
+              {(group.addresses.length + group.phoneNumbers.length) > 4 && (
+                <div className="h-5 w-5 rounded-full bg-muted flex items-center justify-center text-[10px] ring-2 ring-background">
+                  +{(group.addresses.length + group.phoneNumbers.length) - 4}
+                </div>
+              )}
+            </div>
+            <div className="flex text-xs text-muted-foreground mt-2 gap-2">
+              {group.addresses.length > 0 && (
+                <span className="flex items-center gap-1">
+                  <Mail className="h-3 w-3" />
+                  {group.addresses.length}
+                </span>
+              )}
+              {group.phoneNumbers.length > 0 && (
+                <span className="flex items-center gap-1">
+                  <MessageSquare className="h-3 w-3" />
+                  {group.phoneNumbers.length}
+                </span>
+              )}
+            </div>
           </div>
         </div>
-        <div className="text-xs text-muted-foreground mt-1">
-          {group.addresses.length > 0 && (
-            <p>{group.addresses.length} email{group.addresses.length !== 1 ? 's' : ''}</p>
-          )}
-          {group.phoneNumbers.length > 0 && (
-            <p>{group.phoneNumbers.length} phone number{group.phoneNumbers.length !== 1 ? 's' : ''}</p>
-          )}
-          <p>{group.addresses.length + group.phoneNumbers.length} total addresses{group.addresses.length + group.phoneNumbers.length !== 1 ? 's' : ''}</p>
+
+        {/* Quick action buttons */}
+        <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 rounded-full bg-background/80 backdrop-blur-sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit();
+            }}
+          >
+            <Pencil className="h-3 w-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 rounded-full bg-background/80 backdrop-blur-sm hover:bg-red-500/10"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+          >
+            <Trash2 className="h-3 w-3" />
+          </Button>
         </div>
       </div>
     );
@@ -705,6 +770,39 @@ export function EmailList({
       }, 3000);
     }
   }, [toast, session]);
+
+  // Group management handlers
+  const handleCreateGroup = () => {
+    setGroupToEdit(undefined);
+    setIsGroupDialogOpen(true);
+  };
+
+  const handleEditGroup = (group: Group) => {
+    setGroupToEdit(group);
+    setIsGroupDialogOpen(true);
+  };
+
+  const handleDeleteGroup = async (groupId: string) => {
+    try {
+      await useEmailStore.getState().deleteGroup(groupId);
+      toast({
+        title: "Group deleted",
+        description: "The group has been deleted successfully",
+      });
+      // If this was the selected group, deselect it
+      if (selectedGroupId === groupId) {
+        setSelectedGroupId(null);
+        onSelectContact('');
+      }
+    } catch (error) {
+      console.error("Error deleting group:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete group. Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
 
   if (isLoading) {
     return (
@@ -867,9 +965,20 @@ export function EmailList({
               {/* Show groups first - Only show header if currentGroups has items */}
               {currentGroups.length > 0 && activeFilter !== 'sms' && (
                 <div className="px-3 mb-2">
-                  <h2 className="text-sm font-medium text-muted-foreground px-2 py-3">
-                    {activeFilter === 'contacts' ? 'Contact Groups' : 'Contacts'}
-                  </h2>
+                  <div className="flex items-center justify-between px-2 py-3">
+                    <h2 className="text-sm font-medium text-muted-foreground">
+                      {activeFilter === 'contacts' ? 'Contact Groups' : 'Contacts'}
+                    </h2>
+                    <Button
+                      onClick={handleCreateGroup}
+                      variant="outline"
+                      size="sm"
+                      className="h-8 flex items-center gap-1"
+                    >
+                      <Users className="h-3.5 w-3.5" />
+                      <span>New Group</span>
+                    </Button>
+                  </div>
                   <div className="space-y-1">
                     {currentGroups.map(group => (
                       <GroupItem
@@ -877,9 +986,29 @@ export function EmailList({
                         group={group}
                         isSelected={selectedGroupId === group.id}
                         onClick={() => handleGroupSelect(group)}
+                        onEdit={() => handleEditGroup(group)}
+                        onDelete={() => handleDeleteGroup(group.id)}
                       />
                     ))}
                   </div>
+                </div>
+              )}
+
+              {/* Show empty group section with new group button if on contacts filter */}
+              {activeFilter === 'contacts' && currentGroups.length === 0 && (
+                <div className="px-3 py-8 text-center">
+                  <h2 className="text-base font-medium mb-4">
+                    No contact groups yet
+                  </h2>
+                  <Button
+                    onClick={handleCreateGroup}
+                    variant="outline"
+                    size="sm"
+                    className="h-9 flex items-center gap-1"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>Create New Group</span>
+                  </Button>
                 </div>
               )}
 
@@ -955,6 +1084,13 @@ export function EmailList({
           </div>
         )}
       </div>
+
+      {/* Group dialog for creating/editing groups */}
+      <GroupDialog
+        open={isGroupDialogOpen}
+        onOpenChange={setIsGroupDialogOpen}
+        groupToEdit={groupToEdit}
+      />
     </div>
   );
 }

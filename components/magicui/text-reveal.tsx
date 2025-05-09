@@ -23,9 +23,9 @@ export const TextReveal: FC<TextRevealProps> = ({ children, className }) => {
   const words = children.split(" ");
 
   return (
-    <><div ref={targetRef} className={cn("relative z-0 h-[200vh] bg-white dark:bg-black", className)}>
+    <><div ref={targetRef} className={cn("relative z-0 h-[200vh] bg-[#FAFAFA] dark:bg-black", className)}>
       <div
-        className={"sticky top-0 mx-auto flex h-[50%] max-w-4xl items-center bg-white dark:bg-black px-[1rem] pt-[5rem] flex-col"}
+        className={"sticky top-0 mx-auto flex h-[50%] max-w-4xl items-center bg-[#FAFAFA] dark:bg-black px-[1rem] pt-[5rem] flex-col"}
       >
         <span
           ref={targetRef}

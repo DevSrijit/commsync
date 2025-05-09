@@ -202,7 +202,7 @@ const CustomNavbar = ({
     scrolled,
 }: CustomNavbarProps) => {
     return (
-        <section className={`fixed top-0 left-0 right-0 py-3 z-50 w-full px-4 transition-all duration-300 ${scrolled ? 'bg-white/80 dark:bg-black/80 backdrop-blur-md shadow-sm' : 'bg-transparent'}`}>
+        <section className={`fixed top-0 left-0 right-0 py-3 z-50 w-full px-4 transition-all duration-300 ${scrolled ? 'bg-[#FAFAFA]/80 dark:bg-black/80 backdrop-blur-md shadow-sm' : 'bg-transparent'}`}>
             <div className="container mx-auto max-w-7xl">
                 <nav className="hidden justify-between items-center lg:flex">
                     <div className="flex items-center gap-8">

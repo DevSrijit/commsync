@@ -15,7 +15,7 @@ const Circle = forwardRef<
         <div
             ref={ref}
             className={cn(
-                "z-10 flex size-12 items-center justify-center rounded-full border-2 border-border bg-white p-3 shadow-[0_0_20px_-12px_rgba(0,0,0,0.8)]",
+                "z-10 flex size-12 items-center justify-center rounded-full border-2 border-border bg-[#FAFAFA] p-3 shadow-[0_0_20px_-12px_rgba(0,0,0,0.8)]",
                 className,
             )}
         >
@@ -121,24 +121,24 @@ export default function AnimatedBeamMultipleOutputDemo({
 
 const Icons = {
     gmail: () => (
-        <SiGmail color={"black"}/>
+        <SiGmail color={"black"} />
     ),
     discord: () => (
-        <SiDiscord color={"black"}/>
+        <SiDiscord color={"black"} />
     ),
     reddit: () => (
-        <SiReddit color={"black"}/>
+        <SiReddit color={"black"} />
     ),
     whatsapp: () => (
-        <SiWhatsapp color={"black"}/>
+        <SiWhatsapp color={"black"} />
     ),
     instagram: () => (
-        <SiInstagram color={"black"}/>
+        <SiInstagram color={"black"} />
     ),
     message: () => (
-        <MessageSquareText color={"black"}/>
+        <MessageSquareText color={"black"} />
     ),
     user: () => (
-        <Users size={24} color={"black"}/>
+        <Users size={24} color={"black"} />
     ),
 };

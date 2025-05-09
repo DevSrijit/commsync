@@ -72,7 +72,7 @@ export const Footer = React.forwardRef<HTMLDivElement, FooterProps>(
                 >
                   <div className={cn(
                     "relative flex h-8 w-14 items-center rounded-full px-1",
-                    "bg-white dark:bg-black",
+                    "bg-[#FAFAFA] dark:bg-black",
                     "transition-colors duration-300"
                   )}>
                     <div className={cn(

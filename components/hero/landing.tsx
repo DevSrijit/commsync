@@ -10,19 +10,19 @@ import FooterSection from "@/components/hero/footer";
 import FeatureSection from "@/components/hero/feature";
 import AiLines from "@/components/hero/ai-lines";
 import { HeroSection } from "@/components/blocks/hero";
+import { FeaturesSlim } from "@/components/blocks/features-7";
+import { FeaturesSketch } from "../blocks/features-10";
+
 const Landing = () => {
   return (
-    <div className="bg-white dark:bg-black ">
+    <div className="bg-[#FAFAFA] dark:bg-black ">
       <HeroSection />
       <div className="space-y-8" suppressHydrationWarning={true}>
         <Marquee text="Messages made easier" duration={15} suppressHydrationWarning={true} />
       </div>
-      <div className="min-h-screen w-full bg-white dark:bg-black">
-        <div className="relative w-full">
-          <FeaturesSectionWithBentoGrid />
-        </div>
-      </div>
+      <FeaturesSlim />
       <FeatureSection />
+      <FeaturesSketch />
       <TextReveal>We handle the sync. You handle the rest. Deal?</TextReveal>
       <div className="mt-0">
         <AiLines />

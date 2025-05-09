@@ -54,7 +54,7 @@ export default function AiLines() {
     }, []);
 
     return (
-        <section className="relative w-full bg-white dark:bg-black mt-0">
+        <section className="relative w-full bg-[#FAFAFA] dark:bg-black mt-0">
             {/* Background gradient */}
             <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white to-white dark:via-black dark:to-black z-0" />
 

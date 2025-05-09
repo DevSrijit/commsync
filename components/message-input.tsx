@@ -584,8 +584,8 @@ export function MessageInput({
           )}
         </div>
 
-        <div className="flex-1 min-h-0 max-h-[calc(50vh-6rem)] md:max-h-[30vh] p-2 overflow-y-auto">
-          <EditorContent editor={editor} className="h-full overflow-auto" />
+        <div className="flex-1 overflow-auto p-2">
+          <EditorContent editor={editor} className="h-full min-h-[50px]" />
         </div>
 
         {attachments.length > 0 && (

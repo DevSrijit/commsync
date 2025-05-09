@@ -52,7 +52,7 @@ export default function Testimonials() {
   const duplicatedReviews = [...reviews, ...reviews];
 
   return (
-    <section className="py-24 bg-white dark:bg-black">
+    <section className="py-24 bg-[#FAFAFA] dark:bg-black">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="text-center mb-16">
           <h2 className="text-4xl tracking-tighter font-geist bg-clip-text text-transparent mx-auto md:text-6xl bg-[linear-gradient(180deg,_#000_0%,_rgba(0,_0,_0,_0.75)_100%)] dark:bg-[linear-gradient(180deg,_#FFF_0%,_rgba(255,_255,_255,_0.00)_202.08%)] p-5">
@@ -77,7 +77,7 @@ export default function Testimonials() {
               {duplicatedReviews.map((review, i) => (
                 <div
                   key={i}
-                  className="flex-none w-[450px] bg-white dark:bg-zinc-900 rounded-2xl shadow-sm ring-1 ring-gray-100 dark:ring-zinc-800 p-8 m-8"
+                  className="flex-none w-[450px] bg-[#FAFAFA] dark:bg-zinc-900 rounded-2xl shadow-sm ring-1 ring-gray-100 dark:ring-zinc-800 p-8 m-8"
                   style={{
                     backdropFilter: 'blur(8px)',
                     WebkitBackdropFilter: 'blur(8px)'

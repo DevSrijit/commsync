@@ -5,7 +5,7 @@ import { STRIPE_PLANS } from "@/lib/stripe";
 
 function Pricing() {
   return (
-    <div className="w-full py-20 lg:py-40 bg-white dark:bg-black">
+    <div className="w-full py-20 lg:py-40 bg-[#FAFAFA] dark:bg-black">
       <div className="container mx-auto">
         <div className="flex text-center justify-center items-center gap-4 flex-col">
           <Badge>Pricing</Badge>

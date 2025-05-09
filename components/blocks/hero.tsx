@@ -62,7 +62,7 @@ export function HeroSection() {
                                             href="/register"
                                             className="hover:bg-background dark:hover:border-t-border bg-muted group mx-auto flex w-fit items-center gap-4 rounded-full border p-1 pl-4 shadow-md shadow-black/5 transition-all duration-300 dark:border-t-white/5 dark:shadow-zinc-950">
                                             <span className="text-foreground text-sm">Welcome to CommSync</span>
-                                            <span className="dark:border-background block h-4 w-0.5 border-l bg-white dark:bg-zinc-700"></span>
+                                            <span className="dark:border-background block h-4 w-0.5 border-l bg-[#FAFAFA] dark:bg-zinc-700"></span>
 
                                             <div className="bg-background group-hover:bg-muted size-6 overflow-hidden rounded-full duration-500">
                                                 <div className="flex w-12 -translate-x-1/2 duration-500 ease-in-out group-hover:translate-x-0">
@@ -272,7 +272,7 @@ const HeroHeader = () => {
         <header>
             <nav
                 data-state={menuState && 'active'}
-                className="fixed z-20 w-full px-2 group">
+                className="fixed z-[100] w-full px-2 group">
                 <div className={cn('mx-auto mt-2 max-w-6xl px-6 transition-all duration-300 lg:px-12', isScrolled && 'bg-background/50 backdrop-blur-lg border rounded-2xl')}>
                     <div className="relative flex flex-wrap items-center justify-between gap-6 py-3 lg:gap-0 lg:py-4">
                         <div className="flex w-full justify-between lg:w-auto">
