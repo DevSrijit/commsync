@@ -61,18 +61,18 @@ export async function middleware(request: NextRequest) {
   if (now - lastSyncTime > SYNC_INTERVAL_MS) {
     lastSyncTime = now;
 
-    // Trigger the background sync
-    try {
-      fetch(`${request.nextUrl.origin}/api/sync?apiKey=${apiKey}`, {
-        method: "GET",
-      }).catch((error) => {
-        console.error("Error triggering automatic sync:", error);
-      });
-
-      console.log("Triggered automatic sync at", new Date().toISOString());
-    } catch (error) {
-      console.error("Failed to trigger automatic sync:", error);
-    }
+    // Trigger the background sync EXPERIMENTAL
+    // try {
+    //   fetch(`${request.nextUrl.origin}/api/sync?apiKey=${apiKey}`, {
+    //     method: "GET",
+    //   }).catch((error) => {
+    //     console.error("Error triggering automatic sync:", error);
+    //   });
+    //
+    //   console.log("Triggered automatic sync at", new Date().toISOString());
+    // } catch (error) {
+    //   console.error("Failed to trigger automatic sync:", error);
+    // }
   }
 
   return NextResponse.next();

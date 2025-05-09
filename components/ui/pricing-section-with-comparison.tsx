@@ -9,8 +9,8 @@ function Pricing() {
       <div className="container mx-auto">
         <div className="flex text-center justify-center items-center gap-4 flex-col">
           <Badge>Pricing</Badge>
-          <div className="flex gap-2 flex-col  text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-pink-500 dark:from-purple-300 dark:to-orange-200">
-            <h2 className="text-3xl md:text-5xl tracking-tighter max-w-xl text-center font-regular">
+          <div className="flex gap-2 flex-col">
+            <h2 className="text-3xl md:text-5xl tracking-tighter max-w-xl text-center font-regular bg-gradient-to-r from-purple-600 to-pink-500 dark:from-purple-300 dark:to-orange-200">
               Pricing that makes sense
             </h2>
             <p className="text-lg leading-relaxed tracking-tight text-muted-foreground max-w-xl text-center">

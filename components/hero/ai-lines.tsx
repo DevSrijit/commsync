@@ -56,11 +56,11 @@ export default function AiLines() {
     return (
         <section className="relative w-full bg-[#FAFAFA] dark:bg-black mt-0">
             {/* Background gradient */}
-            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white to-white dark:via-black dark:to-black z-0" />
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white to-white dark:via-black dark:to-black" />
 
             {/* Content container - with scroll-snap container */}
             <div
-                className="h-screen w-full relative flex items-center justify-center overflow-hidden scroll-snap-type-y mandatory"
+                className="h-screen w-full relative flex items-center justify-center overflow-hidden scroll-snap-type-y mandatory "
                 ref={ref}
             >
                 <GoogleGeminiEffect
@@ -71,7 +71,7 @@ export default function AiLines() {
                         pathLengthFourth,
                         pathLengthFifth,
                     ]}
-                    className="w-full max-w-screen-2xl mx-auto px-4"
+                    className="w-full max-w-screen-2xl mx-auto px-4 "
                 />
             </div>
 

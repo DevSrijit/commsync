@@ -181,16 +181,18 @@ export function ContactItem({
           )}
         </div>
 
-        {/* Delete button */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-red-500/90 text-white flex items-center justify-center opacity-0 scale-90 group-hover:opacity-100 group-hover:scale-100 transition-all duration-200 hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500/50 backdrop-blur-sm shadow-sm"
-          onClick={handleDelete}
-          aria-label="Delete conversation"
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
+        {/* Quick action buttons */}
+        <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 rounded-full bg-background/80 backdrop-blur-sm hover:bg-red-500/10"
+            onClick={handleDelete}
+            aria-label="Delete conversation"
+          >
+            <Trash2 className="h-3 w-3" />
+          </Button>
+        </div>
       </div>
 
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
