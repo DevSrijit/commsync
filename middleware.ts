@@ -49,15 +49,6 @@ export async function middleware(request: NextRequest) {
     );
   }
 
-  // Check onboarding status for dashboard access
-  if (isAuthenticated && path.startsWith("/dashboard")) {
-    // If isOnboarded is explicitly false, redirect to pricing
-    // If isOnboarded is true or not present, allow access
-    if (token.isOnboarded === false) {
-      return NextResponse.redirect(new URL("/pricing", request.url));
-    }
-  }
-
   // Get the internal API key
   const apiKey = process.env.SYNC_API_KEY;
   if (!apiKey) {

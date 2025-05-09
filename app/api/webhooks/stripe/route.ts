@@ -152,37 +152,13 @@ async function handleSubscriptionCreated(subscription: any) {
         where: { id: userId },
       });
 
-      if (user) {
-        // Mark user as onboarded and verify email if needed
+      if (user && !user.emailVerified) {
         await db.user.update({
           where: { id: userId },
-          data: {
-            isOnboarded: true,
-            emailVerified: user.emailVerified || new Date(),
-          },
+          data: { emailVerified: new Date() },
         });
-        logger.info("User marked as onboarded", { userId });
+        logger.info("User email verified", { userId });
       }
-    }
-
-    // Find organization's owner and mark them as onboarded too
-    try {
-      const organization = await db.organization.findUnique({
-        where: { id: organizationId },
-        include: { owner: true },
-      });
-
-      if (organization && organization.owner) {
-        await db.user.update({
-          where: { id: organization.owner.id },
-          data: { isOnboarded: true },
-        });
-        logger.info("Organization owner marked as onboarded", {
-          ownerId: organization.owner.id,
-        });
-      }
-    } catch (error) {
-      logger.error("Error marking organization owner as onboarded", error);
     }
 
     // Update organization with Stripe customer ID if needed
