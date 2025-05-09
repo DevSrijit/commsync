@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { OrbitingCircles } from "@/components/magicui/orbiting-circles";
 import { SiWhatsapp, SiTwilio, SiGmail, SiReddit, SiDiscord, SiGooglemessages } from "@icons-pack/react-simple-icons";
 import { Spotlight } from "@/components/ui/spotlight-new";
-
+import AnimatedGradientBackground from "@/components/ui/animated-gradient-background";
 export default function PreFooter() {
   const sectionRef = useRef(null);
   const [isVisible, setIsVisible] = useState(false);
@@ -36,6 +36,8 @@ export default function PreFooter() {
       ref={sectionRef}
       className="relative flex flex-col items-center justify-center lg:flex-row lg:items-center lg:justify-between min-h-screen px-6 py-12 md:px-10 lg:px-16 overflow-hidden bg-[#FAFAFA] dark:bg-black"
     >
+      <AnimatedGradientBackground />
+
       <AnimatePresence>
         {isVisible && (
           <motion.div

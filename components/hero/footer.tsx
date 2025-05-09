@@ -14,7 +14,7 @@ import { Footer } from "@/components/blocks/footer";
 export default function FooterSection() {
   return (
     <Footer
-      className="mt-20 w-full"
+      className="mt-20 w-full max-w-screen-2xl mx-auto"
       brand={{
         name: "CommSync",
         description: "Making your business communications easier.",

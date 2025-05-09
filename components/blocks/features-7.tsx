@@ -3,7 +3,7 @@ import { Cpu, Lock, Sparkles, Zap } from 'lucide-react'
 export function FeaturesSlim() {
     return (
         <section className="overflow-hidden py-16 md:py-32">
-            <div className="mx-auto max-w-5xl space-y-8 px-6 md:space-y-12">
+            <div className="mx-auto max-w-screen-xl space-y-8 px-6 md:space-y-12">
                 <div className="relative z-10 max-w-2xl">
                     <h2 className="text-4xl font-semibold lg:text-5xl">Built with all of your messaging needs in mind</h2>
                     <p className="mt-6 text-lg">Empower your team with a unified messaging platform.</p>

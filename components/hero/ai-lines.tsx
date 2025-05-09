@@ -54,9 +54,9 @@ export default function AiLines() {
     }, []);
 
     return (
-        <section className="relative w-full bg-[#FAFAFA] dark:bg-black mt-0">
+        <section className="relative max-w-screen-2xl mx-auto bg-[#FAFAFA] dark:bg-black mt-0 ">
             {/* Background gradient */}
-            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white to-white dark:via-black dark:to-black" />
+            <div className="relative bg-gradient-to-b from-transparent via-white to-white dark:via-black dark:to-black" />
 
             {/* Content container - with scroll-snap container */}
             <div

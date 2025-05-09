@@ -2,6 +2,37 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer utilities {
+  .delay-100 {
+    animation-delay: 100ms;
+  }
+  .delay-200 {
+    animation-delay: 200ms;
+  }
+  .delay-300 {
+    animation-delay: 300ms;
+  }
+  .delay-500 {
+    animation-delay: 500ms;
+  }
+  .delay-700 {
+    animation-delay: 700ms;
+  }
+  
+  .fade-top-lg {
+    mask-image: linear-gradient(to bottom, 
+      transparent, 
+      rgba(0, 0, 0, 1) 8rem
+    );
+  }
+
+  .animate-in {
+    animation-duration: 1000ms;
+    animation-fill-mode: forwards;
+    animation-timing-function: ease-out;
+  }
+}
+
 @layer base {
   :root {
     --background: hsl(0, 0%, 98%);
@@ -31,7 +62,8 @@
     --color-5: 295 100% 45%;
     --gradient-color: #8350e8;
     --sparkles-color: #8350e8;
-    --brand: 50 100% 50%;
+    --brand: 27 96% 61%;
+    --brand-foreground: 31 97% 72%;
   }
 
   .dark {
@@ -61,7 +93,7 @@
     --color-5: 295 100% 45%;
     --gradient-color: #8350e8;
     --sparkles-color: #ffffff;
-    --brand: 50 100% 50%;
+    --brand: 31 97% 72%;
   }
 }
 
@@ -73,4 +105,3 @@
     @apply bg-background text-foreground;
   }
 }
-

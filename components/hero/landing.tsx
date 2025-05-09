@@ -10,6 +10,7 @@ import { HeroSection } from "@/components/blocks/hero";
 import { FeaturesSlim } from "@/components/blocks/features-7";
 import { FeaturesSketch } from "../blocks/features-10";
 import TestimonialsV2 from "@/components/hero/testimonials-v2";
+import { CTASection } from "@/components/blocks/cta-with-rectangle"
 
 const Landing = () => {
   return (
@@ -30,7 +31,19 @@ const Landing = () => {
           <Pricing
           />
         </div>
-        <PreFooter />
+        <CTASection
+          badge={{
+            text: "Get started"
+          }}
+          title="Start using CommSync"
+          description="Get started with CommSync and declutter your inbox in no time."
+          action={{
+            text: "Get Started",
+            href: "/register",
+            variant: "default"
+          }}
+          className="mt-12 size-full"
+        />
         <FooterSection />
       </div>
     </>
