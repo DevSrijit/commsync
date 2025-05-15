@@ -298,6 +298,72 @@ export function EmailList({
     }
   }, [handleSearchSubmit]);
 
+  // Filter emails based on the active filter
+  const filteredEmails = useMemo(() => {
+    if (!emails || emails.length === 0) return [];
+
+    // Apply search filter first if active
+    let filtered = [...emails];
+    if (searchQuery) {
+      const lowerQuery = searchQuery.toLowerCase();
+      filtered = filtered.filter(email =>
+        email.subject?.toLowerCase().includes(lowerQuery) ||
+        email.from?.name?.toLowerCase().includes(lowerQuery) ||
+        email.from?.email?.toLowerCase().includes(lowerQuery) ||
+        email.body?.toLowerCase().includes(lowerQuery)
+      );
+    }
+
+    // Then apply category filter
+    switch (activeFilter) {
+      case "inbox":
+        return filtered.filter(email =>
+          email.labels?.includes("INBOX") &&
+          !email.labels?.includes("TRASH") &&
+          !email.labels?.includes("DRAFT")
+        );
+      case "starred":
+        return filtered.filter(email =>
+          email.labels?.includes("STARRED") ||
+          email.labels?.includes("IMPORTANT")
+        );
+      case "sent":
+        return filtered.filter(email =>
+          email.labels?.includes("SENT") &&
+          !email.labels?.includes("TRASH")
+        );
+      case "draft":
+        return filtered.filter(email =>
+          email.labels?.includes("DRAFT") &&
+          !email.labels?.includes("TRASH")
+        );
+      case "trash":
+        return filtered.filter(email =>
+          email.labels?.includes("TRASH")
+        );
+      case "archive":
+        return filtered.filter(email =>
+          email.labels?.includes("ARCHIVE")
+        );
+      case "sms":
+        return filtered.filter(email =>
+          email.accountType === "twilio" ||
+          email.accountType === "justcall" ||
+          email.accountType === "bulkvs" ||
+          (email.labels && email.labels.includes("SMS"))
+        );
+      case "realtime":
+        return filtered.filter(email =>
+          email.accountType === "unipile" ||
+          (email.labels && email.labels.includes("UNIPILE")) ||
+          email.platform === "whatsapp"
+        );
+      case "all":
+      default:
+        return filtered.filter(email => !email.labels?.includes("TRASH"));
+    }
+  }, [emails, activeFilter, searchQuery]);
+
   // Enhanced contact filtering with ranking
   const filteredContacts = useMemo(() => {
     // Ensure we have valid ranked results, fall back to contacts if not

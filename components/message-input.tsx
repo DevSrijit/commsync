@@ -54,9 +54,10 @@ import {
   hasEnoughCreditsForFeature,
   AI_CREDIT_COSTS
 } from "@/lib/ai-credits";
+import { MessageData } from "@/lib/messaging";
 
 // Add MessagePlatform type
-export type MessagePlatform = "gmail" | "imap" | "twilio" | "justcall" | "bulkvs";
+export type MessagePlatform = "gmail" | "imap" | "twilio" | "justcall" | "bulkvs" | "unipile";
 
 interface MessageInputProps {
   onSend: (content: string, attachments: File[]) => void;
@@ -74,6 +75,12 @@ interface MessageInputProps {
   // Add conversation context for AI generation
   conversationContext?: string;
   contactName?: string;
+  onMessageSent?: () => void;
+  accountType?: string;
+  threadId?: string;
+  isAIEnabled?: boolean;
+  isAIAssistActive?: boolean;
+  store?: any;
 }
 
 export function MessageInput({
@@ -90,6 +97,12 @@ export function MessageInput({
   onPlatformChange,
   conversationContext = "",
   contactName = "",
+  onMessageSent,
+  accountType,
+  threadId,
+  isAIEnabled,
+  isAIAssistActive,
+  store,
 }: MessageInputProps) {
   const [attachments, setAttachments] = useState<File[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -101,6 +114,7 @@ export function MessageInput({
   // State for AI message generation
   const [isGenerateDialogOpen, setIsGenerateDialogOpen] = useState(false);
   const [subscriptionData, setSubscriptionData] = useState<any>(null);
+  const [isSending, setIsSending] = useState(false);
 
   // Get accounts for platform selection
   const { imapAccounts, twilioAccounts, justcallAccounts, bulkvsAccounts } = useEmailStore();
@@ -230,6 +244,8 @@ export function MessageInput({
         return <MessageSquare className="h-4 w-4" />;
       case "bulkvs":
         return <MessageCircle className="h-4 w-4" />;
+      case "unipile":
+        return <Mail className="h-4 w-4" />;
       default:
         return <Mail className="h-4 w-4" />;
     }
@@ -248,6 +264,8 @@ export function MessageInput({
         return "JustCall SMS";
       case "bulkvs":
         return "BulkVS SMS";
+      case "unipile":
+        return "Unipile";
       default:
         return platform.charAt(0).toUpperCase() + platform.slice(1);
     }
@@ -271,6 +289,8 @@ export function MessageInput({
     } else if (platform === "bulkvs") {
       const account = bulkvsAccounts.find(acc => acc.id === accountId);
       return account?.label || account?.accountIdentifier || "BulkVS Account";
+    } else if (platform === "unipile") {
+      return "Unipile";
     }
 
     return null;
@@ -292,6 +312,8 @@ export function MessageInput({
       newAccountId = justcallAccounts[0].id;
     } else if (newPlatform === "bulkvs" && bulkvsAccounts.length > 0) {
       newAccountId = bulkvsAccounts[0].id;
+    } else if (newPlatform === "unipile") {
+      newAccountId = undefined;
     }
 
     onPlatformChange(newPlatform, newAccountId);
@@ -326,6 +348,90 @@ export function MessageInput({
   const handleGenerateMessage = async () => {
     // Open dialog immediately without waiting for subscription checks
     setIsGenerateDialogOpen(true);
+  };
+
+  const handleSendMessage = async () => {
+    if (!editor || editor.isEmpty) return;
+
+    const content = editor.getHTML();
+    // Convert HTML to SMS text if platform is SMS
+    const formattedContent = platform === "twilio" || platform === "justcall" || platform === "bulkvs"
+      ? htmlToSmsText(content)
+      : content;
+
+    setIsSending(true);
+
+    // Create message data
+    const messageData: MessageData = {
+      content: formattedContent,
+      recipients: [],
+      threadId: threadId,
+      accountType: accountType || 'gmail',
+      accountId: accountId,
+      platform: platform,
+      // Add attachments if any
+      attachments: attachments.length > 0 ? attachments : undefined,
+    };
+
+    try {
+      let response;
+
+      // Determine which endpoint to use based on account type
+      if (accountType === 'twilio' || accountType === 'justcall' || accountType === 'bulkvs') {
+        // Use the SMS endpoint
+        response = await fetch('/api/messages/sms', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(messageData),
+        });
+      } else if (accountType === 'unipile') {
+        // Use the Unipile endpoint
+        response = await fetch('/api/unipile/message', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(messageData),
+        });
+      } else {
+        // Use the default email endpoint
+        response = await fetch('/api/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(messageData),
+        });
+      }
+
+      if (!response.ok) {
+        const responseData = await response.json();
+        throw new Error(responseData.error || 'Failed to send message');
+      }
+
+      // Clear input and attachments on success
+      clearEditor();
+
+      // Only increment credits if using AI features
+      if (isAIEnabled && isAIAssistActive) {
+        store.incrementCreditsUsed();
+      }
+
+      if (onMessageSent) {
+        onMessageSent();
+      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to send message',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSending(false);
+    }
   };
 
   return (
@@ -638,35 +744,7 @@ export function MessageInput({
 
           {showSend && (
             <Button
-              onClick={async () => {
-                if (editor && !editor.isEmpty) {
-                  const content = editor.getHTML();
-                  // Convert HTML to SMS text if platform is SMS
-                  const formattedContent = platform === "twilio" || platform === "justcall" || platform === "bulkvs"
-                    ? htmlToSmsText(content)
-                    : content;
-
-                  // First save content via handleSend to update parent state
-                  onSend(formattedContent, attachments);
-
-                  // Then trigger custom send action if provided, passing current content directly
-                  if (customSend) {
-                    try {
-                      const result = await Promise.resolve(customSend(formattedContent, attachments));
-                      // If customSend returns successfully or returns true, clear the editor
-                      if (result !== false) {
-                        clearEditor();
-                      }
-                    } catch (error) {
-                      // Don't clear the editor if there was an error
-                      console.error("Error sending message:", error);
-                    }
-                  } else {
-                    // If no customSend provided, we assume success and clear
-                    clearEditor();
-                  }
-                }
-              }}
+              onClick={handleSendMessage}
               disabled={!editor || editor.isEmpty || isLoading}
               className="rounded-full"
             >

@@ -104,11 +104,13 @@
     "pg": "^8.11.3",
     "postprocessing": "^6.37.1",
     "prisma": "^6.6.0",
+    "qrcode": "^1.5.4",
     "react": "^19",
     "react-day-picker": "8.10.1",
     "react-dom": "^19",
     "react-highlight-words": "^0.21.0",
     "react-hook-form": "^7.54.1",
+    "react-qr-code": "^2.0.15",
     "react-resizable-panels": "^2.1.7",
     "recharts": "2.15.0",
     "sonner": "^1.7.1",
@@ -119,11 +121,12 @@
     "tiptap": "^1.32.2",
     "twilio": "^5.5.0",
     "typescript": "latest",
+    "unipile-node-sdk": "^1.9.2",
     "use-sync-external-store": "latest",
     "uuid": "^11.1.0",
     "vaul": "^0.9.6",
     "zod": "^3.24.4",
-    "zustand": "latest"
+    "zustand": "^4.5.7"
   },
   "devDependencies": {
     "@types/html-to-text": "^9.0.4",

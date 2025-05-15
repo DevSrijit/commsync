@@ -30,7 +30,7 @@ export interface Email {
   labels: string[]; // Keep this required
   attachments?: EmailAttachment[];
   accountId?: string;
-  accountType?: "gmail" | "imap" | "justcall" | "twilio" | "bulkvs";
+  accountType?: "gmail" | "imap" | "justcall" | "twilio" | "bulkvs" | "unipile";
   read?: boolean;
   platform?: string; // Added for platform indication
   source?: string; // Added to track data source (gmail-api, imap, etc.)
