@@ -22,6 +22,7 @@ interface EmailStore {
   twilioAccounts: any[];
   justcallAccounts: any[];
   bulkvsAccounts: any[];
+  whatsappAccounts: any[];
   groups: Group[];
   currentImapPage: number;
   currentTwilioPage: number;
@@ -55,6 +56,8 @@ interface EmailStore {
   setTwilioAccounts: (accounts: any[]) => void;
   setJustcallAccounts: (accounts: any[]) => void;
   setBulkvsAccounts: (accounts: any[]) => void;
+  setWhatsappAccounts: (accounts: any[]) => void;
+  syncWhatsappAccounts: (isLoadingMore?: boolean) => Promise<number>;
   setLoadPageSize: (size: number) => void;
   addGroup: (group: Group) => void;
   updateGroup: (group: Group) => void;
@@ -74,6 +77,7 @@ const loadPersistedData = async () => {
       imapAccounts: [],
       twilioAccounts: [],
       justcallAccounts: [],
+      whatsappAccounts: [],
       groups: [],
       lastJustcallMessageIds: {},
       lastBulkvsMessageIds: {},
@@ -87,6 +91,7 @@ const loadPersistedData = async () => {
       "imapAccounts",
       "twilioAccounts",
       "justcallAccounts",
+      "whatsappAccounts",
       "groups",
       "lastJustcallMessageIds",
       "lastBulkvsMessageIds",
@@ -114,6 +119,7 @@ const loadPersistedData = async () => {
       imapAccounts: cacheData.imapAccounts || [],
       twilioAccounts: cacheData.twilioAccounts || [],
       justcallAccounts: cacheData.justcallAccounts || [],
+      whatsappAccounts: cacheData.whatsappAccounts || [],
       groups: cacheData.groups || [],
       lastJustcallMessageIds: lastMessageIds || {},
       lastBulkvsMessageIds: cacheData.lastBulkvsMessageIds || {},
@@ -125,6 +131,7 @@ const loadPersistedData = async () => {
       imapAccounts: [],
       twilioAccounts: [],
       justcallAccounts: [],
+      whatsappAccounts: [],
       groups: [],
       lastJustcallMessageIds: {},
       lastBulkvsMessageIds: {},
@@ -330,6 +337,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
     imapAccounts: [],
     twilioAccounts: [],
     justcallAccounts: [],
+    whatsappAccounts: [],
     groups: [],
     lastJustcallMessageIds: {},
     lastBulkvsMessageIds: {},
@@ -353,6 +361,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
           imapAccounts: persistedData.imapAccounts,
           twilioAccounts: persistedData.twilioAccounts,
           justcallAccounts: persistedData.justcallAccounts,
+          whatsappAccounts: persistedData.whatsappAccounts,
           groups: persistedData.groups,
           lastJustcallMessageIds: persistedData.lastJustcallMessageIds,
           lastBulkvsMessageIds: persistedData.lastBulkvsMessageIds,
@@ -371,6 +380,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
     imapAccounts: initialData.imapAccounts,
     twilioAccounts: initialData.twilioAccounts,
     justcallAccounts: initialData.justcallAccounts,
+    whatsappAccounts: initialData.whatsappAccounts,
     bulkvsAccounts: [],
     groups: initialData.groups,
     currentImapPage: 1,
@@ -1627,26 +1637,35 @@ export const useEmailStore = create<EmailStore>((set, get) => {
       try {
         const store = get();
 
-        // Sync all account types in parallel
-        const [imapCount, twilioCount, justcallResult, bulkvsResult] =
-          await Promise.all([
-            store.syncImapAccounts().catch((err) => {
-              console.error("Error syncing IMAP accounts:", err);
-              return 0;
-            }),
-            store.syncTwilioAccounts().catch((err) => {
-              console.error("Error syncing Twilio accounts:", err);
-              return 0;
-            }),
-            store.syncJustcallAccounts().catch((err) => {
-              console.error("Error syncing JustCall accounts:", err);
-              return 0;
-            }),
-            store.syncBulkvsAccounts().catch((err) => {
-              console.error("Error syncing BulkVS accounts:", err);
-              return 0;
-            }),
-          ]);
+        // Sync all account types in parallel, including WhatsApp
+        const [
+          imapCount,
+          twilioCount,
+          justcallResult,
+          bulkvsResult,
+          whatsappCount,
+        ] = await Promise.all([
+          store.syncImapAccounts().catch((err) => {
+            console.error("Error syncing IMAP accounts:", err);
+            return 0;
+          }),
+          store.syncTwilioAccounts().catch((err) => {
+            console.error("Error syncing Twilio accounts:", err);
+            return 0;
+          }),
+          store.syncJustcallAccounts().catch((err) => {
+            console.error("Error syncing JustCall accounts:", err);
+            return 0;
+          }),
+          store.syncBulkvsAccounts().catch((err) => {
+            console.error("Error syncing BulkVS accounts:", err);
+            return 0;
+          }),
+          store.syncWhatsappAccounts().catch((err) => {
+            console.error("Error syncing WhatsApp accounts:", err);
+            return 0;
+          }),
+        ]);
 
         console.log(
           `Synced: ${imapCount} IMAP, ${twilioCount} Twilio, ${
@@ -1657,7 +1676,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
             typeof bulkvsResult === "number"
               ? bulkvsResult
               : bulkvsResult?.count || 0
-          } BulkVS messages`
+          } BulkVS, ${whatsappCount} WhatsApp messages`
         );
 
         // Sync Gmail emails if token is provided
@@ -1714,6 +1733,79 @@ export const useEmailStore = create<EmailStore>((set, get) => {
 
     setBulkvsAccounts: (accounts: any[]) => {
       set({ bulkvsAccounts: accounts });
+    },
+
+    setWhatsappAccounts: (accounts: any[]) => {
+      set((state) => ({ ...state, whatsappAccounts: accounts }));
+    },
+
+    syncWhatsappAccounts: async (isLoadingMore = false) => {
+      const store = get();
+      const accounts = store.whatsappAccounts;
+      if (!accounts || accounts.length === 0) {
+        console.log("No WhatsApp accounts to sync");
+        return 0;
+      }
+      console.log(`Starting WhatsApp sync for ${accounts.length} accounts`);
+      let totalMessages = 0;
+      for (const account of accounts) {
+        try {
+          const accountId = account.id;
+          // Fetch chats for this account
+          const chatsRes = await fetch(
+            `/api/whatsapp/chats?accountId=${accountId}`
+          );
+          if (!chatsRes.ok) {
+            console.error(
+              `Failed to fetch chats for WhatsApp account ${accountId}:`,
+              await chatsRes.text()
+            );
+            continue;
+          }
+          const { chats } = await chatsRes.json();
+          for (const chat of chats) {
+            // Fetch messages for each chat
+            const msgsRes = await fetch(
+              `/api/whatsapp/chats/${chat.id}/messages?accountId=${accountId}`
+            );
+            if (!msgsRes.ok) {
+              console.error(
+                `Failed to fetch messages for chat ${chat.id}:`,
+                await msgsRes.text()
+              );
+              continue;
+            }
+            const { messages } = await msgsRes.json();
+            if (messages && messages.length > 0) {
+              const formatted = messages.map((msg: any) => ({
+                id: msg.id,
+                threadId: msg.chat_id,
+                from: {
+                  name: msg.from || msg.chat_id,
+                  email: msg.from || msg.chat_id,
+                },
+                to: [
+                  { name: msg.to || msg.chat_id, email: msg.to || msg.chat_id },
+                ],
+                subject: chat.title || `WhatsApp chat ${chat.id}`,
+                body: msg.text || msg.body || "",
+                date: msg.timestamp
+                  ? new Date(msg.timestamp).toISOString()
+                  : new Date().toISOString(),
+                labels: ["sms"],
+                read: true,
+                accountId,
+                accountType: "whatsapp",
+              }));
+              formatted.forEach((email: any) => store.addEmail(email));
+              totalMessages += formatted.length;
+            }
+          }
+        } catch (error) {
+          console.error(`Error syncing WhatsApp account ${account.id}:`, error);
+        }
+      }
+      return totalMessages;
     },
 
     syncBulkvsAccounts: async (isLoadingMore = false) => {
@@ -1866,6 +1958,8 @@ if (typeof window !== "undefined") {
       await store.syncImapAccounts();
       await store.syncTwilioAccounts();
       await store.syncJustcallAccounts();
+      await store.syncBulkvsAccounts();
+      await store.syncWhatsappAccounts();
     }, 1000);
 
     // Set up periodic sync
@@ -1875,6 +1969,8 @@ if (typeof window !== "undefined") {
       await store.syncImapAccounts();
       await store.syncTwilioAccounts();
       await store.syncJustcallAccounts();
+      await store.syncBulkvsAccounts();
+      await store.syncWhatsappAccounts();
     }, 5 * 60 * 1000); // Sync every 5 minutes
   })().catch((error) => {
     console.error("Error loading initial data:", error);

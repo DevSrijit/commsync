@@ -73,7 +73,6 @@ import {
 import { ImapAccountDialog } from "./imap-account-dialog";
 import { JustCallAccountDialog } from "./justcall-account-dialog";
 import { JustCallAccountCard } from "./justcall-account-card";
-import { Badge } from "./ui/badge";
 import { ImapAccountCard } from "./imap-account-card";
 import GroupDialog from "./group-dialog";
 import { TwilioAccountDialog } from "./twilio-account-dialog";
@@ -98,6 +97,9 @@ import { useTheme } from "next-themes";
 import { OrganizationDialog } from "./organization-dialog";
 import { BulkvsAccountDialog } from "./bulkvs-account-dialog";
 import { BulkvsAccountCard } from "./bulkvs-account-card";
+import { WhatsAppAccountCard } from "./whatsapp-account-card";
+import { Badge } from "./ui/badge";
+import { WhatsAppAccountDialog } from "./whatsapp-account-dialog";
 
 export type MessageCategory =
   | "inbox"
@@ -148,6 +150,11 @@ export function Sidebar() {
   const [loadPageSize, setLoadPageSize] = useState(100);
 
   const { setTheme } = useTheme();
+
+  // WhatsApp account linking state
+  const [isWhatsAppDialogOpen, setIsWhatsAppDialogOpen] = useState(false);
+  const [isWhatsAppListOpen, setIsWhatsAppListOpen] = useState(false);
+  const [whatsappAccounts, setWhatsappAccounts] = useState<any[]>([]);
 
   // Function to fetch subscription data without causing re-renders
   const updateSubscriptionDataBackground = useCallback(async () => {
@@ -301,6 +308,31 @@ export function Sidebar() {
       window.removeEventListener('justcall-accounts-updated', handleJustCallAccountsUpdated as EventListener);
       window.removeEventListener('twilio-accounts-updated', handleTwilioAccountsUpdated as EventListener);
       window.removeEventListener('bulkvs-accounts-updated', handleBulkvsAccountsUpdated as EventListener);
+    };
+  }, [session?.user]);
+
+  // Fetch WhatsApp accounts
+  useEffect(() => {
+    const fetchWhatsAppAccounts = async () => {
+      try {
+        const res = await fetch('/api/whatsapp/account');
+        if (res.ok) {
+          const data = await res.json();
+          setWhatsappAccounts(data || []);
+        }
+      } catch (error) {
+        console.error('Error fetching WhatsApp accounts:', error);
+      }
+    };
+    fetchWhatsAppAccounts();
+
+    const handleWhatsAppAccountsUpdated = (event: CustomEvent) => {
+      setWhatsappAccounts(event.detail);
+    };
+    window.addEventListener('whatsapp-accounts-updated', handleWhatsAppAccountsUpdated as EventListener);
+
+    return () => {
+      window.removeEventListener('whatsapp-accounts-updated', handleWhatsAppAccountsUpdated as EventListener);
     };
   }, [session?.user]);
 
@@ -863,6 +895,10 @@ export function Sidebar() {
                           <Phone className="h-4 w-4" />
                           <span>JustCall Account</span>
                         </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setIsWhatsAppListOpen(true)} className="gap-2">
+                          <Phone className="h-4 w-4" />
+                          <span>WhatsApp Account</span>
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => setIsTwilioDialogOpen(true)} className="gap-2">
                           <SiTwilio className="h-4 w-4" />
                           <span>Twilio Account</span>
@@ -992,6 +1028,48 @@ export function Sidebar() {
                       <Badge variant="outline" className="ml-auto font-normal">
                         {bulkvsAccounts.length}
                       </Badge>
+                    </Button>
+                  </CollapsibleContent>
+                </Collapsible>
+
+                {/* WhatsApp Accounts Collapsible */}
+                <Collapsible
+                  open={isWhatsAppListOpen}
+                  onOpenChange={setIsWhatsAppListOpen}
+                  className="px-2"
+                >
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="flex w-full justify-between px-2 py-1 h-8 font-medium text-sm"
+                    >
+                      <div className="flex items-center">
+                        <Phone className="h-4 w-4 mr-2" />
+                        <span>WhatsApp Accounts</span>
+                      </div>
+                      <Badge variant="outline" className="ml-auto mr-2 font-normal">
+                        {whatsappAccounts.length}
+                      </Badge>
+                      <ChevronRight
+                        className={cn(
+                          "h-4 w-4 transition-transform duration-200",
+                          isWhatsAppListOpen ? "transform rotate-90" : ""
+                        )}
+                      />
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="pt-1 pb-2 space-y-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="w-full justify-start px-2 py-1 text-xs rounded-md"
+                      onClick={() => {
+                        setIsWhatsAppListOpen(false);
+                        setIsWhatsAppDialogOpen(true);
+                      }}
+                    >
+                      <span className="flex-1 text-left">Add WhatsApp Account</span>
                     </Button>
                   </CollapsibleContent>
                 </Collapsible>
@@ -1254,6 +1332,12 @@ export function Sidebar() {
         <OrganizationDialog
           open={isOrganizationDialogOpen}
           onOpenChange={setIsOrganizationDialogOpen}
+        />
+
+        {/* WhatsApp Account Dialog */}
+        <WhatsAppAccountDialog
+          open={isWhatsAppDialogOpen}
+          onOpenChange={setIsWhatsAppDialogOpen}
         />
       </div>
     </TooltipProvider>

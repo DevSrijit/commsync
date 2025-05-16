@@ -28,7 +28,7 @@ import { Switch } from "@/components/ui/switch";
 import { htmlToSmsText } from "@/lib/utils";
 
 // Define updated message platform types
-export type MessagePlatform = "gmail" | "imap" | "twilio" | "justcall" | "bulkvs";
+export type MessagePlatform = "gmail" | "imap" | "twilio" | "justcall" | "bulkvs" | "whatsapp";
 
 interface MessageComposerProps {
     open: boolean;
@@ -121,11 +121,11 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
                 return false;
             }
 
+            // Convert HTML to SMS text for SMS platforms
+            const formattedContent = htmlToSmsText(contentToSend);
+
             // For twilio, justcall, and bulkvs, send individual messages
             if (platform === "twilio" || platform === "justcall" || platform === "bulkvs") {
-                // Convert HTML to SMS text for SMS platforms
-                const formattedContent = htmlToSmsText(contentToSend);
-
                 // Send messages sequentially
                 for (const recipient of recipientList) {
                     // Get account details for specific platforms
@@ -173,6 +173,19 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
                             }
                         }
                     });
+                }
+            } else if (platform === "whatsapp") {
+                // Send via WhatsApp API
+                try {
+                    await fetch('/api/whatsapp/send', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ chatId: recipientList[0].trim(), text: formattedContent }),
+                    });
+                    // Optionally add to store or refresh
+                } catch (error) {
+                    console.error('Error sending WhatsApp message:', error);
+                    return false;
                 }
             } else {
                 // For email (gmail or imap), send a single message with multiple recipients
@@ -387,6 +400,7 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
                                 <SelectItem value="twilio">Twilio</SelectItem>
                                 <SelectItem value="justcall">JustCall</SelectItem>
                                 <SelectItem value="bulkvs">BulkVS</SelectItem>
+                                <SelectItem value="whatsapp">WhatsApp</SelectItem>
                             </SelectContent>
                         </Select>
                     </div>

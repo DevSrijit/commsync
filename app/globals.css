@@ -27,7 +27,7 @@
   }
 
   .animate-in {
-    animation-duration: 1000ms;
+    animation-duration: 250ms;
     animation-fill-mode: forwards;
     animation-timing-function: ease-out;
   }

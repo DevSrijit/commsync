@@ -24,19 +24,6 @@ export async function POST(request: Request) {
       isLoadingMore = false,
     } = payload;
 
-    // If this is a "Load More" operation, log it clearly
-    if (isLoadingMore) {
-      console.log(
-        `[${platform.toUpperCase()}] Load More operation with cursor: ${
-          lastSmsIdFetched || "none"
-        }`
-      );
-    } else {
-      console.log(
-        `[${platform.toUpperCase()}] Regular sync operation (no cursor)`
-      );
-    }
-
     if (!platform) {
       return NextResponse.json(
         { error: "Platform parameter is required" },
@@ -49,16 +36,13 @@ export async function POST(request: Request) {
     // Sync messages based on platform
     switch (platform.toLowerCase()) {
       case "twilio":
-        // For Twilio, we might want to add phoneNumber filtering in the future
         result = await syncTwilioAccounts(session.user.id);
         break;
       case "justcall":
-        // Pass the userId, phoneNumber, and accountId to the sync function
         result = await syncJustCallAccounts(session.user.id, {
           phoneNumber,
           accountId,
           pageSize,
-          // Only include lastSmsIdFetched if this is a load more operation
           ...(isLoadingMore ? { lastSmsIdFetched } : {}),
           sortDirection,
         });

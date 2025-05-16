@@ -14,11 +14,7 @@ export function formatJustCallTimestamp(
   timeStr?: string
 ): string {
   if (!dateStr && !timeStr) {
-    const fallbackTime = new Date().toISOString();
-    console.log(
-      `No date or time provided, using current time: ${fallbackTime}`
-    );
-    return fallbackTime;
+    return new Date().toISOString();
   }
 
   try {
@@ -53,10 +49,7 @@ export function formatJustCallTimestamp(
       // Validate the timestamp by parsing it
       const date = new Date(isoTime);
       if (!isNaN(date.getTime())) {
-        const result = date.toISOString();
-        return result;
-      } else {
-        // Continue to fallback methods
+        return date.toISOString();
       }
     }
 
@@ -70,8 +63,7 @@ export function formatJustCallTimestamp(
       // Try to parse it as a regular timestamp
       const date = new Date(timeStr);
       if (!isNaN(date.getTime())) {
-        const result = date.toISOString();
-        return result;
+        return date.toISOString();
       }
     }
 
@@ -79,14 +71,12 @@ export function formatJustCallTimestamp(
     if (dateStr) {
       const date = new Date(dateStr);
       if (!isNaN(date.getTime())) {
-        const result = date.toISOString();
-        return result;
+        return date.toISOString();
       }
     }
 
     // Fallback to current time if parsing fails
-    const fallbackTime = new Date().toISOString();
-    return fallbackTime;
+    return new Date().toISOString();
   } catch (error) {
     return new Date().toISOString();
   }
@@ -116,16 +106,6 @@ export class JustCallService {
       if (!this.apiKey || !this.apiSecret) {
         throw new Error(
           "Invalid JustCall credentials: API key or secret is missing"
-        );
-      }
-
-      if (!this.phoneNumber) {
-        console.warn(
-          `No phone number found for JustCall account ${this.accountId}, some functionality may be limited`
-        );
-      } else {
-        console.log(
-          `JustCall service initialized for phone number: ${this.phoneNumber}`
         );
       }
     } catch (error) {
@@ -177,27 +157,14 @@ export class JustCallService {
       if (justcallNumber) {
         // This should be the number assigned to your JustCall account
         queryParams.append("justcall_number", justcallNumber);
-        console.log(
-          `Filtering messages for JustCall number: ${justcallNumber}`
-        );
-      } else {
-        console.warn(
-          "No JustCall phone number provided for filtering messages"
-        );
       }
 
       // Use cursor-based pagination with last_sms_id_fetched instead of page number
       if (lastSmsIdFetched) {
         queryParams.append("last_sms_id_fetched", lastSmsIdFetched);
-        console.log(
-          `Using cursor-based pagination with last_sms_id_fetched: ${lastSmsIdFetched}`
-        );
-      } else {
-        console.log("Initial fetch (no pagination cursor)");
       }
 
       url = `${url}?${queryParams.toString()}`;
-      console.log(`JustCall API request: ${url}`);
 
       const response = await fetch(url, {
         method: "GET",
@@ -213,10 +180,6 @@ export class JustCallService {
       );
 
       if (rateLimitRemaining === 0 || response.status === 429) {
-        console.warn(
-          `⚠️ JustCall API rate limit reached! Reset in ${rateLimitReset} seconds`
-        );
-
         // If we got a 429 but no specific rate limit headers, use a default wait time
         const retryAfter = rateLimitReset > 0 ? rateLimitReset : 60; // Default to 60 seconds
 
@@ -256,30 +219,6 @@ export class JustCallService {
       if (!Array.isArray(messages)) {
         console.error("JustCall API returned unexpected data format:", data);
         return { messages: [] };
-      }
-
-      // Log all messages with their timestamps for debugging
-      if (messages.length > 0) {
-        console.log(`Retrieved ${messages.length} JustCall messages.`);
-        console.log(
-          `First message ID: ${messages[0].id}, Last message ID: ${
-            messages[messages.length - 1].id
-          }`
-        );
-
-        // Show the first 3 messages for debugging
-        const sampleSize = Math.min(3, messages.length);
-        console.log(`Sample of first ${sampleSize} messages:`);
-        messages.slice(0, sampleSize).forEach((msg, idx) => {
-          console.log(`Message ${idx + 1}:`, {
-            id: msg.id,
-            direction: msg.direction,
-            contact_number: msg.contact_number,
-            date: msg.sms_user_date || msg.sms_date,
-          });
-        });
-      } else {
-        console.log("No messages returned from JustCall API");
       }
 
       // Create a map to group messages by conversation
@@ -445,41 +384,17 @@ export class JustCallService {
     }
 
     try {
-      // Remove excessive logging
-      // console.log(`Processing incoming JustCall message ${message.id} from ${message.contact_number}`);
-
-      // Remove detailed message structure logging
-      // console.log('JustCall message structure:', JSON.stringify({
-      //   id: message.id,
-      //   number: message.number,
-      //   contact_number: message.contact_number,
-      //   has_body: Boolean(message.body),
-      //   has_sms_info: Boolean(message.sms_info),
-      //   body_length: message.body?.length || 0,
-      //   sms_info_body_length: message.sms_info?.body?.length || 0,
-      //   direction: message.direction,
-      //   created_at: message.created_at
-      // }));
-
       // Ensure the message has all required properties
       const contactNumber = message.contact_number || "";
       const messageBody = message.sms_info?.body || message.body || "";
 
       if (!contactNumber) {
-        console.warn(
-          `Skipping message with empty contact number: ${message.id}`
-        );
         return;
       }
 
       if (!messageBody) {
-        console.warn(`Message ${message.id} has no body content`);
         // Still process it, just log the warning
       }
-
-      // Additional processing could happen here
-      // Remove success logging
-      // console.log(`Successfully processed JustCall message ${message.id}`);
     } catch (error) {
       console.error(`Error processing JustCall message ${message.id}:`, error);
       throw error;
@@ -654,8 +569,6 @@ export class JustCallService {
       // Using the V2 SMS endpoints as per the documentation
       let url = `${this.baseUrl}/texts?per_page=${limit}`;
 
-      console.log(`[DEBUG] Fetching all texts without filters from: ${url}`);
-
       const response = await fetch(url, {
         method: "GET",
         headers: this.getAuthHeaders(),
@@ -669,38 +582,6 @@ export class JustCallService {
       }
 
       const data = await response.json();
-      console.log(
-        `[DEBUG] JustCall API response: Found ${data?.data?.length || 0} texts`
-      );
-
-      // Log the first few texts to see what's coming back
-      if (data?.data?.length > 0) {
-        const sampleTexts = data.data.slice(0, 3);
-        console.log(
-          `[DEBUG] Sample texts: ${JSON.stringify(sampleTexts, null, 2)}`
-        );
-
-        // Extract unique phone numbers to help with debugging
-        const justcallNumbers = new Set();
-        const contactNumbers = new Set();
-
-        data.data.forEach((text: any) => {
-          if (text.justcall_number) justcallNumbers.add(text.justcall_number);
-          if (text.contact_number) contactNumbers.add(text.contact_number);
-        });
-
-        console.log(
-          `[DEBUG] JustCall numbers in texts: ${Array.from(
-            justcallNumbers
-          ).join(", ")}`
-        );
-        console.log(
-          `[DEBUG] Contact numbers in texts: ${Array.from(contactNumbers).join(
-            ", "
-          )}`
-        );
-      }
-
       return data;
     } catch (error) {
       console.error("[DEBUG] Failed to fetch all JustCall texts:", error);
