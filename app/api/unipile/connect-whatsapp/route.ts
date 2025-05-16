@@ -48,3 +48,68 @@ export async function POST() {
     );
   }
 }
+
+// Endpoint to manually trigger syncing messages for an existing WhatsApp account
+export async function GET(request: Request) {
+  try {
+    // Get the user's session
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Get the account ID from the URL
+    const { searchParams } = new URL(request.url);
+    const accountId = searchParams.get("accountId");
+
+    if (!accountId) {
+      return NextResponse.json(
+        { error: "Account ID is required" },
+        { status: 400 }
+      );
+    }
+
+    // Check that the account belongs to the user
+    const account = await db.unipileAccount.findUnique({
+      where: {
+        id: accountId,
+        userId: session.user.id,
+      },
+    });
+
+    if (!account) {
+      return NextResponse.json(
+        { error: "Account not found or not authorized" },
+        { status: 404 }
+      );
+    }
+
+    // Get the Unipile service instance
+    const unipileService = getUnipileService();
+
+    // Only sync if the account is connected and has an accountIdentifier
+    if (account.status !== "connected" || !account.accountIdentifier) {
+      return NextResponse.json(
+        { error: "Account is not connected" },
+        { status: 400 }
+      );
+    }
+
+    // Start syncing messages
+    await unipileService.syncUnipileMessages(
+      accountId,
+      account.accountIdentifier
+    );
+
+    return NextResponse.json({
+      success: true,
+      message: "Message sync initiated",
+    });
+  } catch (error) {
+    console.error("Error syncing WhatsApp messages:", error);
+    return NextResponse.json(
+      { error: "Failed to sync WhatsApp messages" },
+      { status: 500 }
+    );
+  }
+}

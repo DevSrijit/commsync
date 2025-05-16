@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getUnipileService } from "@/lib/unipile-service";
+import { db } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
   try {
@@ -26,6 +27,21 @@ export async function GET(request: NextRequest) {
 
     console.log(
       `Checking status for accountId: ${accountId}, userId: ${session.user.id}`
+    );
+
+    // Get information about the pending account
+    const pendingAccount = await db.unipileAccount.findUnique({
+      where: { id: accountId },
+    });
+
+    console.log(
+      `Account details:`,
+      JSON.stringify({
+        id: pendingAccount?.id,
+        status: pendingAccount?.status,
+        provider: pendingAccount?.provider,
+        accountIdentifier: pendingAccount?.accountIdentifier,
+      })
     );
 
     // Get the Unipile service instance

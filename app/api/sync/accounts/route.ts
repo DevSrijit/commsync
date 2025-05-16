@@ -30,6 +30,22 @@ export async function GET(request: Request) {
       },
     });
 
+    // Add case for 'unipile' platform in your GET handler
+    // This would be in a switch or if/else structure where you handle different platforms
+
+    // Example:
+    // If the platform is 'unipile', fetch all Unipile-connected accounts (not just WhatsApp)
+    if (platform === "unipile") {
+      const accounts = await db.unipileAccount.findMany({
+        where: {
+          userId: session.user.id,
+          status: "connected", // Only get connected accounts
+        },
+      });
+
+      return NextResponse.json({ accounts });
+    }
+
     return NextResponse.json({ accounts });
   } catch (error) {
     console.error("Error fetching sync accounts:", error);
