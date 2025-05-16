@@ -8,3 +8,7 @@
  *
  * @deprecated - Use @/lib/auth for new imports
  */
+
+import { authOptions } from "./auth";
+
+export default authOptions;

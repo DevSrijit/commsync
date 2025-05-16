@@ -131,7 +131,7 @@ export async function GET(req: NextRequest) {
         };
       });
     
-    logger.info(`Subscription details`, { subscriptions: subscriptionDetails });
+    //logger.info(`Subscription details`, { subscriptions: subscriptionDetails });
     
     // Check if any organization has an active subscription
     const hasActiveSubscription = user.organizations.some(

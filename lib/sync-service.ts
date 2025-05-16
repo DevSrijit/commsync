@@ -287,14 +287,13 @@ export const syncJustCallAccounts = async (
           console.log(
             `Syncing messages for JustCall account ${account.id} with phone number: ${phoneNumber}`
           );
-
           // Use cursor-based pagination with lastSmsIdFetched
-          console.log(`JustCall sync for account ${account.id}:`);
-          console.log(`- Phone: ${phoneNumber}`);
-          console.log(`- Sort: ${options?.sortDirection || "desc"}`);
-          console.log(
-            `- Pagination cursor: ${options?.lastSmsIdFetched || "none"}`
-          );
+          // console.log(`JustCall sync for account ${account.id}:`);
+          // console.log(`- Phone: ${phoneNumber}`);
+          // console.log(`- Sort: ${options?.sortDirection || "desc"}`);
+          // console.log(
+          //   `- Pagination cursor: ${options?.lastSmsIdFetched || "none"}`
+          // );
 
           // Get messages using the lastSmsIdFetched for pagination instead of date-based filtering
           const result = await justCallService.getMessages(

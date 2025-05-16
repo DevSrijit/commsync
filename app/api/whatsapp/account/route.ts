@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { UnipileClient } from "unipile-node-sdk";
 
 export async function GET() {
   try {
@@ -9,7 +10,38 @@ export async function GET() {
       where: { platform: "whatsapp" },
       orderBy: { createdAt: "desc" },
     });
-    return NextResponse.json(accounts);
+
+    const baseUrl = process.env.UNIPILE_BASE_URL;
+    const accessToken = process.env.UNIPILE_ACCESS_TOKEN;
+    if (!baseUrl || !accessToken) {
+      return NextResponse.json(
+        { error: "Missing UNIPILE_BASE_URL or UNIPILE_ACCESS_TOKEN" },
+        { status: 500 }
+      );
+    }
+    const client = new UnipileClient(baseUrl, accessToken);
+    const detailedAccounts = await Promise.all(
+      accounts.map(async (account: any) => {
+        let phoneNumber: string | null = null;
+        try {
+          const unipileAcc: any = await client.account.getOne(account.id);
+          // Try snake_case, camelCase, or name field for phone number
+          const imParams = unipileAcc.connection_params?.im || {};
+          phoneNumber =
+            imParams.phone_number ||
+            imParams.phoneNumber ||
+            unipileAcc.name ||
+            null;
+        } catch (err) {
+          console.error(
+            `Failed to fetch WhatsApp account details for ${account.id}:`,
+            err
+          );
+        }
+        return { ...account, phoneNumber };
+      })
+    );
+    return NextResponse.json(detailedAccounts);
   } catch (error) {
     console.error("Failed to fetch WhatsApp accounts:", error);
     return NextResponse.json(

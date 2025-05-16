@@ -39,7 +39,7 @@ interface MessageComposerProps {
 export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerProps) {
     const { data: session } = useSession();
     const { toast } = useToast();
-    const { addEmail, imapAccounts, twilioAccounts, justcallAccounts, bulkvsAccounts } = useEmailStore();
+    const { addEmail, imapAccounts, twilioAccounts, justcallAccounts, bulkvsAccounts, whatsappAccounts } = useEmailStore();
 
     const [recipients, setRecipients] = useState("");
     const [subject, setSubject] = useState("");
@@ -66,8 +66,10 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
             setSelectedAccountId(justcallAccounts[0].id);
         } else if (platform === "bulkvs" && bulkvsAccounts.length === 1 && bulkvsAccounts[0].id) {
             setSelectedAccountId(bulkvsAccounts[0].id);
+        } else if (platform === "whatsapp" && whatsappAccounts.length === 1 && whatsappAccounts[0].id) {
+            setSelectedAccountId(whatsappAccounts[0].id);
         }
-    }, [platform, imapAccounts, twilioAccounts, justcallAccounts, bulkvsAccounts]);
+    }, [platform, imapAccounts, twilioAccounts, justcallAccounts, bulkvsAccounts, whatsappAccounts]);
 
     const handleMessageInputSave = (content: string, uploadedAttachments: File[]) => {
         setMessageContent(content);
@@ -267,12 +269,20 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
                     label: account.label || account.accountIdentifier || "BulkVS Account"
                 }));
             placeholder = "Select BulkVS account";
+        } else if (platform === "whatsapp") {
+            accounts = whatsappAccounts
+                .filter(account => !!account.id)
+                .map(account => ({
+                    id: account.id as string,
+                    label: account.phoneNumber || account.accountIdentifier || "WhatsApp Account"
+                }));
+            placeholder = "Select WhatsApp account";
         }
 
         if (accounts.length === 0) {
             return (
                 <div className="text-sm text-muted-foreground px-4 py-2">
-                    No {platform} accounts available. Please add an account first.
+                    No {platform === 'whatsapp' ? 'WhatsApp' : platform} accounts available. Please add an account first.
                 </div>
             );
         }
@@ -347,6 +357,8 @@ export function MessageComposer({ open, onOpenChange, onSend }: MessageComposerP
             recipientPlaceholder = "Phone number(s) with country code";
         } else if (platform === "bulkvs") {
             recipientPlaceholder = "Phone number with country code (e.g., +1XXXXXXXXXX)";
+        } else if (platform === "whatsapp") {
+            recipientPlaceholder = "Chat ID or phone number (e.g., +123456789)";
         }
 
         return (

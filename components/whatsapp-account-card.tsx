@@ -23,14 +23,16 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { LoadingSpinner } from "./loading-spinner";
+import { Badge } from "./ui/badge";
 
 interface WhatsAppAccountCardProps {
     id: string;
-    label: string;
+    phoneNumber: string;
     lastSync: string;
 }
 
-export function WhatsAppAccountCard({ id, label, lastSync }: WhatsAppAccountCardProps) {
+export function WhatsAppAccountCard({ id, phoneNumber, lastSync }: WhatsAppAccountCardProps) {
     const router = useRouter();
     const { toast } = useToast();
     const [isDeleting, setIsDeleting] = useState(false);
@@ -73,6 +75,13 @@ export function WhatsAppAccountCard({ id, label, lastSync }: WhatsAppAccountCard
             if (!response.ok) throw new Error("Delete failed");
             toast({ title: "Account removed", description: "WhatsApp account unlinked." });
             router.refresh();
+
+            // Update the list of accounts via custom event
+            const listRes = await fetch('/api/whatsapp/account');
+            if (listRes.ok) {
+                const accounts = await listRes.json();
+                window.dispatchEvent(new CustomEvent('whatsapp-accounts-updated', { detail: accounts }));
+            }
         } catch (error) {
             console.error("Error deleting WhatsApp account:", error);
             toast({ title: "Delete failed", description: "Could not unlink WhatsApp account.", variant: "destructive" });
@@ -89,6 +98,7 @@ export function WhatsAppAccountCard({ id, label, lastSync }: WhatsAppAccountCard
     const minutesAgo = Math.floor(diffMs / 60000);
     const hoursAgo = Math.floor(minutesAgo / 60);
     const daysAgo = Math.floor(hoursAgo / 24);
+
     let syncStatus = "";
     if (daysAgo > 0) syncStatus = `${daysAgo} day${daysAgo > 1 ? 's' : ''} ago`;
     else if (hoursAgo > 0) syncStatus = `${hoursAgo} hour${hoursAgo > 1 ? 's' : ''} ago`;
@@ -97,41 +107,74 @@ export function WhatsAppAccountCard({ id, label, lastSync }: WhatsAppAccountCard
 
     return (
         <>
-            <Card className="mb-4">
-                <CardHeader className="pb-2">
+            <Card className="border border-border/60 hover:border-border transition-colors duration-200 max-w-sm mx-auto">
+                <CardHeader className="pb-2 pt-4">
                     <div className="flex items-center justify-between">
-                        <CardTitle className="text-base truncate">{label}</CardTitle>
+                        <CardTitle className="text-base font-medium truncate">{phoneNumber}</CardTitle>
+                        <Badge variant="outline" className="bg-green-500/10 text-green-600 dark:text-green-400 border-green-200/30">
+                            WhatsApp
+                        </Badge>
                     </div>
-                    <CardDescription className="text-xs truncate">ID: {id}</CardDescription>
+                    <CardDescription className="text-xs truncate mt-1">ID: {id}</CardDescription>
                 </CardHeader>
-                <CardContent className="pb-2 text-xs">
-                    <div className="flex items-center gap-2">
-                        <MessageSquare className="h-3 w-3" />
-                        <span>Last synced: {syncStatus}</span>
-                        <span className="hidden sm:inline text-xs text-muted-foreground">{formattedLastSync}</span>
+                <CardContent className="pb-2 pt-0">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <MessageSquare className="h-3.5 w-3.5" />
+                        <span>Last synced: <span className="font-medium text-foreground">{syncStatus}</span></span>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1 ml-5.5 hidden sm:block">
+                        {formattedLastSync}
                     </div>
                 </CardContent>
-                <CardFooter className="flex justify-between pt-2">
-                    <Button variant="outline" size="sm" onClick={() => setShowDeleteAlert(true)} disabled={isDeleting}>
-                        <Trash2 className="h-4 w-4" />
+                <CardFooter className="flex justify-between pt-1 pb-3">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowDeleteAlert(true)}
+                        disabled={isDeleting}
+                        className="h-8 px-3 text-destructive hover:text-destructive border-destructive/30 hover:bg-destructive/10"
+                    >
+                        {isDeleting ? (
+                            <LoadingSpinner size={16} className="mr-1" />
+                        ) : (
+                            <Trash2 className="h-3.5 w-3.5 mr-1" />
+                        )}
+                        Unlink
                     </Button>
-                    <Button variant="default" size="sm" onClick={handleSync} disabled={isSyncing}>
-                        {isSyncing ? <RefreshCw className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-1" />}
+                    <Button
+                        variant="default"
+                        size="sm"
+                        onClick={handleSync}
+                        disabled={isSyncing}
+                        className="h-8 px-3 bg-primary/90 hover:bg-primary"
+                    >
+                        {isSyncing ? (
+                            <LoadingSpinner size={16} className="mr-1" />
+                        ) : (
+                            <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                        )}
                         Sync
                     </Button>
                 </CardFooter>
             </Card>
+
             <AlertDialog open={showDeleteAlert} onOpenChange={setShowDeleteAlert}>
-                <AlertDialogContent>
+                <AlertDialogContent className="max-w-md">
                     <AlertDialogHeader>
                         <AlertDialogTitle>Unlink WhatsApp Account?</AlertDialogTitle>
                         <AlertDialogDescription>
-                            This will remove this WhatsApp account and all associated data.
+                            This will remove this WhatsApp account connection and all associated data from your account. This action cannot be undone.
                         </AlertDialogDescription>
                     </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={handleDelete}>Confirm</AlertDialogAction>
+                    <AlertDialogFooter className="gap-2">
+                        <AlertDialogCancel className="mt-0">Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={handleDelete}
+                            className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+                        >
+                            {isDeleting ? <LoadingSpinner size={16} className="mr-2" /> : null}
+                            Unlink Account
+                        </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>

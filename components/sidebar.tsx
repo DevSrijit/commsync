@@ -98,8 +98,8 @@ import { OrganizationDialog } from "./organization-dialog";
 import { BulkvsAccountDialog } from "./bulkvs-account-dialog";
 import { BulkvsAccountCard } from "./bulkvs-account-card";
 import { WhatsAppAccountCard } from "./whatsapp-account-card";
+import { WhatsAppAccounts } from "./whatsapp-accounts";
 import { Badge } from "./ui/badge";
-import { WhatsAppAccountDialog } from "./whatsapp-account-dialog";
 
 export type MessageCategory =
   | "inbox"
@@ -154,6 +154,7 @@ export function Sidebar() {
   // WhatsApp account linking state
   const [isWhatsAppDialogOpen, setIsWhatsAppDialogOpen] = useState(false);
   const [isWhatsAppListOpen, setIsWhatsAppListOpen] = useState(false);
+  const [isWhatsAppAccountsOpen, setIsWhatsAppAccountsOpen] = useState(false);
   const [whatsappAccounts, setWhatsappAccounts] = useState<any[]>([]);
 
   // Function to fetch subscription data without causing re-renders
@@ -895,7 +896,7 @@ export function Sidebar() {
                           <Phone className="h-4 w-4" />
                           <span>JustCall Account</span>
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setIsWhatsAppListOpen(true)} className="gap-2">
+                        <DropdownMenuItem onClick={() => setIsWhatsAppAccountsOpen(true)} className="gap-2">
                           <Phone className="h-4 w-4" />
                           <span>WhatsApp Account</span>
                         </DropdownMenuItem>
@@ -1065,11 +1066,11 @@ export function Sidebar() {
                       size="sm"
                       className="w-full justify-start px-2 py-1 text-xs rounded-md"
                       onClick={() => {
-                        setIsWhatsAppListOpen(false);
-                        setIsWhatsAppDialogOpen(true);
+                        setIsWhatsAppAccountsOpen(true);
                       }}
                     >
-                      <span className="flex-1 text-left">Add WhatsApp Account</span>
+                      <span className="flex-1 text-left">Manage WhatsApp accounts</span>
+                      <ExternalLink className="h-3 w-3 ml-1" />
                     </Button>
                   </CollapsibleContent>
                 </Collapsible>
@@ -1335,9 +1336,9 @@ export function Sidebar() {
         />
 
         {/* WhatsApp Account Dialog */}
-        <WhatsAppAccountDialog
-          open={isWhatsAppDialogOpen}
-          onOpenChange={setIsWhatsAppDialogOpen}
+        <WhatsAppAccounts
+          open={isWhatsAppAccountsOpen}
+          onOpenChange={setIsWhatsAppAccountsOpen}
         />
       </div>
     </TooltipProvider>

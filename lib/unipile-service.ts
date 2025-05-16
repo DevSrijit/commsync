@@ -31,10 +31,15 @@ export class UnipileService {
   }
 
   /**
-   * Fetch all messages for a specific WhatsApp chat
+   * Fetch all or incremental messages for a specific WhatsApp chat
    */
-  async getWhatsAppMessages(chatId: string): Promise<any> {
-    return this.client.messaging.getAllMessagesFromChat({ chat_id: chatId });
+  async getWhatsAppMessages(chatId: string, options?: any): Promise<any> {
+    const params: any = { chat_id: chatId };
+    if (options && options.afterId) params.after_id = options.afterId;
+    if (options && options.limit) params.limit = options.limit;
+    if (options && options.sortDirection)
+      params.sort_direction = options.sortDirection;
+    return this.client.messaging.getAllMessagesFromChat(params);
   }
 
   /**

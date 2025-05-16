@@ -1741,10 +1741,28 @@ export const useEmailStore = create<EmailStore>((set, get) => {
 
     syncWhatsappAccounts: async (isLoadingMore = false) => {
       const store = get();
-      const accounts = store.whatsappAccounts;
+      // Ensure we have WhatsApp accounts in store, otherwise fetch from server
+      let accounts = store.whatsappAccounts;
       if (!accounts || accounts.length === 0) {
-        console.log("No WhatsApp accounts to sync");
-        return 0;
+        try {
+          const res = await fetch("/api/whatsapp/account");
+          if (res.ok) {
+            const fetchedAccounts = await res.json();
+            store.setWhatsappAccounts(fetchedAccounts);
+            accounts = fetchedAccounts;
+          } else {
+            console.error(
+              "Failed to fetch WhatsApp accounts:",
+              await res.text()
+            );
+          }
+        } catch (error) {
+          console.error("Error fetching WhatsApp accounts:", error);
+        }
+        if (!accounts || accounts.length === 0) {
+          console.log("No WhatsApp accounts to sync");
+          return 0;
+        }
       }
       console.log(`Starting WhatsApp sync for ${accounts.length} accounts`);
       let totalMessages = 0;
