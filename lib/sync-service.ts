@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { JustCallService } from "@/lib/justcall-service";
 import { TwilioService } from "@/lib/twilio-service";
 import { BulkVSService } from "@/lib/bulkvs-service";
+import { UnipileService } from "@/lib/unipile-service";
 import { Account } from "@prisma/client";
 
 export class SyncService {
@@ -538,7 +539,7 @@ export const syncBulkvsAccounts = async (
     console.log(`Syncing ${accounts.length} BulkVS accounts`);
 
     const results = await Promise.allSettled(
-      accounts.map(async (account:any) => {
+      accounts.map(async (account: any) => {
         try {
           const bulkvsService = new BulkVSService(account);
 
@@ -688,7 +689,87 @@ export const syncBulkvsAccounts = async (
   }
 };
 
-// Sync all accounts for a user
+// Add WhatsApp sync functionality using Unipile
+export const syncUnipileWhatsappAccounts = async (
+  userId?: string,
+  options?: {
+    accountId?: string;
+  }
+): Promise<{ success: number; failed: number; results: any[] }> => {
+  try {
+    // Query for all active Unipile WhatsApp accounts, optionally filtered by userId and accountId
+    let query: any = { provider: "whatsapp" };
+
+    if (userId) {
+      query.userId = userId;
+    }
+
+    if (options?.accountId) {
+      query.id = options.accountId;
+    }
+
+    const accounts = await db.unipileAccount.findMany({
+      where: query,
+    });
+
+    console.log(`Syncing ${accounts.length} WhatsApp accounts through Unipile`);
+
+    const unipileService = UnipileService.getInstance();
+
+    const results = await Promise.allSettled(
+      accounts.map(async (account: any) => {
+        try {
+          console.log(`Syncing WhatsApp account ${account.id}`);
+
+          // Skip accounts that are not connected
+          if (account.status !== "connected" || !account.accountIdentifier) {
+            console.warn(`Account ${account.id} is not connected, skipping`);
+            return {
+              accountId: account.id,
+              status: "skipped",
+              error: "Account is not connected",
+            };
+          }
+
+          // Sync messages for this account
+          await unipileService.syncUnipileMessages(
+            account.id,
+            account.accountIdentifier
+          );
+
+          // Update last sync time
+          await db.unipileAccount.update({
+            where: { id: account.id },
+            data: { lastSync: new Date() },
+          });
+
+          return {
+            accountId: account.id,
+            status: "success",
+          };
+        } catch (error) {
+          console.error(`Error syncing WhatsApp account ${account.id}:`, error);
+          throw error;
+        }
+      })
+    );
+
+    return {
+      success: results.filter(
+        (r: PromiseSettledResult<any>) => r.status === "fulfilled"
+      ).length,
+      failed: results.filter(
+        (r: PromiseSettledResult<any>) => r.status === "rejected"
+      ).length,
+      results,
+    };
+  } catch (error) {
+    console.error("Error in syncUnipileWhatsappAccounts:", error);
+    throw error;
+  }
+};
+
+// Update syncAllAccountsForUser to include WhatsApp sync
 export const syncAllAccountsForUser = async (
   userId: string
 ): Promise<{
@@ -696,17 +777,20 @@ export const syncAllAccountsForUser = async (
   justCall: { success: number; failed: number; results: any[] } | null;
   twilio: { success: number; failed: number; results: any[] } | null;
   bulkvs: { success: number; failed: number; results: any[] } | null;
+  whatsapp: { success: number; failed: number; results: any[] } | null;
 }> => {
   const results: {
     imap: { success: number; failed: number; results: any[] } | null;
     justCall: { success: number; failed: number; results: any[] } | null;
     twilio: { success: number; failed: number; results: any[] } | null;
     bulkvs: { success: number; failed: number; results: any[] } | null;
+    whatsapp: { success: number; failed: number; results: any[] } | null;
   } = {
     imap: null,
     justCall: null,
     twilio: null,
     bulkvs: null,
+    whatsapp: null,
   };
 
   try {
@@ -757,6 +841,20 @@ export const syncAllAccountsForUser = async (
   } catch (error) {
     console.error("Error syncing BulkVS accounts:", error);
     results.bulkvs = {
+      success: 0,
+      failed: 1,
+      results: [
+        { error: error instanceof Error ? error.message : "Unknown error" },
+      ],
+    };
+  }
+
+  try {
+    // Sync WhatsApp accounts through Unipile
+    results.whatsapp = await syncUnipileWhatsappAccounts(userId);
+  } catch (error) {
+    console.error("Error syncing WhatsApp accounts:", error);
+    results.whatsapp = {
       success: 0,
       failed: 1,
       results: [

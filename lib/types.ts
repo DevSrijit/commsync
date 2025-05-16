@@ -63,7 +63,7 @@ export interface Contact {
   lastMessageSubject: string;
   labels: string[]; // Keep this required
   accountId?: string;
-  accountType?: "gmail" | "imap" | "justcall" | "twilio" | "bulkvs";
+  accountType?: "gmail" | "imap" | "justcall" | "twilio" | "bulkvs" | "unipile";
   searchScore?: number;
   matchedFields?: Set<string>;
 }

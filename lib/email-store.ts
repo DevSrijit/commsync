@@ -1648,6 +1648,53 @@ export const useEmailStore = create<EmailStore>((set, get) => {
             }),
           ]);
 
+        // Sync WhatsApp/Unipile accounts
+        let whatsappCount = 0;
+        try {
+          // Get connected WhatsApp accounts from DB
+          const response = await fetch("/api/sync/accounts?platform=unipile");
+          if (response.ok) {
+            const { accounts } = await response.json();
+            console.log(
+              `Found ${accounts?.length || 0} WhatsApp/Unipile accounts`
+            );
+
+            // Sync each connected WhatsApp account
+            if (accounts && accounts.length > 0) {
+              const unipileService = await import("@/lib/unipile-service").then(
+                (mod) => mod.getUnipileService()
+              );
+
+              for (const account of accounts) {
+                if (
+                  account.status === "connected" &&
+                  account.accountIdentifier
+                ) {
+                  try {
+                    console.log(
+                      `Syncing Unipile account: ${account.id} (${
+                        account.provider || "unknown provider"
+                      })`
+                    );
+                    await unipileService.syncUnipileMessages(
+                      account.id,
+                      account.accountIdentifier
+                    );
+                    whatsappCount++;
+                  } catch (accountErr) {
+                    console.error(
+                      `Error syncing WhatsApp account ${account.id}:`,
+                      accountErr
+                    );
+                  }
+                }
+              }
+            }
+          }
+        } catch (whatsappErr) {
+          console.error("Error syncing WhatsApp accounts:", whatsappErr);
+        }
+
         console.log(
           `Synced: ${imapCount} IMAP, ${twilioCount} Twilio, ${
             typeof justcallResult === "number"
@@ -1657,7 +1704,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
             typeof bulkvsResult === "number"
               ? bulkvsResult
               : bulkvsResult?.count || 0
-          } BulkVS messages`
+          } BulkVS, ${whatsappCount} WhatsApp accounts`
         );
 
         // Sync Gmail emails if token is provided
