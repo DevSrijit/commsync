@@ -16,6 +16,7 @@ export function WhatsAppAccountDialog({ open, onOpenChange }: WhatsAppAccountDia
     const [qrCodeData, setQrCodeData] = useState<string>("");
     const [timer, setTimer] = useState<number>(60);
     const [connectCode, setConnectCode] = useState<string>("");
+    const [accountId, setAccountId] = useState<string>("");
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const { toast } = useToast();
@@ -35,6 +36,9 @@ export function WhatsAppAccountDialog({ open, onOpenChange }: WhatsAppAccountDia
             }
             if (data.code) {
                 setConnectCode(data.code);
+            }
+            if (data.accountId) {
+                setAccountId(data.accountId);
             }
         } catch (err) {
             console.error('Failed to fetch WhatsApp QR code:', err);
@@ -72,13 +76,13 @@ export function WhatsAppAccountDialog({ open, onOpenChange }: WhatsAppAccountDia
     }, [open]);
 
     const handleConnect = async () => {
-        if (!connectCode) return;
+        if (!connectCode || !accountId) return;
         setIsLoading(true);
         try {
             const res = await fetch('/api/whatsapp/account', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ code: connectCode }),
+                body: JSON.stringify({ code: connectCode, accountId }),
             });
             if (!res.ok) throw new Error('Linking failed');
             toast({
@@ -186,7 +190,7 @@ export function WhatsAppAccountDialog({ open, onOpenChange }: WhatsAppAccountDia
                     </Button>
                     <Button
                         onClick={handleConnect}
-                        disabled={!connectCode || isLoading}
+                        disabled={!connectCode || !accountId || isLoading}
                         size="sm"
                         className="h-9"
                     >

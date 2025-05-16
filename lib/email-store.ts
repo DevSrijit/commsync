@@ -57,7 +57,11 @@ interface EmailStore {
   setJustcallAccounts: (accounts: any[]) => void;
   setBulkvsAccounts: (accounts: any[]) => void;
   setWhatsappAccounts: (accounts: any[]) => void;
-  syncWhatsappAccounts: (isLoadingMore?: boolean) => Promise<number>;
+  syncWhatsappAccounts: (
+    isLoadingMore?: boolean
+  ) => Promise<
+    number | { count: number; rateLimited: boolean; retryAfter: number }
+  >;
   setLoadPageSize: (size: number) => void;
   addGroup: (group: Group) => void;
   updateGroup: (group: Group) => void;
@@ -1643,7 +1647,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
           twilioCount,
           justcallResult,
           bulkvsResult,
-          whatsappCount,
+          whatsappResult,
         ] = await Promise.all([
           store.syncImapAccounts().catch((err) => {
             console.error("Error syncing IMAP accounts:", err);
@@ -1676,7 +1680,11 @@ export const useEmailStore = create<EmailStore>((set, get) => {
             typeof bulkvsResult === "number"
               ? bulkvsResult
               : bulkvsResult?.count || 0
-          } BulkVS, ${whatsappCount} WhatsApp messages`
+          } BulkVS, ${
+            typeof whatsappResult === "number"
+              ? whatsappResult
+              : whatsappResult?.count || 0
+          } WhatsApp messages`
         );
 
         // Sync Gmail emails if token is provided
@@ -1740,90 +1748,277 @@ export const useEmailStore = create<EmailStore>((set, get) => {
     },
 
     syncWhatsappAccounts: async (isLoadingMore = false) => {
+      console.log(
+        `Starting WhatsApp accounts sync (isLoadingMore: ${isLoadingMore})`
+      );
       const store = get();
-      // Ensure we have WhatsApp accounts in store, otherwise fetch from server
-      let accounts = store.whatsappAccounts;
-      if (!accounts || accounts.length === 0) {
-        try {
-          const res = await fetch("/api/whatsapp/account");
-          if (res.ok) {
-            const fetchedAccounts = await res.json();
-            store.setWhatsappAccounts(fetchedAccounts);
-            accounts = fetchedAccounts;
-          } else {
-            console.error(
-              "Failed to fetch WhatsApp accounts:",
-              await res.text()
-            );
+
+      try {
+        // Ensure we have WhatsApp accounts in store, otherwise fetch from server
+        let accounts = store.whatsappAccounts;
+        if (!accounts || accounts.length === 0) {
+          try {
+            const res = await fetch("/api/whatsapp/account");
+            if (res.ok) {
+              const fetchedAccounts = await res.json();
+              if (
+                Array.isArray(fetchedAccounts) &&
+                fetchedAccounts.length > 0
+              ) {
+                store.setWhatsappAccounts(fetchedAccounts);
+                accounts = fetchedAccounts;
+                console.log(`Fetched ${accounts.length} WhatsApp accounts`);
+              } else {
+                console.log("No WhatsApp accounts found");
+                return 0;
+              }
+            } else {
+              console.error(
+                "Failed to fetch WhatsApp accounts:",
+                await res.text()
+              );
+              return 0;
+            }
+          } catch (error) {
+            console.error("Error fetching WhatsApp accounts:", error);
+            return 0;
           }
-        } catch (error) {
-          console.error("Error fetching WhatsApp accounts:", error);
         }
+
         if (!accounts || accounts.length === 0) {
           console.log("No WhatsApp accounts to sync");
           return 0;
         }
-      }
-      console.log(`Starting WhatsApp sync for ${accounts.length} accounts`);
-      let totalMessages = 0;
-      for (const account of accounts) {
+
+        console.log(`Syncing ${accounts.length} WhatsApp accounts`);
+        let totalMessages = 0;
+        let rateLimited = false;
+        let retryAfter = 0;
+
+        // Track last message IDs per chat for pagination
+        // Start with empty map or retrieve from local storage
+        let lastMessageIdMap: Record<string, Record<string, string>> = {};
         try {
-          const accountId = account.id;
-          // Fetch chats for this account
-          const chatsRes = await fetch(
-            `/api/whatsapp/chats?accountId=${accountId}`
-          );
-          if (!chatsRes.ok) {
-            console.error(
-              `Failed to fetch chats for WhatsApp account ${accountId}:`,
-              await chatsRes.text()
-            );
-            continue;
+          const storedMap = await getCacheValue("whatsappLastMessageIds");
+          if (storedMap) {
+            lastMessageIdMap = storedMap;
           }
-          const { chats } = await chatsRes.json();
-          for (const chat of chats) {
-            // Fetch messages for each chat
-            const msgsRes = await fetch(
-              `/api/whatsapp/chats/${chat.id}/messages?accountId=${accountId}`
+        } catch (error) {
+          console.error("Error loading WhatsApp pagination state:", error);
+          // Continue with empty map if can't load
+        }
+
+        // Process each account
+        for (const account of accounts) {
+          try {
+            const accountId = account.id;
+            console.log(`Processing WhatsApp account ${accountId}`);
+
+            // Ensure this account has an entry in our mapping
+            if (!lastMessageIdMap[accountId]) {
+              lastMessageIdMap[accountId] = {};
+            }
+
+            // Fetch chats for this account
+            const chatsRes = await fetch(
+              `/api/whatsapp/chats?accountId=${accountId}`
             );
-            if (!msgsRes.ok) {
+            if (!chatsRes.ok) {
               console.error(
-                `Failed to fetch messages for chat ${chat.id}:`,
-                await msgsRes.text()
+                `Failed to fetch chats for WhatsApp account ${accountId}:`,
+                await chatsRes.text()
               );
               continue;
             }
-            const { messages } = await msgsRes.json();
-            if (messages && messages.length > 0) {
-              const formatted = messages.map((msg: any) => ({
-                id: msg.id,
-                threadId: msg.chat_id,
-                from: {
-                  name: msg.from || msg.chat_id,
-                  email: msg.from || msg.chat_id,
-                },
-                to: [
-                  { name: msg.to || msg.chat_id, email: msg.to || msg.chat_id },
-                ],
-                subject: chat.title || `WhatsApp chat ${chat.id}`,
-                body: msg.text || msg.body || "",
-                date: msg.timestamp
-                  ? new Date(msg.timestamp).toISOString()
-                  : new Date().toISOString(),
-                labels: ["sms"],
-                read: true,
-                accountId,
-                accountType: "whatsapp",
-              }));
-              formatted.forEach((email: any) => store.addEmail(email));
-              totalMessages += formatted.length;
+
+            console.log(chatsRes);
+
+            const { chats } = await chatsRes.json();
+            if (!chats || !Array.isArray(chats) || chats.length === 0) {
+              console.log(`No chats found for WhatsApp account ${accountId}`);
+              continue;
             }
+
+            console.log(
+              `Found ${chats.length} chats for WhatsApp account ${accountId}`
+            );
+
+            // Process each chat
+            for (const chat of chats) {
+              const chatId = chat.id;
+              if (!chatId) {
+                console.warn(
+                  `Skipping chat with no ID in account ${accountId}`
+                );
+                continue;
+              }
+
+              // Configure pagination based on isLoadingMore mode
+              const paginationParams: Record<string, string> = {};
+
+              if (isLoadingMore) {
+                // When loading more, use stored last message ID as the cursor
+                const lastMessageId = lastMessageIdMap[accountId][chatId];
+                if (lastMessageId) {
+                  paginationParams.beforeId = lastMessageId;
+                }
+              }
+
+              // Set page size
+              paginationParams.limit = store.loadPageSize.toString();
+
+              // Set sort direction (newer messages first)
+              paginationParams.sortDirection = "desc";
+
+              // Build query string
+              const queryString = new URLSearchParams({
+                accountId,
+                ...paginationParams,
+              }).toString();
+
+              // Fetch messages with pagination
+              console.log(
+                `Fetching messages for chat ${chatId} with params:`,
+                paginationParams
+              );
+              const msgsRes = await fetch(
+                `/api/whatsapp/chats/${chatId}/messages?${queryString}`
+              );
+
+              if (!msgsRes.ok) {
+                console.error(
+                  `Failed to fetch messages for chat ${chatId}:`,
+                  await msgsRes.text()
+                );
+                continue;
+              }
+
+              const { messages } = await msgsRes.json();
+
+              if (
+                !messages ||
+                !Array.isArray(messages) ||
+                messages.length === 0
+              ) {
+                console.log(`No messages found for chat ${chatId}`);
+                continue;
+              }
+
+              console.log(
+                `Retrieved ${messages.length} messages for chat ${chatId}`
+              );
+
+              // Store the last (oldest) message ID for pagination in this chat
+              if (messages.length > 0 && isLoadingMore) {
+                // In desc order, last element is the oldest message
+                const oldestMessage = messages[messages.length - 1];
+                if (oldestMessage && oldestMessage.id) {
+                  lastMessageIdMap[accountId][chatId] = oldestMessage.id;
+                  console.log(
+                    `Updated last message ID for chat ${chatId} to ${oldestMessage.id}`
+                  );
+                }
+              }
+
+              // Format messages as Email objects
+              if (messages && messages.length > 0) {
+                const formatted = messages.map((msg: any) => ({
+                  id: msg.id,
+                  threadId: msg.chat_id || chatId,
+                  from: {
+                    name: msg.from || msg.sender || chat.title || chatId,
+                    email: msg.from || msg.sender || chatId,
+                  },
+                  to: [
+                    {
+                      name: msg.to || msg.recipient || chat.title || chatId,
+                      email: msg.to || msg.recipient || chatId,
+                    },
+                  ],
+                  subject: chat.title || `WhatsApp chat ${chatId}`,
+                  body: msg.text || msg.body || "",
+                  date: msg.timestamp
+                    ? new Date(msg.timestamp).toISOString()
+                    : new Date().toISOString(),
+                  labels: ["whatsapp", "sms"],
+                  read: true,
+                  accountId,
+                  accountType: "whatsapp" as const,
+                  platform: "whatsapp",
+                }));
+
+                // Check for duplicates by ID
+                const currentEmails = get().emails;
+                const existingIds = new Set(
+                  currentEmails.map((email) => email.id)
+                );
+                const newEmails = formatted.filter(
+                  (email: any) => !existingIds.has(email.id)
+                );
+
+                if (newEmails.length > 0) {
+                  // Add new emails to store
+                  const mergedEmails = [...currentEmails, ...newEmails];
+
+                  // Sort by date descending (newest first) after merging
+                  mergedEmails.sort((a, b) => {
+                    // Safely parse dates and convert to timestamp
+                    const dateA = a.date ? new Date(a.date).getTime() : 0;
+                    const dateB = b.date ? new Date(b.date).getTime() : 0;
+                    return dateB - dateA; // Newest first
+                  });
+
+                  get().setEmails(mergedEmails);
+                  console.log(
+                    `Updated email store with ${newEmails.length} new WhatsApp messages`
+                  );
+                  setCacheValue("emails", mergedEmails);
+
+                  totalMessages += newEmails.length;
+                } else {
+                  console.log(`No new messages found for chat ${chatId}`);
+                }
+              }
+            }
+
+            // Update last sync time if not in load more mode
+            if (!isLoadingMore) {
+              try {
+                // Update sync account in database
+                await fetch(`/api/sync/update-last-sync`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    accountId,
+                    platform: "whatsapp",
+                  }),
+                });
+              } catch (syncError) {
+                console.error(
+                  `Error updating last sync time for account ${accountId}:`,
+                  syncError
+                );
+              }
+            }
+          } catch (error) {
+            console.error(
+              `Error syncing WhatsApp account ${account.id}:`,
+              error
+            );
           }
-        } catch (error) {
-          console.error(`Error syncing WhatsApp account ${account.id}:`, error);
         }
+
+        // Save the last message ID map for future pagination
+        setCacheValue("whatsappLastMessageIds", lastMessageIdMap);
+
+        // Return the count of new messages found along with rate limit information if applicable
+        return rateLimited
+          ? { count: totalMessages, rateLimited, retryAfter }
+          : totalMessages;
+      } catch (error) {
+        console.error("Error in syncWhatsappAccounts:", error);
+        return 0;
       }
-      return totalMessages;
     },
 
     syncBulkvsAccounts: async (isLoadingMore = false) => {

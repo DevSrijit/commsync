@@ -8,6 +8,7 @@ import { JustCallService } from "@/lib/justcall-service";
 import { TwilioService } from "@/lib/twilio-service";
 import { BulkVSService } from "@/lib/bulkvs-service";
 import { Account } from "@prisma/client";
+import { UnipileService } from "@/lib/unipile-service";
 
 export class SyncService {
   private static instance: SyncService;
@@ -537,7 +538,7 @@ export const syncBulkvsAccounts = async (
     console.log(`Syncing ${accounts.length} BulkVS accounts`);
 
     const results = await Promise.allSettled(
-      accounts.map(async (account:any) => {
+      accounts.map(async (account: any) => {
         try {
           const bulkvsService = new BulkVSService(account);
 
@@ -687,6 +688,186 @@ export const syncBulkvsAccounts = async (
   }
 };
 
+// Add WhatsApp sync functionality
+export const syncWhatsappAccounts = async (
+  userId?: string,
+  options?: {
+    accountId?: string;
+    chatId?: string;
+    pageSize?: number;
+    lastMessageId?: string;
+    sortDirection?: "asc" | "desc";
+  }
+): Promise<{ success: number; failed: number; results: any[] }> => {
+  try {
+    // Query for all active WhatsApp accounts, optionally filtered by userId and accountId
+    let query: any = { platform: "whatsapp" };
+
+    if (userId) {
+      query.userId = userId;
+    }
+
+    if (options?.accountId) {
+      query.id = options.accountId;
+    }
+
+    const accounts = await db.syncAccount.findMany({
+      where: query,
+    });
+
+    console.log(`Syncing ${accounts.length} WhatsApp accounts`);
+
+    // Handle each account
+    const results = await Promise.allSettled(
+      accounts.map(async (account: any) => {
+        try {
+          // Initialize UnipileService for this account
+          const baseUrl = process.env.UNIPILE_BASE_URL;
+          const accessToken = process.env.UNIPILE_ACCESS_TOKEN;
+          if (!baseUrl || !accessToken) {
+            throw new Error("Missing UNIPILE_BASE_URL or UNIPILE_ACCESS_TOKEN");
+          }
+
+          const unipileService = new UnipileService({
+            baseUrl,
+            accessToken,
+          });
+
+          // Distinguish internal DB ID and Unipile account ID
+          const internalId = account.id;
+          const unipileAccountId = account.accountIdentifier;
+          console.log(`Processing WhatsApp account ${internalId}`);
+
+          // Get all chats for this account
+          let chats: any[] = [];
+          try {
+            // Use Unipile account ID for API calls
+            const allChats = await unipileService.getAllWhatsAppChats(
+              unipileAccountId
+            );
+            if (Array.isArray(allChats)) {
+              chats = allChats;
+            }
+          } catch (chatError) {
+            console.error(
+              `Error fetching WhatsApp chats for account ${internalId}:`,
+              chatError
+            );
+            throw chatError;
+          }
+
+          console.log(
+            `Found ${chats.length} chats for WhatsApp account ${internalId}`
+          );
+
+          // Process messages for each chat
+          let processedCount = 0;
+          let skippedCount = 0;
+
+          for (const chat of chats) {
+            const chatId = chat.id;
+            if (!chatId) {
+              console.warn(`Skipping chat with no ID in account ${internalId}`);
+              skippedCount++;
+              continue;
+            }
+
+            // If a specific chatId is provided in options, only process that chat
+            if (options?.chatId && options.chatId !== chatId) {
+              continue;
+            }
+
+            // Configure pagination based on options
+            const msgOptions: any = {
+              accountId: unipileAccountId,
+              limit: options?.pageSize || 100,
+              sortDirection: options?.sortDirection || "desc",
+            };
+
+            // If a lastMessageId is provided, use it for pagination
+            if (options?.lastMessageId) {
+              msgOptions.beforeId = options.lastMessageId;
+            }
+
+            // Fetch messages for this chat
+            try {
+              const messages = await unipileService.getWhatsAppMessages(
+                chatId,
+                msgOptions
+              );
+
+              if (!Array.isArray(messages) || messages.length === 0) {
+                console.log(`No messages found for chat ${chatId}`);
+                continue;
+              }
+
+              console.log(
+                `Retrieved ${messages.length} messages for chat ${chatId}`
+              );
+
+              // Process each message
+              for (const message of messages) {
+                try {
+                  // Process the message
+                  // For now, just track counts - actual message processing can be expanded
+                  processedCount++;
+                } catch (messageError) {
+                  console.error(
+                    `Error processing message in WhatsApp chat ${chatId}:`,
+                    messageError
+                  );
+                  skippedCount++;
+                }
+              }
+
+              // Store last processed message ID for pagination
+              const lastMessageId =
+                messages.length > 0 ? messages[messages.length - 1].id : null;
+
+              // Only update last sync time if not using pagination
+              if (!options?.lastMessageId) {
+                // Update sync timestamp in db
+                await db.syncAccount.update({
+                  where: { id: internalId },
+                  data: { lastSync: new Date() },
+                });
+              }
+            } catch (chatError) {
+              console.error(
+                `Error fetching messages for chat ${chatId}:`,
+                chatError
+              );
+              skippedCount++;
+            }
+          }
+
+          return {
+            accountId: internalId,
+            processed: processedCount,
+            skipped: skippedCount,
+          };
+        } catch (error) {
+          console.error(`Error syncing WhatsApp account ${account.id}:`, error);
+          throw error;
+        }
+      })
+    );
+
+    return {
+      success: results.filter(
+        (r: PromiseSettledResult<any>) => r.status === "fulfilled"
+      ).length,
+      failed: results.filter(
+        (r: PromiseSettledResult<any>) => r.status === "rejected"
+      ).length,
+      results,
+    };
+  } catch (error) {
+    console.error("Error in syncWhatsappAccounts:", error);
+    throw error;
+  }
+};
+
 // Sync all accounts for a user
 export const syncAllAccountsForUser = async (
   userId: string
@@ -695,17 +876,20 @@ export const syncAllAccountsForUser = async (
   justCall: { success: number; failed: number; results: any[] } | null;
   twilio: { success: number; failed: number; results: any[] } | null;
   bulkvs: { success: number; failed: number; results: any[] } | null;
+  whatsapp: { success: number; failed: number; results: any[] } | null;
 }> => {
   const results: {
     imap: { success: number; failed: number; results: any[] } | null;
     justCall: { success: number; failed: number; results: any[] } | null;
     twilio: { success: number; failed: number; results: any[] } | null;
     bulkvs: { success: number; failed: number; results: any[] } | null;
+    whatsapp: { success: number; failed: number; results: any[] } | null;
   } = {
     imap: null,
     justCall: null,
     twilio: null,
     bulkvs: null,
+    whatsapp: null,
   };
 
   try {
@@ -756,6 +940,20 @@ export const syncAllAccountsForUser = async (
   } catch (error) {
     console.error("Error syncing BulkVS accounts:", error);
     results.bulkvs = {
+      success: 0,
+      failed: 1,
+      results: [
+        { error: error instanceof Error ? error.message : "Unknown error" },
+      ],
+    };
+  }
+
+  try {
+    // Sync WhatsApp accounts
+    results.whatsapp = await syncWhatsappAccounts(userId);
+  } catch (error) {
+    console.error("Error syncing WhatsApp accounts:", error);
+    results.whatsapp = {
       success: 0,
       failed: 1,
       results: [

@@ -11,37 +11,9 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
     });
 
-    const baseUrl = process.env.UNIPILE_BASE_URL;
-    const accessToken = process.env.UNIPILE_ACCESS_TOKEN;
-    if (!baseUrl || !accessToken) {
-      return NextResponse.json(
-        { error: "Missing UNIPILE_BASE_URL or UNIPILE_ACCESS_TOKEN" },
-        { status: 500 }
-      );
-    }
-    const client = new UnipileClient(baseUrl, accessToken);
-    const detailedAccounts = await Promise.all(
-      accounts.map(async (account: any) => {
-        let phoneNumber: string | null = null;
-        try {
-          const unipileAcc: any = await client.account.getOne(account.id);
-          // Try snake_case, camelCase, or name field for phone number
-          const imParams = unipileAcc.connection_params?.im || {};
-          phoneNumber =
-            imParams.phone_number ||
-            imParams.phoneNumber ||
-            unipileAcc.name ||
-            null;
-        } catch (err) {
-          console.error(
-            `Failed to fetch WhatsApp account details for ${account.id}:`,
-            err
-          );
-        }
-        return { ...account, phoneNumber };
-      })
-    );
-    return NextResponse.json(detailedAccounts);
+    // Return the accounts without trying to fetch additional details
+    // since the SDK method for retrieving account details isn't available
+    return NextResponse.json(accounts);
   } catch (error) {
     console.error("Failed to fetch WhatsApp accounts:", error);
     return NextResponse.json(
@@ -63,17 +35,22 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
-  const { code } = body;
-  if (!code) {
-    return NextResponse.json({ error: "Missing code" }, { status: 400 });
+  // Expect both the QR code checkpoint and the Unipile account ID
+  const { code, accountId } = body;
+  if (!code || !accountId) {
+    return NextResponse.json(
+      { error: "Missing code or accountId" },
+      { status: 400 }
+    );
   }
   try {
     const account = await db.syncAccount.create({
       data: {
         userId: session.user.id,
         platform: "whatsapp",
-        credentials: JSON.stringify({ code }),
-        accountIdentifier: code,
+        // Store the checkpoint code and the Unipile account ID
+        credentials: JSON.stringify({ code, accountId }),
+        accountIdentifier: accountId,
       },
     });
     return NextResponse.json(account, { status: 201 });

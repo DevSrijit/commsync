@@ -14,8 +14,8 @@ export async function GET(req: NextRequest) {
   const service = new UnipileService({ baseUrl, accessToken });
 
   try {
-    const { qrCodeString, code } = await service.getWhatsappQRCode();
-    return NextResponse.json({ qrCodeString, code });
+    const { qrCodeString, code, accountId } = await service.getWhatsappQRCode();
+    return NextResponse.json({ qrCodeString, code, accountId });
   } catch (error) {
     console.error("Error fetching WhatsApp QR code:", error);
     return NextResponse.json(

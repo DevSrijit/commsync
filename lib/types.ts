@@ -30,7 +30,13 @@ export interface Email {
   labels: string[]; // Keep this required
   attachments?: EmailAttachment[];
   accountId?: string;
-  accountType?: "gmail" | "imap" | "justcall" | "twilio" | "bulkvs";
+  accountType?:
+    | "gmail"
+    | "imap"
+    | "justcall"
+    | "twilio"
+    | "bulkvs"
+    | "whatsapp";
   read?: boolean;
   platform?: string; // Added for platform indication
   source?: string; // Added to track data source (gmail-api, imap, etc.)
@@ -63,7 +69,13 @@ export interface Contact {
   lastMessageSubject: string;
   labels: string[]; // Keep this required
   accountId?: string;
-  accountType?: "gmail" | "imap" | "justcall" | "twilio" | "bulkvs";
+  accountType?:
+    | "gmail"
+    | "imap"
+    | "justcall"
+    | "twilio"
+    | "bulkvs"
+    | "whatsapp";
   searchScore?: number;
   matchedFields?: Set<string>;
 }

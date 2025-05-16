@@ -19,8 +19,15 @@ export class UnipileService {
   /**
    * Initiate a WhatsApp connection by retrieving the QR code string and code
    */
-  async getWhatsappQRCode(): Promise<{ qrCodeString: string; code: string }> {
-    return this.client.account.connectWhatsapp();
+  async getWhatsappQRCode(): Promise<{
+    qrCodeString: string;
+    code: string;
+    accountId: string;
+  }> {
+    // Initiate WhatsApp connection and retrieve QR code, code, and Unipile account ID
+    const { qrCodeString, code, account_id } =
+      await this.client.account.connectWhatsapp();
+    return { qrCodeString, code, accountId: account_id };
   }
 
   /**
@@ -33,12 +40,25 @@ export class UnipileService {
   /**
    * Fetch all or incremental messages for a specific WhatsApp chat
    */
-  async getWhatsAppMessages(chatId: string, options?: any): Promise<any> {
+  async getWhatsAppMessages(
+    chatId: string,
+    options?: {
+      afterId?: string;
+      beforeId?: string;
+      limit?: number;
+      sortDirection?: "asc" | "desc";
+      accountId?: string;
+    }
+  ): Promise<any> {
     const params: any = { chat_id: chatId };
-    if (options && options.afterId) params.after_id = options.afterId;
-    if (options && options.limit) params.limit = options.limit;
-    if (options && options.sortDirection)
-      params.sort_direction = options.sortDirection;
+
+    // Apply all filtering and pagination options
+    if (options?.afterId) params.after_id = options.afterId;
+    if (options?.beforeId) params.before_id = options.beforeId;
+    if (options?.limit) params.limit = options.limit;
+    if (options?.sortDirection) params.sort_direction = options.sortDirection;
+    if (options?.accountId) params.account_id = options.accountId;
+
     return this.client.messaging.getAllMessagesFromChat(params);
   }
 
@@ -101,11 +121,11 @@ export class UnipileService {
     const eventType = payload.event || payload.type;
     const data = payload.data || payload.body;
 
-    // Fetch the SyncAccount to get the userId
+    // Fetch the SyncAccount to get the userId by Unipile account ID
     let syncAccount = null;
     if (data.account_id) {
       syncAccount = await db.syncAccount.findUnique({
-        where: { id: data.account_id },
+        where: { accountIdentifier: data.account_id },
       });
     }
     switch (eventType) {
@@ -158,7 +178,8 @@ export class UnipileService {
             await db.message.create({
               data: {
                 conversationId: conversation.id,
-                syncAccountId: data.account_id,
+                // Use internal sync account ID
+                syncAccountId: syncAccount.id,
                 platform: "whatsapp",
                 externalId: msg.id,
                 direction: msg.direction,
