@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { UnipileClient } from "unipile-node-sdk";
+import { UnipileService } from "@/lib/unipile-service";
 
 export async function GET() {
   try {
@@ -58,6 +58,94 @@ export async function POST(req: NextRequest) {
     console.error("Failed to create WhatsApp account:", error);
     return NextResponse.json(
       { error: "Failed to link account" },
+      { status: 500 }
+    );
+  }
+}
+
+// Reconnect an existing WhatsApp account (after device logout)
+export async function PATCH(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const { accountId } = body;
+  if (!accountId) {
+    return NextResponse.json({ error: "Missing accountId" }, { status: 400 });
+  }
+
+  try {
+    // Verify account belongs to user
+    const account = await db.syncAccount.findFirst({
+      where: {
+        id: accountId,
+        userId: session.user.id,
+        platform: "whatsapp",
+      },
+    });
+
+    if (!account) {
+      return NextResponse.json(
+        { error: "Account not found or unauthorized" },
+        { status: 404 }
+      );
+    }
+
+    // Initialize UnipileService
+    const baseUrl = process.env.UNIPILE_BASE_URL;
+    const accessToken = process.env.UNIPILE_ACCESS_TOKEN;
+    if (!baseUrl || !accessToken) {
+      return NextResponse.json(
+        { error: "Missing UNIPILE_BASE_URL or UNIPILE_ACCESS_TOKEN" },
+        { status: 500 }
+      );
+    }
+
+    const service = new UnipileService({ baseUrl, accessToken });
+
+    // Use the Unipile account ID stored in accountIdentifier to reconnect
+    const unipileAccountId = account.accountIdentifier;
+    if (!unipileAccountId) {
+      return NextResponse.json(
+        { error: "Account missing Unipile identifier" },
+        { status: 400 }
+      );
+    }
+
+    // Attempt to reconnect using Unipile account ID
+    const {
+      qrCodeString,
+      code,
+      accountId: newAccountId,
+    } = await service.reconnectWhatsapp(unipileAccountId);
+
+    // Update account credentials and accountIdentifier if needed
+    await db.syncAccount.update({
+      where: { id: accountId },
+      data: {
+        credentials: JSON.stringify({ code, accountId: newAccountId }),
+        accountIdentifier: newAccountId, // Update if the account ID changed
+        lastSync: new Date(),
+      },
+    });
+
+    return NextResponse.json({
+      qrCodeString,
+      code,
+      accountId: newAccountId,
+    });
+  } catch (error) {
+    console.error("Failed to reconnect WhatsApp account:", error);
+    return NextResponse.json(
+      { error: "Failed to reconnect account", details: String(error) },
       { status: 500 }
     );
   }

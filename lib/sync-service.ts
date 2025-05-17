@@ -324,26 +324,24 @@ export const syncJustCallAccounts = async (
 
           // Add debug logging to inspect the retrieved messages
           if (messages.length > 0) {
-            console.log(
-              `Retrieved ${messages.length} JustCall messages for account ${account.id}.`
-            );
-            console.log(
-              `Message ID range: ${messages[0].id} - ${
-                messages[messages.length - 1].id
-              }`
-            );
-
+            //console.log(
+            //  `Retrieved ${messages.length} JustCall messages for account ${account.id}.`
+            //);
+            //console.log(
+            //  `Message ID range: ${messages[0].id} - ${
+            //    messages[messages.length - 1].id
+            //  }`
+            //);
             // Remember the oldest message ID for returning to the caller
-            const oldestMessageId = messages[messages.length - 1].id;
-
+            //const oldestMessageId = messages[messages.length - 1].id;
             // Log a sample of messages
-            const sampleSize = Math.min(3, messages.length);
-            console.log(`Sample of ${sampleSize} messages (showing IDs):`);
-            messages.slice(0, sampleSize).forEach((msg, idx) => {
-              console.log(`- ${msg.id}`);
-            });
+            //const sampleSize = Math.min(3, messages.length);
+            //console.log(`Sample of ${sampleSize} messages (showing IDs):`);
+            /* messages.slice(0, sampleSize).forEach((msg, idx) => {
+              //console.log(`- ${msg.id}`);
+            });*/
           } else {
-            console.log(`No messages retrieved for account ${account.id}`);
+            //console.log(`No messages retrieved for account ${account.id}`);
           }
 
           let processedCount = 0;
@@ -610,11 +608,11 @@ export const syncBulkvsAccounts = async (
             const oldestMessageId = messages[messages.length - 1].id;
 
             // Log a sample of messages
-            const sampleSize = Math.min(3, messages.length);
-            console.log(`Sample of ${sampleSize} messages (showing IDs):`);
-            messages.slice(0, sampleSize).forEach((msg, idx) => {
-              console.log(`- ${msg.id}`);
-            });
+            //const sampleSize = Math.min(3, messages.length);
+            //console.log(`Sample of ${sampleSize} messages (showing IDs):`);
+            //messages.slice(0, sampleSize).forEach((msg, idx) => {
+            //  console.log(`- ${msg.id}`);
+            //});
           } else {
             console.log(`No messages retrieved for account ${account.id}`);
           }
@@ -736,17 +734,36 @@ export const syncWhatsappAccounts = async (
           // Distinguish internal DB ID and Unipile account ID
           const internalId = account.id;
           const unipileAccountId = account.accountIdentifier;
-          console.log(`Processing WhatsApp account ${internalId}`);
+
+          if (!unipileAccountId) {
+            throw new Error(
+              `Missing Unipile account ID for account ${internalId}`
+            );
+          }
+
+          console.log(
+            `Processing WhatsApp account ${internalId} with Unipile ID: ${unipileAccountId}`
+          );
 
           // Get all chats for this account
           let chats: any[] = [];
           try {
             // Use Unipile account ID for API calls
-            const allChats = await unipileService.getAllWhatsAppChats(
+            const response = await unipileService.getAllWhatsAppChats(
               unipileAccountId
             );
-            if (Array.isArray(allChats)) {
-              chats = allChats;
+
+            // Handle the response which contains chats array and cursor
+            if (response && response.chats && Array.isArray(response.chats)) {
+              chats = response.chats;
+              console.log(
+                `Received response with ${chats.length} chats and cursor: ${
+                  response.cursor ? "present" : "not present"
+                }`
+              );
+            } else {
+              console.error(`Invalid response format:`, response);
+              throw new Error("Invalid response from Unipile API for chats");
             }
           } catch (chatError) {
             console.error(
@@ -763,6 +780,7 @@ export const syncWhatsappAccounts = async (
           // Process messages for each chat
           let processedCount = 0;
           let skippedCount = 0;
+          let storedCount = 0;
 
           for (const chat of chats) {
             const chatId = chat.id;
@@ -775,6 +793,36 @@ export const syncWhatsappAccounts = async (
             // If a specific chatId is provided in options, only process that chat
             if (options?.chatId && options.chatId !== chatId) {
               continue;
+            }
+
+            // Ensure we have a conversation record for this chat
+            let conversation = await db.conversation.findUnique({
+              where: { id: chatId },
+            });
+
+            if (!conversation) {
+              console.log(`Creating new conversation for chat ${chatId}`);
+              // Create a contact for this chat if needed
+              const contactName = chat.name || `WhatsApp Chat ${chatId}`;
+
+              conversation = await db.conversation.create({
+                data: {
+                  id: chatId,
+                  title: contactName,
+                  contact: {
+                    connectOrCreate: {
+                      where: { id: chatId },
+                      create: {
+                        id: chatId,
+                        userId: account.userId,
+                        name: contactName,
+                        email: chatId, // Use chat ID as email since WhatsApp doesn't have emails
+                        phone: chat.phone || null,
+                      },
+                    },
+                  },
+                },
+              });
             }
 
             // Configure pagination based on options
@@ -791,12 +839,33 @@ export const syncWhatsappAccounts = async (
 
             // Fetch messages for this chat
             try {
-              const messages = await unipileService.getWhatsAppMessages(
+              const response = await unipileService.getWhatsAppMessages(
                 chatId,
                 msgOptions
               );
 
-              if (!Array.isArray(messages) || messages.length === 0) {
+              // Handle the response which contains messages array and cursor
+              let messages: any[] = [];
+
+              if (
+                response &&
+                response.messages &&
+                Array.isArray(response.messages)
+              ) {
+                messages = response.messages;
+                console.log(
+                  `Received response with ${
+                    messages.length
+                  } messages and cursor: ${
+                    response.cursor ? "present" : "not present"
+                  }`
+                );
+              } else {
+                console.log(`No messages found for chat ${chatId}`);
+                continue;
+              }
+
+              if (messages.length === 0) {
                 console.log(`No messages found for chat ${chatId}`);
                 continue;
               }
@@ -808,12 +877,51 @@ export const syncWhatsappAccounts = async (
               // Process each message
               for (const message of messages) {
                 try {
-                  // Process the message
-                  // For now, just track counts - actual message processing can be expanded
                   processedCount++;
+
+                  // Check if this message already exists in the database
+                  const existingMessage = await db.message.findFirst({
+                    where: {
+                      externalId: message.id,
+                      platform: "whatsapp",
+                    },
+                  });
+
+                  if (existingMessage) {
+                    // Message already exists, skip it
+                    console.log(
+                      `Message ${message.id} already exists, skipping`
+                    );
+                    continue;
+                  }
+
+                  // Determine message direction based on is_sender flag
+                  const direction =
+                    message.is_sender === 1 ? "outbound" : "inbound";
+
+                  // Store message in database
+                  await db.message.create({
+                    data: {
+                      conversationId: conversation.id,
+                      syncAccountId: internalId,
+                      platform: "whatsapp",
+                      externalId: message.id,
+                      direction: direction,
+                      content: message.text || message.body || "",
+                      contentType: "text",
+                      metadata: message,
+                      sentAt: message.timestamp
+                        ? new Date(message.timestamp)
+                        : new Date(),
+                      receivedAt: new Date(),
+                      isRead: message.seen === 1,
+                    },
+                  });
+
+                  storedCount++;
                 } catch (messageError) {
                   console.error(
-                    `Error processing message in WhatsApp chat ${chatId}:`,
+                    `Error processing message ${message.id} in WhatsApp chat ${chatId}:`,
                     messageError
                   );
                   skippedCount++;
@@ -844,6 +952,7 @@ export const syncWhatsappAccounts = async (
           return {
             accountId: internalId,
             processed: processedCount,
+            stored: storedCount,
             skipped: skippedCount,
           };
         } catch (error) {

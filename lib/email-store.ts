@@ -1768,6 +1768,16 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                 store.setWhatsappAccounts(fetchedAccounts);
                 accounts = fetchedAccounts;
                 console.log(`Fetched ${accounts.length} WhatsApp accounts`);
+
+                // Validate account identifiers
+                const invalidAccounts = accounts.filter(
+                  (account) => !account.accountIdentifier
+                );
+                if (invalidAccounts.length > 0) {
+                  console.warn(
+                    `Found ${invalidAccounts.length} WhatsApp accounts with missing accountIdentifier`
+                  );
+                }
               } else {
                 console.log("No WhatsApp accounts found");
                 return 0;
@@ -1811,44 +1821,55 @@ export const useEmailStore = create<EmailStore>((set, get) => {
         // Process each account
         for (const account of accounts) {
           try {
-            const accountId = account.id;
-            console.log(`Processing WhatsApp account ${accountId}`);
+            // Use the internal ID for tracking in our data structures and logs
+            const internalId = account.id;
+            // Use the Unipile account ID for API calls
+            const unipileAccountId = account.accountIdentifier;
+
+            console.log(
+              `Processing WhatsApp account ${internalId} (Unipile ID: ${unipileAccountId})`
+            );
 
             // Ensure this account has an entry in our mapping
-            if (!lastMessageIdMap[accountId]) {
-              lastMessageIdMap[accountId] = {};
+            if (!lastMessageIdMap[internalId]) {
+              lastMessageIdMap[internalId] = {};
             }
 
-            // Fetch chats for this account
+            // Fetch chats for this account - use the Unipile account ID
             const chatsRes = await fetch(
-              `/api/whatsapp/chats?accountId=${accountId}`
+              `/api/whatsapp/chats?accountId=${internalId}`
             );
             if (!chatsRes.ok) {
               console.error(
-                `Failed to fetch chats for WhatsApp account ${accountId}:`,
+                `Failed to fetch chats for WhatsApp account ${internalId}:`,
                 await chatsRes.text()
               );
               continue;
             }
 
-            console.log(chatsRes);
+            // Parse the chats response data
+            const chatsData = await chatsRes.json();
+            console.log(`Chat response data:`, chatsData);
 
-            const { chats } = await chatsRes.json();
+            const { chats } = chatsData;
             if (!chats || !Array.isArray(chats) || chats.length === 0) {
-              console.log(`No chats found for WhatsApp account ${accountId}`);
+              console.log(`No chats found for WhatsApp account ${internalId}`);
               continue;
             }
 
             console.log(
-              `Found ${chats.length} chats for WhatsApp account ${accountId}`
+              `Found ${chats.length} chats for WhatsApp account ${internalId}`
             );
+
+            let processedChats = 0;
+            let processedMessages = 0;
 
             // Process each chat
             for (const chat of chats) {
               const chatId = chat.id;
               if (!chatId) {
                 console.warn(
-                  `Skipping chat with no ID in account ${accountId}`
+                  `Skipping chat with no ID in account ${internalId}`
                 );
                 continue;
               }
@@ -1858,7 +1879,7 @@ export const useEmailStore = create<EmailStore>((set, get) => {
 
               if (isLoadingMore) {
                 // When loading more, use stored last message ID as the cursor
-                const lastMessageId = lastMessageIdMap[accountId][chatId];
+                const lastMessageId = lastMessageIdMap[internalId]?.[chatId];
                 if (lastMessageId) {
                   paginationParams.beforeId = lastMessageId;
                 }
@@ -1870,9 +1891,9 @@ export const useEmailStore = create<EmailStore>((set, get) => {
               // Set sort direction (newer messages first)
               paginationParams.sortDirection = "desc";
 
-              // Build query string
+              // Build query string - use the internal ID which the API routes now handle correctly
               const queryString = new URLSearchParams({
-                accountId,
+                accountId: internalId,
                 ...paginationParams,
               }).toString();
 
@@ -1881,121 +1902,155 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                 `Fetching messages for chat ${chatId} with params:`,
                 paginationParams
               );
-              const msgsRes = await fetch(
-                `/api/whatsapp/chats/${chatId}/messages?${queryString}`
-              );
-
-              if (!msgsRes.ok) {
-                console.error(
-                  `Failed to fetch messages for chat ${chatId}:`,
-                  await msgsRes.text()
+              try {
+                const msgsRes = await fetch(
+                  `/api/whatsapp/chats/${chatId}/messages?${queryString}`
                 );
-                continue;
-              }
 
-              const { messages } = await msgsRes.json();
-
-              if (
-                !messages ||
-                !Array.isArray(messages) ||
-                messages.length === 0
-              ) {
-                console.log(`No messages found for chat ${chatId}`);
-                continue;
-              }
-
-              console.log(
-                `Retrieved ${messages.length} messages for chat ${chatId}`
-              );
-
-              // Store the last (oldest) message ID for pagination in this chat
-              if (messages.length > 0 && isLoadingMore) {
-                // In desc order, last element is the oldest message
-                const oldestMessage = messages[messages.length - 1];
-                if (oldestMessage && oldestMessage.id) {
-                  lastMessageIdMap[accountId][chatId] = oldestMessage.id;
-                  console.log(
-                    `Updated last message ID for chat ${chatId} to ${oldestMessage.id}`
+                if (!msgsRes.ok) {
+                  console.error(
+                    `Failed to fetch messages for chat ${chatId}:`,
+                    await msgsRes.text()
                   );
+                  continue;
                 }
-              }
 
-              // Format messages as Email objects
-              if (messages && messages.length > 0) {
-                const formatted = messages.map((msg: any) => ({
-                  id: msg.id,
-                  threadId: msg.chat_id || chatId,
-                  from: {
-                    name: msg.from || msg.sender || chat.title || chatId,
-                    email: msg.from || msg.sender || chatId,
-                  },
-                  to: [
-                    {
-                      name: msg.to || msg.recipient || chat.title || chatId,
-                      email: msg.to || msg.recipient || chatId,
-                    },
-                  ],
-                  subject: chat.title || `WhatsApp chat ${chatId}`,
-                  body: msg.text || msg.body || "",
-                  date: msg.timestamp
-                    ? new Date(msg.timestamp).toISOString()
-                    : new Date().toISOString(),
-                  labels: ["whatsapp", "sms"],
-                  read: true,
-                  accountId,
-                  accountType: "whatsapp" as const,
-                  platform: "whatsapp",
-                }));
+                // Parse the messages data
+                const msgsData = await msgsRes.json();
+                console.log(`Messages response for chat ${chatId}:`, msgsData);
 
-                // Check for duplicates by ID
-                const currentEmails = get().emails;
-                const existingIds = new Set(
-                  currentEmails.map((email) => email.id)
+                const { messages } = msgsData;
+
+                if (
+                  !messages ||
+                  !Array.isArray(messages) ||
+                  messages.length === 0
+                ) {
+                  console.log(`No messages found for chat ${chatId}`);
+                  continue;
+                }
+
+                console.log(
+                  `Retrieved ${messages.length} messages for chat ${chatId}`
                 );
-                const newEmails = formatted.filter(
-                  (email: any) => !existingIds.has(email.id)
-                );
+                processedChats++;
 
-                if (newEmails.length > 0) {
-                  // Add new emails to store
-                  const mergedEmails = [...currentEmails, ...newEmails];
+                // Store the last (oldest) message ID for pagination in this chat
+                if (messages.length > 0 && isLoadingMore) {
+                  // In desc order, last element is the oldest message
+                  const oldestMessage = messages[messages.length - 1];
+                  if (oldestMessage && oldestMessage.id) {
+                    if (!lastMessageIdMap[internalId]) {
+                      lastMessageIdMap[internalId] = {};
+                    }
+                    lastMessageIdMap[internalId][chatId] = oldestMessage.id;
+                    console.log(
+                      `Updated last message ID for chat ${chatId} to ${oldestMessage.id}`
+                    );
+                  }
+                }
 
-                  // Sort by date descending (newest first) after merging
-                  mergedEmails.sort((a, b) => {
-                    // Safely parse dates and convert to timestamp
-                    const dateA = a.date ? new Date(a.date).getTime() : 0;
-                    const dateB = b.date ? new Date(b.date).getTime() : 0;
-                    return dateB - dateA; // Newest first
+                // Format messages as Email objects
+                if (messages && messages.length > 0) {
+                  // Sample a message to see its format
+                  console.log(`Sample message format:`, messages[0]);
+
+                  const formatted = messages.map((msg: any) => {
+                    // Extract sender info - in Unipile the field is sender_id
+                    const sender = msg.sender_id || msg.from || "unknown";
+                    // Try to get a good display name
+                    const senderName = chat.name || sender;
+
+                    // Determine if message is sent by current user based on is_sender flag
+                    const isSent = msg.is_sender === 1;
+
+                    // Get text content - in Unipile it's in the text field
+                    const content = msg.text || msg.body || "";
+
+                    return {
+                      id: msg.id,
+                      threadId: msg.chat_id || chatId,
+                      from: {
+                        name: isSent ? "You" : senderName,
+                        email: sender,
+                      },
+                      to: [
+                        {
+                          name: isSent ? senderName : "You",
+                          email: msg.chat_provider_id || chatId,
+                        },
+                      ],
+                      subject: chat.name || `WhatsApp chat ${chatId}`,
+                      body: content,
+                      date: msg.timestamp
+                        ? new Date(msg.timestamp).toISOString()
+                        : new Date().toISOString(),
+                      labels: ["whatsapp", "sms"],
+                      read: msg.seen === 1,
+                      accountId: internalId, // Use internal ID for consistency in the email store
+                      accountType: "whatsapp" as const,
+                      platform: "whatsapp",
+                      direction: isSent ? "outbound" : "inbound",
+                    };
                   });
 
-                  get().setEmails(mergedEmails);
-                  console.log(
-                    `Updated email store with ${newEmails.length} new WhatsApp messages`
+                  // Check for duplicates by ID
+                  const currentEmails = get().emails;
+                  const existingIds = new Set(
+                    currentEmails.map((email) => email.id)
                   );
-                  setCacheValue("emails", mergedEmails);
+                  const newEmails = formatted.filter(
+                    (email: any) => !existingIds.has(email.id)
+                  );
 
-                  totalMessages += newEmails.length;
-                } else {
-                  console.log(`No new messages found for chat ${chatId}`);
+                  if (newEmails.length > 0) {
+                    // Add new emails to store
+                    const mergedEmails = [...currentEmails, ...newEmails];
+
+                    // Sort by date descending (newest first) after merging
+                    mergedEmails.sort((a, b) => {
+                      // Safely parse dates and convert to timestamp
+                      const dateA = a.date ? new Date(a.date).getTime() : 0;
+                      const dateB = b.date ? new Date(b.date).getTime() : 0;
+                      return dateB - dateA; // Newest first
+                    });
+
+                    get().setEmails(mergedEmails);
+                    console.log(
+                      `Updated email store with ${newEmails.length} new WhatsApp messages`
+                    );
+                    setCacheValue("emails", mergedEmails);
+
+                    processedMessages += newEmails.length;
+                    totalMessages += newEmails.length;
+                  } else {
+                    console.log(`No new messages found for chat ${chatId}`);
+                  }
                 }
+              } catch (chatError) {
+                console.error(`Error processing chat ${chatId}:`, chatError);
               }
             }
+
+            console.log(`WhatsApp sync summary for account ${internalId}:`);
+            console.log(`- Processed ${processedChats} chats`);
+            console.log(`- Added ${processedMessages} messages to email store`);
 
             // Update last sync time if not in load more mode
             if (!isLoadingMore) {
               try {
-                // Update sync account in database
+                // Update sync account in database using internal ID
                 await fetch(`/api/sync/update-last-sync`, {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
-                    accountId,
+                    accountId: internalId,
                     platform: "whatsapp",
                   }),
                 });
               } catch (syncError) {
                 console.error(
-                  `Error updating last sync time for account ${accountId}:`,
+                  `Error updating last sync time for account ${internalId}:`,
                   syncError
                 );
               }

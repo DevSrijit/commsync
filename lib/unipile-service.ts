@@ -24,17 +24,66 @@ export class UnipileService {
     code: string;
     accountId: string;
   }> {
-    // Initiate WhatsApp connection and retrieve QR code, code, and Unipile account ID
-    const { qrCodeString, code, account_id } =
-      await this.client.account.connectWhatsapp();
-    return { qrCodeString, code, accountId: account_id };
+    try {
+      // Initiate WhatsApp connection and retrieve QR code, code, and Unipile account ID
+      const response = await this.client.account.connectWhatsapp();
+      console.log("WhatsApp connection response:", response);
+
+      if (!response || !response.account_id) {
+        throw new Error("Invalid response from Unipile connectWhatsapp");
+      }
+
+      const { qrCodeString, code, account_id } = response;
+      return { qrCodeString, code, accountId: account_id };
+    } catch (error) {
+      console.error("Error in getWhatsappQRCode:", error);
+      throw error;
+    }
   }
 
   /**
    * Fetch all chats for a connected WhatsApp account
    */
   async getAllWhatsAppChats(accountId: string): Promise<any> {
-    return this.client.messaging.getAllChats({ account_id: accountId });
+    if (!accountId) {
+      throw new Error("Missing accountId parameter");
+    }
+
+    try {
+      console.log(`Fetching chats for Unipile account ID: ${accountId}`);
+      const response = await this.client.messaging.getAllChats({
+        account_id: accountId,
+      });
+
+      // Handle and log the response format
+      if (response && response.items && Array.isArray(response.items)) {
+        console.log(
+          `Retrieved ${response.items.length} chats with pagination format`
+        );
+        // The API returns an object with 'items' array - convert to our expected format
+        // to maintain compatibility with the rest of the codebase
+        return {
+          chats: response.items,
+          cursor: response.cursor || null,
+        };
+      } else if (Array.isArray(response)) {
+        console.log(`Retrieved ${response.length} chats as direct array`);
+        // Return the array wrapped in our expected format
+        return {
+          chats: response,
+          cursor: null,
+        };
+      } else {
+        console.error(`Unexpected response format:`, response);
+        throw new Error(`Invalid response format from Unipile API`);
+      }
+    } catch (error) {
+      console.error(
+        `Error in getAllWhatsAppChats for account ${accountId}:`,
+        error
+      );
+      throw error;
+    }
   }
 
   /**
@@ -50,16 +99,50 @@ export class UnipileService {
       accountId?: string;
     }
   ): Promise<any> {
-    const params: any = { chat_id: chatId };
+    if (!chatId) {
+      throw new Error("Missing chatId parameter");
+    }
 
-    // Apply all filtering and pagination options
-    if (options?.afterId) params.after_id = options.afterId;
-    if (options?.beforeId) params.before_id = options.beforeId;
-    if (options?.limit) params.limit = options.limit;
-    if (options?.sortDirection) params.sort_direction = options.sortDirection;
-    if (options?.accountId) params.account_id = options.accountId;
+    try {
+      const params: any = { chat_id: chatId };
 
-    return this.client.messaging.getAllMessagesFromChat(params);
+      // Apply all filtering and pagination options
+      if (options?.afterId) params.after_id = options.afterId;
+      if (options?.beforeId) params.before_id = options.beforeId;
+      if (options?.limit) params.limit = options.limit;
+      if (options?.sortDirection) params.sort_direction = options.sortDirection;
+      if (options?.accountId) params.account_id = options.accountId;
+
+      console.log(`Fetching messages for chat ${chatId} with params:`, params);
+      const response = await this.client.messaging.getAllMessagesFromChat(
+        params
+      );
+
+      // Handle and log the response format
+      if (response && response.items && Array.isArray(response.items)) {
+        console.log(
+          `Retrieved ${response.items.length} messages with pagination format`
+        );
+        // The API returns an object with 'items' array - convert to our expected format
+        return {
+          messages: response.items,
+          cursor: response.cursor || null,
+        };
+      } else if (Array.isArray(response)) {
+        console.log(`Retrieved ${response.length} messages as direct array`);
+        // Return the array wrapped in our expected format
+        return {
+          messages: response,
+          cursor: null,
+        };
+      } else {
+        console.error(`Unexpected response format:`, response);
+        throw new Error(`Invalid response format from Unipile API`);
+      }
+    } catch (error) {
+      console.error(`Error in getWhatsAppMessages for chat ${chatId}:`, error);
+      throw error;
+    }
   }
 
   /**
@@ -70,11 +153,22 @@ export class UnipileService {
     text: string,
     attachments?: Array<[string, Buffer]>
   ): Promise<any> {
-    return this.client.messaging.sendMessage({
-      chat_id: chatId,
-      text,
-      attachments,
-    });
+    if (!chatId) {
+      throw new Error("Missing chatId parameter");
+    }
+
+    try {
+      console.log(`Sending message to chat ${chatId}`);
+      const result = await this.client.messaging.sendMessage({
+        chat_id: chatId,
+        text,
+        attachments,
+      });
+      return result;
+    } catch (error) {
+      console.error(`Error in sendWhatsAppMessage for chat ${chatId}:`, error);
+      throw error;
+    }
   }
 
   /**
@@ -121,13 +215,26 @@ export class UnipileService {
     const eventType = payload.event || payload.type;
     const data = payload.data || payload.body;
 
+    console.log(`Processing webhook event: ${eventType}`, data);
+
     // Fetch the SyncAccount to get the userId by Unipile account ID
     let syncAccount = null;
     if (data.account_id) {
       syncAccount = await db.syncAccount.findUnique({
         where: { accountIdentifier: data.account_id },
       });
+
+      if (!syncAccount) {
+        console.error(
+          `SyncAccount not found for Unipile account ID: ${data.account_id}`
+        );
+      } else {
+        console.log(
+          `Found SyncAccount: ${syncAccount.id} for Unipile account ID: ${data.account_id}`
+        );
+      }
     }
+
     switch (eventType) {
       case "account.source.connection.updated":
       case "account.source.status":
@@ -137,6 +244,7 @@ export class UnipileService {
             where: { id: syncAccount.id },
             data: { lastSync: new Date() },
           });
+          console.log(`Updated lastSync for account ${syncAccount.id}`);
         }
         break;
 
@@ -145,6 +253,9 @@ export class UnipileService {
       case "whatsapp.message.created":
         // Handle new messages
         if (Array.isArray(data.messages)) {
+          console.log(
+            `Processing ${data.messages.length} messages from webhook`
+          );
           for (const msg of data.messages) {
             // Upsert conversation by chat_id
             let conversation = await db.conversation.findUnique({
@@ -156,6 +267,7 @@ export class UnipileService {
                   `SyncAccount not found for id ${data.account_id}`
                 );
               }
+              console.log(`Creating new conversation for chat ${msg.chat_id}`);
               conversation = await db.conversation.create({
                 data: {
                   id: msg.chat_id,
@@ -175,6 +287,9 @@ export class UnipileService {
               });
             }
             // Create message record
+            console.log(
+              `Storing message ${msg.id} in conversation ${conversation.id}`
+            );
             await db.message.create({
               data: {
                 conversationId: conversation.id,
@@ -182,8 +297,10 @@ export class UnipileService {
                 syncAccountId: syncAccount.id,
                 platform: "whatsapp",
                 externalId: msg.id,
-                direction: msg.direction,
+                direction:
+                  msg.direction || (msg.is_sender ? "outbound" : "inbound"),
                 content: msg.text || msg.body || "",
+                contentType: "text",
                 metadata: msg,
                 sentAt: msg.timestamp ? new Date(msg.timestamp) : new Date(),
               },
@@ -198,5 +315,37 @@ export class UnipileService {
     }
 
     return payload;
+  }
+
+  /**
+   * Reconnect an existing WhatsApp account (e.g., after device logout)
+   */
+  async reconnectWhatsapp(accountId: string): Promise<{
+    qrCodeString: string;
+    code: string;
+    accountId: string;
+  }> {
+    try {
+      if (!accountId) {
+        throw new Error("Missing accountId parameter");
+      }
+
+      console.log(`Reconnecting WhatsApp account: ${accountId}`);
+      const response = await this.client.account.reconnectWhatsapp(accountId);
+      console.log("WhatsApp reconnection response:", response);
+
+      if (!response || !response.account_id) {
+        throw new Error("Invalid response from Unipile reconnectWhatsapp");
+      }
+
+      const { qrCodeString, code, account_id } = response;
+      return { qrCodeString, code, accountId: account_id };
+    } catch (error) {
+      console.error(
+        `Error in reconnectWhatsapp for account ${accountId}:`,
+        error
+      );
+      throw error;
+    }
   }
 }

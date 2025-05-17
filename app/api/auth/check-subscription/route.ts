@@ -73,13 +73,13 @@ export async function GET(req: NextRequest) {
           );
           
           // Update subscription status in database to match Stripe's data
-          logger.info(`Refreshing subscription from Stripe`, {
+          /*logger.info(`Refreshing subscription from Stripe`, {
             subscriptionId: org.subscription.id,
             status: {
               before: org.subscription.status,
               after: stripeSubscription.status
             }
-          });
+          });*/
             
           await db.subscription.update({
             where: { id: org.subscription.id },

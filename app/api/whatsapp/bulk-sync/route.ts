@@ -62,15 +62,20 @@ export async function POST(req: NextRequest) {
     };
 
     // Fetch all chats
-    const chats = await service.getAllWhatsAppChats(unipileAccountId);
+    const chatsResponse = await service.getAllWhatsAppChats(unipileAccountId);
 
-    if (!chats || !Array.isArray(chats)) {
+    if (
+      !chatsResponse ||
+      !chatsResponse.chats ||
+      !Array.isArray(chatsResponse.chats)
+    ) {
       return NextResponse.json(
-        { error: "Failed to fetch chats", details: chats },
+        { error: "Failed to fetch chats", details: chatsResponse },
         { status: 500 }
       );
     }
 
+    const { chats } = chatsResponse;
     results.totalChats = chats.length;
 
     // Process each chat's messages with large batch size for full history
@@ -81,14 +86,23 @@ export async function POST(req: NextRequest) {
         if (!chatId) continue;
 
         // Set a large limit for initial sync (adjust as needed based on API limits)
-        const messages = await service.getWhatsAppMessages(chatId, {
+        const messagesResponse = await service.getWhatsAppMessages(chatId, {
           limit: 1000, // Use a large limit for bulk sync
           sortDirection: "desc", // Get newest first
           accountId: unipileAccountId, // Use Unipile account ID for proper routing
         });
 
+        // Handle the updated response format
+        let messageCount = 0;
+        if (
+          messagesResponse &&
+          messagesResponse.messages &&
+          Array.isArray(messagesResponse.messages)
+        ) {
+          messageCount = messagesResponse.messages.length;
+        }
+
         // Track results
-        const messageCount = Array.isArray(messages) ? messages.length : 0;
         results.totalMessages += messageCount;
         results.processedChats++;
 

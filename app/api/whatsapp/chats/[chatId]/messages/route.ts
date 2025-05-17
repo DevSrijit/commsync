@@ -7,7 +7,9 @@ interface Params {
 }
 
 export async function GET(req: NextRequest, { params }: Params) {
-  const { chatId } = params;
+  // Await params before destructuring to prevent Next.js error
+  const chatId = params.chatId;
+
   const url = new URL(req.url);
   const accountId = url.searchParams.get("accountId");
   if (!accountId) {
@@ -24,7 +26,15 @@ export async function GET(req: NextRequest, { params }: Params) {
   if (!syncAccount) {
     return NextResponse.json({ error: "Account not found" }, { status: 404 });
   }
+
   const unipileAccountId = syncAccount.accountIdentifier;
+  if (!unipileAccountId) {
+    return NextResponse.json(
+      { error: "Account missing Unipile identifier" },
+      { status: 400 }
+    );
+  }
+
   // Get pagination and filtering parameters
   const afterId = url.searchParams.get("afterId") || undefined;
   const beforeId = url.searchParams.get("beforeId") || undefined;
@@ -45,18 +55,44 @@ export async function GET(req: NextRequest, { params }: Params) {
 
   const service = new UnipileService({ baseUrl, accessToken });
   try {
-    const messages = await service.getWhatsAppMessages(chatId, {
+    console.log(
+      `Fetching WhatsApp messages for chat ${chatId} with Unipile account ${unipileAccountId}`
+    );
+    console.log(
+      `Pagination params: afterId=${afterId}, beforeId=${beforeId}, limit=${limit}, sortDirection=${sortDirection}`
+    );
+
+    const response = await service.getWhatsAppMessages(chatId, {
       afterId,
       beforeId,
       limit,
       sortDirection,
       accountId: unipileAccountId,
     });
-    return NextResponse.json({ messages });
+
+    // Handle the updated response format which contains messages array and cursor
+    if (!response || !response.messages || !Array.isArray(response.messages)) {
+      console.error(
+        `Invalid response from Unipile for messages: ${JSON.stringify(
+          response
+        )}`
+      );
+      return NextResponse.json(
+        { error: "Invalid response from Unipile API", data: response },
+        { status: 500 }
+      );
+    }
+
+    const { messages, cursor } = response;
+
+    console.log(
+      `Retrieved ${messages.length} WhatsApp messages for chat ${chatId}`
+    );
+    return NextResponse.json({ messages, cursor });
   } catch (err) {
     console.error("Error fetching WhatsApp messages:", err);
     return NextResponse.json(
-      { error: "Failed to fetch messages" },
+      { error: "Failed to fetch messages", details: String(err) },
       { status: 500 }
     );
   }

@@ -19,7 +19,15 @@ export async function GET(req: NextRequest) {
   if (!syncAccount) {
     return NextResponse.json({ error: "Account not found" }, { status: 404 });
   }
+
+  // The accountIdentifier field contains the Unipile account ID
   const unipileAccountId = syncAccount.accountIdentifier;
+  if (!unipileAccountId) {
+    return NextResponse.json(
+      { error: "Account missing Unipile identifier" },
+      { status: 400 }
+    );
+  }
 
   const baseUrl = process.env.UNIPILE_BASE_URL;
   const accessToken = process.env.UNIPILE_ACCESS_TOKEN;
@@ -32,13 +40,45 @@ export async function GET(req: NextRequest) {
 
   const service = new UnipileService({ baseUrl, accessToken });
   try {
-    const chats = await service.getAllWhatsAppChats(unipileAccountId);
-    console.log(chats);
-    return NextResponse.json({ chats });
+    console.log(
+      `Fetching WhatsApp chats for Unipile account: ${unipileAccountId}`
+    );
+    const response = await service.getAllWhatsAppChats(unipileAccountId);
+
+    console.log(`Response type: ${typeof response}`);
+    console.log(
+      `Response has chats property: ${response && "chats" in response}`
+    );
+    console.log(
+      `Response.chats is array: ${
+        response && response.chats && Array.isArray(response.chats)
+      }`
+    );
+    console.log(
+      `Response keys: ${response ? Object.keys(response).join(", ") : "none"}`
+    );
+
+    // Handle the updated response format which contains chats array and cursor
+    if (!response || !response.chats || !Array.isArray(response.chats)) {
+      console.error(
+        `Invalid response from Unipile for chats: ${JSON.stringify(response)}`
+      );
+      return NextResponse.json(
+        { error: "Invalid response from Unipile API", data: response },
+        { status: 500 }
+      );
+    }
+
+    const { chats, cursor } = response;
+
+    console.log(
+      `Retrieved ${chats.length} WhatsApp chats for account ${unipileAccountId}`
+    );
+    return NextResponse.json({ chats, cursor });
   } catch (err) {
     console.error("Error fetching WhatsApp chats:", err);
     return NextResponse.json(
-      { error: "Failed to fetch chats" },
+      { error: "Failed to fetch chats", details: String(err) },
       { status: 500 }
     );
   }
