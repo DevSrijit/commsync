@@ -12,12 +12,19 @@ import {
   removeCacheValue,
 } from "./client-cache-browser";
 import { formatJustCallTimestamp } from "./justcall-service";
+
+// Import our enhanced WhatsApp utilities
 import {
-  cleanWhatsAppPhoneNumber,
-  isWhatsAppSystemBroadcast,
-  isWhatsAppMessageFromMe,
-  getWhatsAppContactDisplayName,
-} from "./whatsapp-filters";
+  cleanPhoneNumber,
+  isSystemMessage,
+  isMessageFromMe,
+  isGroupChat,
+  getContactDisplayName,
+  generateThreadIdentifier,
+  createWhatsAppContactKey,
+  formatWhatsAppMessage,
+  createWhatsAppContact,
+} from "./whatsapp-utils";
 
 interface EmailStore {
   emails: Email[];
@@ -234,85 +241,116 @@ const generateContactsFromEmails = (emails: Email[]): Contact[] => {
       (email.labels && email.labels.includes("SMS"));
 
     // Check if this is a WhatsApp message
-    const isWhatsApp =
-      email.accountType === "whatsapp" ||
-      (email.labels && email.labels.includes("whatsapp"));
+    const isWhatsApp = email.accountType === "whatsapp";
+
+    // Skip processing messages from the "self-conversation" in WhatsApp
+    // This is the conversation that shows all messages you've sent
+    if (
+      isWhatsApp &&
+      email.from.email === "me" &&
+      (!email.threadId || !isGroupChat(email.threadId))
+    ) {
+      return;
+    }
 
     // Safely parse the email date to a Date object
     const emailDate = email.date ? new Date(email.date) : new Date();
 
     // Add sender as contact (if not the current user)
-    if (!email.from.email.includes("me") && email.from.name !== "Me") {
-      // For JustCall outbound messages, use recipient's email (contact_number) as the key
-      if (
-        email.accountType === "justcall" &&
-        (email.from.email === "You" || email.from.name === "You") &&
-        email.to &&
-        email.to.length > 0
-      ) {
-        // Use the first recipient's email as the contact key
-        const contactKey = email.to[0].email.toLowerCase();
-        const existingContact = contactsMap.get(contactKey);
+    if (
+      !email.from.email.includes("me") &&
+      email.from.name !== "Me" &&
+      email.from.name !== "You"
+    ) {
+      // Create special handling for WhatsApp contacts to avoid duplicates
+      if (isWhatsApp) {
+        // Use our enhanced contact key generation for WhatsApp
+        const contactKey = createWhatsAppContactKey(email);
+        if (!contactKey) return; // Skip if we couldn't generate a key
 
+        // Create/update the WhatsApp contact
+        const whatsAppContact = createWhatsAppContact(email);
+        if (!whatsAppContact) return; // Skip if we couldn't create a contact
+
+        const existingContact = contactsMap.get(contactKey);
         if (
           !existingContact ||
           new Date(existingContact.lastMessageDate) < emailDate
         ) {
-          contactsMap.set(contactKey, {
-            name:
-              email.to[0].name ||
-              (isSMS ? `Phone: ${email.to[0].email}` : email.to[0].email),
-            email: email.to[0].email, // Important: Use recipient's number as the contact email
-            lastMessageDate: email.date,
-            lastMessageSubject:
-              isWhatsApp || isSMS
-                ? email.snippet || "Message" // Use message preview for WhatsApp and SMS
-                : email.subject,
-            labels: isSMS ? ["SMS", ...(email.labels || [])] : email.labels,
-            accountId: email.accountId,
-            accountType: email.accountType,
-          });
+          contactsMap.set(contactKey, whatsAppContact);
         }
       } else {
-        // For all other messages, use sender's email as the contact key
-        let contactKey = email.from.email.toLowerCase();
-        let contactName = email.from.name;
-
-        // Special handling for WhatsApp contacts
-        if (isWhatsApp) {
-          // Clean up WhatsApp contact identifier
-          contactKey = cleanWhatsAppPhoneNumber(contactKey);
-          // Get proper display name for WhatsApp contact
-          contactName = getWhatsAppContactDisplayName({
-            name: email.from.name,
-            email: email.from.email,
-          });
-        }
-
-        const existingContact = contactsMap.get(contactKey);
-
+        // For JustCall outbound messages, use recipient's email (contact_number) as the key
         if (
-          !existingContact ||
-          new Date(existingContact.lastMessageDate) < emailDate
+          email.accountType === "justcall" &&
+          (email.from.email === "You" || email.from.name === "You") &&
+          email.to &&
+          email.to.length > 0
         ) {
-          contactsMap.set(contactKey, {
-            name:
-              contactName ||
-              (isSMS ? `Phone: ${email.from.email}` : email.from.email),
-            email: email.from.email,
-            lastMessageDate: email.date,
-            lastMessageSubject:
-              isWhatsApp || isSMS
-                ? email.snippet || "Message" // Use message preview for WhatsApp and SMS
-                : email.subject,
-            labels: isWhatsApp
-              ? ["whatsapp", "sms", ...(email.labels || [])]
-              : isSMS
-              ? ["SMS", ...(email.labels || [])]
-              : email.labels,
-            accountId: email.accountId,
-            accountType: email.accountType,
-          });
+          // Use the first recipient's email as the contact key
+          const contactKey = email.to[0].email.toLowerCase();
+          const existingContact = contactsMap.get(contactKey);
+
+          if (
+            !existingContact ||
+            new Date(existingContact.lastMessageDate) < emailDate
+          ) {
+            contactsMap.set(contactKey, {
+              name:
+                email.to[0].name ||
+                (isSMS ? `Phone: ${email.to[0].email}` : email.to[0].email),
+              email: email.to[0].email, // Important: Use recipient's number as the contact email
+              lastMessageDate: email.date,
+              lastMessageSubject:
+                isWhatsApp || isSMS
+                  ? email.snippet || "Message" // Use message preview for WhatsApp and SMS
+                  : email.subject,
+              labels: isSMS ? ["SMS", ...(email.labels || [])] : email.labels,
+              accountId: email.accountId,
+              accountType: email.accountType,
+            });
+          }
+        } else {
+          // For all other messages, use sender's email as the contact key
+          let contactKey = email.from.email.toLowerCase();
+          let contactName = email.from.name;
+
+          // Special handling for WhatsApp contacts
+          if (isWhatsApp) {
+            // Clean up WhatsApp contact identifier
+            contactKey = cleanPhoneNumber(contactKey);
+            // Get proper display name for WhatsApp contact
+            contactName = getContactDisplayName({
+              name: email.from.name,
+              email: email.from.email,
+            });
+          }
+
+          const existingContact = contactsMap.get(contactKey);
+
+          if (
+            !existingContact ||
+            new Date(existingContact.lastMessageDate) < emailDate
+          ) {
+            contactsMap.set(contactKey, {
+              name:
+                contactName ||
+                (isSMS ? `Phone: ${email.from.email}` : email.from.email),
+              email: email.from.email,
+              lastMessageDate: email.date,
+              lastMessageSubject:
+                isWhatsApp || isSMS
+                  ? email.snippet || "Message" // Use message preview for WhatsApp and SMS
+                  : email.subject,
+              labels: isWhatsApp
+                ? ["whatsapp", "sms", ...(email.labels || [])]
+                : isSMS
+                ? ["SMS", ...(email.labels || [])]
+                : email.labels,
+              accountId: email.accountId,
+              accountType: email.accountType,
+            });
+          }
         }
       }
     }
@@ -333,8 +371,16 @@ const generateContactsFromEmails = (emails: Email[]): Contact[] => {
         // For non-justcall messages, skip 'me'
         if (
           email.accountType !== "justcall" &&
-          (recipient.email.includes("me") || recipient.name === "Me")
+          (recipient.email.includes("me") ||
+            recipient.name === "Me" ||
+            recipient.name === "You")
         ) {
+          return;
+        }
+
+        // For WhatsApp group chats, don't create a contact for each recipient
+        if (isWhatsApp && email.threadId && isGroupChat(email.threadId)) {
+          // Instead, we'll create a single group contact below
           return;
         }
 
@@ -345,9 +391,9 @@ const generateContactsFromEmails = (emails: Email[]): Contact[] => {
         // Special handling for WhatsApp contacts
         if (isWhatsApp) {
           // Clean up WhatsApp contact identifier
-          contactKey = cleanWhatsAppPhoneNumber(contactKey);
+          contactKey = cleanPhoneNumber(contactKey);
           // Get proper display name for WhatsApp contact
-          contactName = getWhatsAppContactDisplayName({
+          contactName = getContactDisplayName({
             name: recipient.name,
             email: recipient.email,
           });
@@ -379,6 +425,29 @@ const generateContactsFromEmails = (emails: Email[]): Contact[] => {
           });
         }
       });
+    }
+
+    // Create group chat contact for WhatsApp group chats
+    if (isWhatsApp && email.threadId && isGroupChat(email.threadId)) {
+      const groupKey = `whatsapp:group:${email.threadId}`;
+      const groupName =
+        email.metadata?.group_name || email.subject || "WhatsApp Group";
+
+      const existingGroupContact = contactsMap.get(groupKey);
+      if (
+        !existingGroupContact ||
+        new Date(existingGroupContact.lastMessageDate) < emailDate
+      ) {
+        contactsMap.set(groupKey, {
+          name: groupName,
+          email: email.threadId,
+          lastMessageDate: email.date,
+          lastMessageSubject: email.snippet || "Message",
+          labels: ["whatsapp", "group"],
+          accountId: email.accountId,
+          accountType: "whatsapp",
+        });
+      }
     }
   });
 
@@ -1930,6 +1999,20 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                 continue;
               }
 
+              // Skip processing the self-conversation in WhatsApp
+              // This is a special chat that shows all messages you've sent
+              // It usually has your phone number as the chat ID
+              if (
+                !isGroupChat(chatId) &&
+                (chat.name === "You" ||
+                  chat.name === "Me" ||
+                  chat.name.toLowerCase().includes("you") ||
+                  chat.name.toLowerCase().includes("me"))
+              ) {
+                console.log(`Skipping self-conversation chat: ${chatId}`);
+                continue;
+              }
+
               // Configure pagination based on isLoadingMore mode
               const paginationParams: Record<string, string> = {};
 
@@ -2008,15 +2091,13 @@ export const useEmailStore = create<EmailStore>((set, get) => {
 
                 // Format messages as Email objects
                 if (messages && messages.length > 0) {
-                  // Sample a message to see its format
-                  console.log(`Sample message format:`, messages[0]);
-
+                  // Filter out system broadcasts and format messages properly
                   const formatted = messages
                     // First filter out system broadcasts
                     .filter((msg) => {
                       const content = msg.text || msg.body || "";
                       // Skip system broadcasts and empty messages
-                      if (isWhatsAppSystemBroadcast(content)) {
+                      if (isSystemMessage(content)) {
                         console.log(
                           `Filtering out WhatsApp system broadcast: "${content.substring(
                             0,
@@ -2027,66 +2108,9 @@ export const useEmailStore = create<EmailStore>((set, get) => {
                       }
                       return true;
                     })
-                    .map((msg: any) => {
-                      // Extract sender info - in Unipile the field is sender_id
-                      const sender = msg.sender_id || msg.from || "unknown";
-
-                      // Clean up phone numbers in the format "number@s.whatsapp.net"
-                      const cleanSender = cleanWhatsAppPhoneNumber(sender);
-
-                      // Determine message direction properly
-                      const isSent = isWhatsAppMessageFromMe(msg);
-
-                      // For contacts that use "You" or system identifiers, extract proper name
-                      const chatName = chat.name || "WhatsApp Chat";
-                      const senderName =
-                        chatName !== "You" ? chatName : cleanSender;
-
-                      // Get text content - in Unipile it's in the text field
-                      const content = msg.text || msg.body || "";
-
-                      // For contacts, use proper naming with phone number extraction
-                      const contactName = getWhatsAppContactDisplayName({
-                        name: senderName,
-                        email: sender,
-                      });
-
-                      return {
-                        id: msg.id,
-                        threadId: msg.chat_id || chatId,
-                        from: {
-                          // If it's sent by the user, label it as "Me" instead of "You"
-                          name: isSent ? "Me" : contactName,
-                          // Keep the original identifier for internal use
-                          email: isSent ? "me" : sender,
-                        },
-                        to: [
-                          {
-                            // Consistent recipient naming
-                            name: isSent ? contactName : "Me",
-                            email: msg.chat_provider_id || chatId,
-                          },
-                        ],
-                        // Use just the chat name for the subject, clean up any "@s.whatsapp.net"
-                        subject:
-                          getWhatsAppContactDisplayName({
-                            name: chat.name,
-                            email: chatId,
-                          }) || `WhatsApp chat ${chatId}`,
-                        // Include preview in lastMessageSubject to show in contact list
-                        snippet: content.substring(0, 100),
-                        body: content,
-                        date: msg.timestamp
-                          ? new Date(msg.timestamp).toISOString()
-                          : new Date().toISOString(),
-                        labels: ["whatsapp", "sms"],
-                        read: msg.seen === 1,
-                        accountId: internalId, // Use internal ID for consistency in the email store
-                        accountType: "whatsapp" as const,
-                        platform: "whatsapp",
-                        direction: isSent ? "outbound" : "inbound",
-                      };
-                    });
+                    .map((msg: any) =>
+                      formatWhatsAppMessage(msg, chat, internalId)
+                    );
 
                   // Check for duplicates by ID
                   const currentEmails = get().emails;

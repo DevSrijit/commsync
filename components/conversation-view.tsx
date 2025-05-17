@@ -36,7 +36,12 @@ import {
 import { htmlToText } from 'html-to-text';
 import { refreshSession } from "@/lib/gmail-api";
 import { MessageData } from "@/lib/messaging";
-import { isWhatsAppSystemBroadcast, isWhatsAppMessageFromMe } from "@/lib/whatsapp-filters";
+import {
+  isMessageFromMe,
+  isGroupChat,
+  isSystemMessage,
+  getContactDisplayName
+} from "@/lib/whatsapp-utils";
 
 interface WelcomeScreenProps {
   userEmail?: string | null;
@@ -1022,8 +1027,13 @@ export function ConversationView({
                   isFromMe = email.accountId === contact?.accountId &&
                     !email.from.email.includes(contactEmail);
                 } else if (email.accountType === "whatsapp") {
-                  // For WhatsApp: use our dedicated function that checks multiple indicators
-                  isFromMe = isWhatsAppMessageFromMe(email);
+                  // For WhatsApp: use our enhanced function that checks multiple indicators
+                  isFromMe = isMessageFromMe(email);
+
+                  // Skip WhatsApp system messages
+                  if (isSystemMessage(email.body)) {
+                    return null;
+                  }
                 } else if (email.accountType === "twilio" || email.accountType === "justcall" || email.accountType === "bulkvs") {
                   // For SMS platforms: check direction property directly
 
@@ -1121,7 +1131,7 @@ export function ConversationView({
                 debugSmsMessageDirection(email, isFromMe);
 
                 // Skip WhatsApp system broadcast messages
-                if (email.accountType === "whatsapp" && isWhatsAppSystemBroadcast(email.body)) {
+                if (email.accountType === "whatsapp" && isSystemMessage(email.body)) {
                   console.log(`Filtering out WhatsApp system broadcast in display: ${email.body.substring(0, 50)}...`);
                   return null;
                 }
@@ -1152,7 +1162,13 @@ export function ConversationView({
                       <div className="flex flex-col gap-1 break-words">
                         <div className="flex justify-between items-baseline gap-2 md:gap-4 flex-wrap">
                           <span className="font-medium text-xs md:text-sm line-clamp-1">
-                            {email.subject}
+                            {/* For WhatsApp group messages, show the real sender name */}
+                            {email.accountType === "whatsapp" &&
+                              email.metadata?.isGroup &&
+                              !isFromMe &&
+                              email.metadata?.sender_name
+                              ? email.metadata.sender_name
+                              : isFromMe ? "You" : email.from.name}
                           </span>
                           <span className="text-[10px] md:text-xs opacity-70 flex-shrink-0">
                             {formatDistanceToNow(new Date(email.date || ""), {

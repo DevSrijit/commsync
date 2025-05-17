@@ -41,6 +41,7 @@ export interface Email {
   platform?: string; // Added for platform indication
   source?: string; // Added to track data source (gmail-api, imap, etc.)
   phoneNumber?: string;
+  direction?: "inbound" | "outbound";
   justcallTimes?: {
     sms_user_time?: string;
     sms_time?: string;
@@ -48,8 +49,9 @@ export interface Email {
     sms_date?: string;
     formatted?: string;
   };
-  // Added to support enhanced email parsing and deduplication
+  // Updated to support enhanced email parsing and WhatsApp features
   metadata?: {
+    // Email metadata
     isForwarded?: boolean;
     originalSender?: { name: string; email: string };
     originalSubject?: string;
@@ -58,6 +60,12 @@ export interface Email {
     messageId?: string;
     references?: string;
     inReplyTo?: string;
+    // WhatsApp specific metadata
+    isGroup?: boolean;
+    chat_id?: string;
+    sender_id?: string;
+    sender_name?: string;
+    group_name?: string;
   };
 }
 
