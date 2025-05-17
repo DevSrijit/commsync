@@ -7,8 +7,7 @@ interface Params {
 }
 
 export async function GET(req: NextRequest, { params }: Params) {
-  // Await params before destructuring to prevent Next.js error
-  const chatId = params.chatId;
+  const { chatId } = await params;
 
   const url = new URL(req.url);
   const accountId = url.searchParams.get("accountId");

@@ -36,6 +36,7 @@ import {
 import { htmlToText } from 'html-to-text';
 import { refreshSession } from "@/lib/gmail-api";
 import { MessageData } from "@/lib/messaging";
+import { isWhatsAppSystemBroadcast, isWhatsAppMessageFromMe } from "@/lib/whatsapp-filters";
 
 interface WelcomeScreenProps {
   userEmail?: string | null;
@@ -1020,6 +1021,9 @@ export function ConversationView({
                   // For IMAP: check if this is the account owner's email
                   isFromMe = email.accountId === contact?.accountId &&
                     !email.from.email.includes(contactEmail);
+                } else if (email.accountType === "whatsapp") {
+                  // For WhatsApp: use our dedicated function that checks multiple indicators
+                  isFromMe = isWhatsAppMessageFromMe(email);
                 } else if (email.accountType === "twilio" || email.accountType === "justcall" || email.accountType === "bulkvs") {
                   // For SMS platforms: check direction property directly
 
@@ -1116,6 +1120,12 @@ export function ConversationView({
                 // Debug function for SMS message direction
                 debugSmsMessageDirection(email, isFromMe);
 
+                // Skip WhatsApp system broadcast messages
+                if (email.accountType === "whatsapp" && isWhatsAppSystemBroadcast(email.body)) {
+                  console.log(`Filtering out WhatsApp system broadcast in display: ${email.body.substring(0, 50)}...`);
+                  return null;
+                }
+
                 return (
                   <div
                     key={email.id}
@@ -1151,8 +1161,8 @@ export function ConversationView({
                             })}
                           </span>
                         </div>
-                        {/* Handle SMS message display */}
-                        {(email.accountType === "twilio" || email.accountType === "justcall" || email.accountType === "bulkvs") ? (
+                        {/* Handle WhatsApp or SMS message display */}
+                        {(email.accountType === "whatsapp" || email.accountType === "twilio" || email.accountType === "justcall" || email.accountType === "bulkvs") ? (
                           <div className="whitespace-pre-wrap font-mono text-xs md:text-sm break-words">
                             {email.body}
                           </div>
@@ -1161,6 +1171,17 @@ export function ConversationView({
                             <EncapsulatedEmailContent html={DOMPurify.sanitize(email.body)} />
                           </div>
                         )}
+
+                        {/* Show a warning for unsupported content */}
+                        {email.accountType === "whatsapp" && email.body.includes("Unipile cannot display this type of message yet") && (
+                          <div className="mt-2 text-xs text-amber-500 bg-amber-50 dark:bg-amber-950/30 p-2 rounded-md">
+                            <p className="flex items-center gap-1">
+                              <AlertTriangle className="h-3 w-3" />
+                              This message contains content not yet supported (sticker, reaction, etc.)
+                            </p>
+                          </div>
+                        )}
+
                         {/* Attachments */}
                         {email.attachments && email.attachments.length > 0 && (
                           <div

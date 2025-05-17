@@ -152,7 +152,14 @@ export function ContactItem({
               matchedFields.has('lastMessageSubject') && "font-semibold"
             )}
             searchWords={searchWords}
-            textToHighlight={contact.lastMessageSubject}
+            textToHighlight={
+              // For WhatsApp and SMS contacts, it's already a message preview
+              contact.accountType === "whatsapp" || contact.labels?.includes("SMS") || contact.labels?.includes("sms")
+                ? contact.lastMessageSubject
+                : contact.lastMessageSubject && contact.lastMessageSubject !== contact.name
+                  ? contact.lastMessageSubject
+                  : "No preview available" // Fallback when lastMessageSubject is empty or repeats contact name
+            }
             autoEscape
           />
         </p>
